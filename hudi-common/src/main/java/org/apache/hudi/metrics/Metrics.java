@@ -18,11 +18,13 @@
 
 package org.apache.hudi.metrics;
 
-import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.config.HoodieMetricsConfig;
 import org.apache.hudi.exception.HoodieException;
 
+import com.codahale.metrics.Counter;
 import com.codahale.metrics.Gauge;
 import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.Timer;
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
 
@@ -40,7 +42,7 @@ public class Metrics {
   private final MetricRegistry registry;
   private MetricsReporter reporter;
 
-  private Metrics(HoodieWriteConfig metricConfig) {
+  private Metrics(HoodieMetricsConfig metricConfig) {
     registry = new MetricRegistry();
 
     reporter = MetricsReporterFactory.createReporter(metricConfig, registry);
@@ -52,7 +54,9 @@ public class Metrics {
     Runtime.getRuntime().addShutdownHook(new Thread(() -> {
       try {
         reporter.report();
-        getReporter().close();
+        if (getReporter() != null) {
+          getReporter().close();
+        }
       } catch (Exception e) {
         e.printStackTrace();
       }
@@ -64,7 +68,11 @@ public class Metrics {
     return metrics;
   }
 
-  public static synchronized void init(HoodieWriteConfig metricConfig) {
+  public static boolean isInitialized() {
+    return initialized;
+  }
+
+  public static synchronized void init(HoodieMetricsConfig metricConfig) {
     if (initialized) {
       return;
     }
@@ -84,7 +92,7 @@ public class Metrics {
       // Here we catch all exception, so the major upsert pipeline will not be affected if the
       // metrics system
       // has some issues.
-      LOG.error("Failed to send metrics: ", e);
+      LOG.error("Failed to register a Gauge: ", e);
     }
   }
 
@@ -95,4 +103,13 @@ public class Metrics {
   public Closeable getReporter() {
     return reporter.getReporter();
   }
+
+  public static Timer createTimer(String name) {
+    return initialized ? getInstance().getRegistry().timer(name) : null;
+  }
+
+  public static Counter createCounter(String name) {
+    return initialized ? getInstance().getRegistry().counter(name) : null;
+  }
+
 }

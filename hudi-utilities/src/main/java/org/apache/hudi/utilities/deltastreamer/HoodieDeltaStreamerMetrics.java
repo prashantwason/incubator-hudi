@@ -18,14 +18,14 @@
 
 package org.apache.hudi.utilities.deltastreamer;
 
-import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.config.HoodieMetricsConfig;
 import org.apache.hudi.metrics.Metrics;
 
 import com.codahale.metrics.Timer;
 
 public class HoodieDeltaStreamerMetrics {
 
-  private HoodieWriteConfig config;
+  private HoodieMetricsConfig metricsConfig;
   private String tableName;
 
   public String overallTimerName = null;
@@ -33,9 +33,9 @@ public class HoodieDeltaStreamerMetrics {
   private Timer overallTimer = null;
   public Timer hiveSyncTimer = null;
 
-  public HoodieDeltaStreamerMetrics(HoodieWriteConfig config) {
-    this.config = config;
-    this.tableName = config.getTableName();
+  public HoodieDeltaStreamerMetrics(HoodieMetricsConfig config, String tableName) {
+    this.metricsConfig = config;
+    this.tableName = tableName;
     if (config.isMetricsOn()) {
       Metrics.init(config);
       this.overallTimerName = getMetricsName("timer", "deltastreamer");
@@ -44,29 +44,29 @@ public class HoodieDeltaStreamerMetrics {
   }
 
   public Timer.Context getOverallTimerContext() {
-    if (config.isMetricsOn() && overallTimer == null) {
+    if (metricsConfig.isMetricsOn() && overallTimer == null) {
       overallTimer = createTimer(overallTimerName);
     }
     return overallTimer == null ? null : overallTimer.time();
   }
 
   public Timer.Context getHiveSyncTimerContext() {
-    if (config.isMetricsOn() && hiveSyncTimer == null) {
+    if (metricsConfig.isMetricsOn() && hiveSyncTimer == null) {
       hiveSyncTimer = createTimer(hiveSyncTimerName);
     }
     return hiveSyncTimer == null ? null : hiveSyncTimer.time();
   }
 
   private Timer createTimer(String name) {
-    return config.isMetricsOn() ? Metrics.getInstance().getRegistry().timer(name) : null;
+    return metricsConfig.isMetricsOn() ? Metrics.getInstance().getRegistry().timer(name) : null;
   }
 
   String getMetricsName(String action, String metric) {
-    return config == null ? null : String.format("%s.%s.%s", tableName, action, metric);
+    return metricsConfig == null ? null : String.format("%s.%s.%s", tableName, action, metric);
   }
 
   public void updateDeltaStreamerMetrics(long durationInNs, long hiveSyncNs) {
-    if (config.isMetricsOn()) {
+    if (metricsConfig.isMetricsOn()) {
       Metrics.registerGauge(getMetricsName("deltastreamer", "duration"), getDurationInMs(durationInNs));
       Metrics.registerGauge(getMetricsName("deltastreamer", "hiveSyncDuration"), getDurationInMs(hiveSyncNs));
     }

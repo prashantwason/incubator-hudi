@@ -20,7 +20,10 @@ package org.apache.hudi.common.fs;
 
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieIOException;
+import org.apache.hudi.metrics.Metrics;
 
+import com.codahale.metrics.Counter;
+import com.codahale.metrics.Timer;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.BlockLocation;
 import org.apache.hadoop.fs.ContentSummary;
@@ -68,6 +71,9 @@ public class HoodieWrapperFileSystem extends FileSystem {
   private FileSystem fileSystem;
   private URI uri;
   private ConsistencyGuard consistencyGuard = new NoOpConsistencyGuard();
+  private Metrics metrics;
+  private String metricPrefix = "fs.";
+  private ConcurrentHashMap<String, Timer> timerMap = new ConcurrentHashMap<String, Timer>();
 
   public HoodieWrapperFileSystem() {}
 
@@ -75,6 +81,7 @@ public class HoodieWrapperFileSystem extends FileSystem {
     this.fileSystem = fileSystem;
     this.uri = fileSystem.getUri();
     this.consistencyGuard = consistencyGuard;
+    this.metrics = Metrics.isInitialized() ? Metrics.getInstance() : null;
   }
 
   public static Path convertToHoodiePath(Path file, Configuration conf) {
@@ -134,15 +141,25 @@ public class HoodieWrapperFileSystem extends FileSystem {
 
   @Override
   public FSDataInputStream open(Path f, int bufferSize) throws IOException {
-    return fileSystem.open(convertToDefaultPath(f), bufferSize);
+    Timer.Context timerCtx = getTimerContext("open");
+    try {
+      return fileSystem.open(convertToDefaultPath(f), bufferSize);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FSDataOutputStream create(Path f, FsPermission permission, boolean overwrite, int bufferSize,
       short replication, long blockSize, Progressable progress) throws IOException {
-    final Path translatedPath = convertToDefaultPath(f);
-    return wrapOutputStream(f,
-        fileSystem.create(translatedPath, permission, overwrite, bufferSize, replication, blockSize, progress));
+    Timer.Context timerCtx = getTimerContext("create");
+    try {
+      final Path translatedPath = convertToDefaultPath(f);
+      return wrapOutputStream(f,
+          fileSystem.create(translatedPath, permission, overwrite, bufferSize, replication, blockSize, progress));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   private FSDataOutputStream wrapOutputStream(final Path path, FSDataOutputStream fsDataOutputStream)
@@ -159,116 +176,191 @@ public class HoodieWrapperFileSystem extends FileSystem {
 
   @Override
   public FSDataOutputStream create(Path f, boolean overwrite) throws IOException {
-    return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f), overwrite));
+    Timer.Context timerCtx = getTimerContext("create");
+    try {
+      return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f), overwrite));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FSDataOutputStream create(Path f) throws IOException {
-    return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f)));
+    Timer.Context timerCtx = getTimerContext("create");
+    try {
+      return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f)));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FSDataOutputStream create(Path f, Progressable progress) throws IOException {
-    return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f), progress));
+    Timer.Context timerCtx = getTimerContext("create");
+    try {
+      return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f), progress));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FSDataOutputStream create(Path f, short replication) throws IOException {
-    return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f), replication));
+    Timer.Context timerCtx = getTimerContext("create");
+    try {
+      return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f), replication));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FSDataOutputStream create(Path f, short replication, Progressable progress) throws IOException {
-    return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f), replication, progress));
+    Timer.Context timerCtx = getTimerContext("create");
+    try {
+      return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f), replication, progress));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FSDataOutputStream create(Path f, boolean overwrite, int bufferSize) throws IOException {
-    return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f), overwrite, bufferSize));
+    Timer.Context timerCtx = getTimerContext("create");
+    try {
+      return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f), overwrite, bufferSize));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FSDataOutputStream create(Path f, boolean overwrite, int bufferSize, Progressable progress)
       throws IOException {
-    return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f), overwrite, bufferSize, progress));
+    Timer.Context timerCtx = getTimerContext("create");
+    try {
+      return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f), overwrite, bufferSize, progress));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FSDataOutputStream create(Path f, boolean overwrite, int bufferSize, short replication, long blockSize,
       Progressable progress) throws IOException {
-    return wrapOutputStream(f,
-        fileSystem.create(convertToDefaultPath(f), overwrite, bufferSize, replication, blockSize, progress));
+    Timer.Context timerCtx = getTimerContext("create");
+    try {
+      return wrapOutputStream(f,
+          fileSystem.create(convertToDefaultPath(f), overwrite, bufferSize, replication, blockSize, progress));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FSDataOutputStream create(Path f, FsPermission permission, EnumSet<CreateFlag> flags, int bufferSize,
       short replication, long blockSize, Progressable progress) throws IOException {
-    return wrapOutputStream(f,
-        fileSystem.create(convertToDefaultPath(f), permission, flags, bufferSize, replication, blockSize, progress));
+    Timer.Context timerCtx = getTimerContext("create");
+    try {
+      return wrapOutputStream(f,
+          fileSystem.create(convertToDefaultPath(f), permission, flags, bufferSize, replication, blockSize, progress));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FSDataOutputStream create(Path f, FsPermission permission, EnumSet<CreateFlag> flags, int bufferSize,
       short replication, long blockSize, Progressable progress, Options.ChecksumOpt checksumOpt) throws IOException {
-    return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f), permission, flags, bufferSize, replication,
-        blockSize, progress, checksumOpt));
+    Timer.Context timerCtx = getTimerContext("create");
+    try {
+      return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f), permission, flags, bufferSize, replication,
+          blockSize, progress, checksumOpt));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FSDataOutputStream create(Path f, boolean overwrite, int bufferSize, short replication, long blockSize)
       throws IOException {
-    return wrapOutputStream(f,
-        fileSystem.create(convertToDefaultPath(f), overwrite, bufferSize, replication, blockSize));
+    Timer.Context timerCtx = getTimerContext("create");
+    try {
+      return wrapOutputStream(f,
+          fileSystem.create(convertToDefaultPath(f), overwrite, bufferSize, replication, blockSize));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FSDataOutputStream append(Path f, int bufferSize, Progressable progress) throws IOException {
-    return wrapOutputStream(f, fileSystem.append(convertToDefaultPath(f), bufferSize, progress));
+    Timer.Context timerCtx = getTimerContext("append");
+    try {
+      return wrapOutputStream(f, fileSystem.append(convertToDefaultPath(f), bufferSize, progress));
+    } finally {
+      updateMetrics(timerCtx, "write", bufferSize);
+    }
   }
 
   @Override
   public boolean rename(Path src, Path dst) throws IOException {
+    Timer.Context timerCtx = getTimerContext("rename");
     try {
-      consistencyGuard.waitTillFileAppears(convertToDefaultPath(src));
-    } catch (TimeoutException e) {
-      throw new HoodieException("Timed out waiting for " + src + " to appear", e);
-    }
-
-    boolean success = fileSystem.rename(convertToDefaultPath(src), convertToDefaultPath(dst));
-
-    if (success) {
       try {
-        consistencyGuard.waitTillFileAppears(convertToDefaultPath(dst));
+        consistencyGuard.waitTillFileAppears(convertToDefaultPath(src));
       } catch (TimeoutException e) {
-        throw new HoodieException("Timed out waiting for " + dst + " to appear", e);
+        throw new HoodieException("Timed out waiting for " + src + " to appear", e);
       }
 
-      try {
-        consistencyGuard.waitTillFileDisappears(convertToDefaultPath(src));
-      } catch (TimeoutException e) {
-        throw new HoodieException("Timed out waiting for " + src + " to disappear", e);
+      boolean success = fileSystem.rename(convertToDefaultPath(src), convertToDefaultPath(dst));
+
+      if (success) {
+        try {
+          consistencyGuard.waitTillFileAppears(convertToDefaultPath(dst));
+        } catch (TimeoutException e) {
+          throw new HoodieException("Timed out waiting for " + dst + " to appear", e);
+        }
+
+        try {
+          consistencyGuard.waitTillFileDisappears(convertToDefaultPath(src));
+        } catch (TimeoutException e) {
+          throw new HoodieException("Timed out waiting for " + src + " to disappear", e);
+        }
       }
+      return success;
+    } finally {
+      updateMetrics(timerCtx);
     }
-    return success;
   }
 
   @Override
   public boolean delete(Path f, boolean recursive) throws IOException {
-    boolean success = fileSystem.delete(convertToDefaultPath(f), recursive);
+    Timer.Context timerCtx = getTimerContext("delete");
+    try {
+      boolean success = fileSystem.delete(convertToDefaultPath(f), recursive);
 
-    if (success) {
-      try {
-        consistencyGuard.waitTillFileDisappears(f);
-      } catch (TimeoutException e) {
-        throw new HoodieException("Timed out waiting for " + f + " to disappear", e);
+      if (success) {
+        try {
+          consistencyGuard.waitTillFileDisappears(f);
+        } catch (TimeoutException e) {
+          throw new HoodieException("Timed out waiting for " + f + " to disappear", e);
+        }
       }
+      return success;
+    } finally {
+      updateMetrics(timerCtx);
     }
-    return success;
   }
 
   @Override
   public FileStatus[] listStatus(Path f) throws IOException {
-    return fileSystem.listStatus(convertToDefaultPath(f));
+    Timer.Context timerCtx = getTimerContext("list");
+    try {
+      return fileSystem.listStatus(convertToDefaultPath(f));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
@@ -283,25 +375,35 @@ public class HoodieWrapperFileSystem extends FileSystem {
 
   @Override
   public boolean mkdirs(Path f, FsPermission permission) throws IOException {
-    boolean success = fileSystem.mkdirs(convertToDefaultPath(f), permission);
-    if (success) {
-      try {
-        consistencyGuard.waitTillFileAppears(convertToDefaultPath(f));
-      } catch (TimeoutException e) {
-        throw new HoodieException("Timed out waiting for directory " + f + " to appear", e);
+    Timer.Context timerCtx = getTimerContext("mkdir");
+    try {
+      boolean success = fileSystem.mkdirs(convertToDefaultPath(f), permission);
+      if (success) {
+        try {
+          consistencyGuard.waitTillFileAppears(convertToDefaultPath(f));
+        } catch (TimeoutException e) {
+          throw new HoodieException("Timed out waiting for directory " + f + " to appear", e);
+        }
       }
+      return success;
+    } finally {
+      updateMetrics(timerCtx);
     }
-    return success;
   }
 
   @Override
   public FileStatus getFileStatus(Path f) throws IOException {
+    Timer.Context timerCtx = getTimerContext("get");
     try {
-      consistencyGuard.waitTillFileAppears(convertToDefaultPath(f));
-    } catch (TimeoutException e) {
-      // pass
+      try {
+        consistencyGuard.waitTillFileAppears(convertToDefaultPath(f));
+      } catch (TimeoutException e) {
+        // pass
+      }
+      return fileSystem.getFileStatus(convertToDefaultPath(f));
+    } finally {
+      updateMetrics(timerCtx);
     }
-    return fileSystem.getFileStatus(convertToDefaultPath(f));
   }
 
   @Override
@@ -326,12 +428,22 @@ public class HoodieWrapperFileSystem extends FileSystem {
 
   @Override
   public Token<?> getDelegationToken(String renewer) throws IOException {
-    return fileSystem.getDelegationToken(renewer);
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.getDelegationToken(renewer);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public Token<?>[] addDelegationTokens(String renewer, Credentials credentials) throws IOException {
-    return fileSystem.addDelegationTokens(renewer, credentials);
+    Timer.Context timerCtx = getTimerContext("set");
+    try {
+      return fileSystem.addDelegationTokens(renewer, credentials);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
@@ -341,12 +453,22 @@ public class HoodieWrapperFileSystem extends FileSystem {
 
   @Override
   public BlockLocation[] getFileBlockLocations(FileStatus file, long start, long len) throws IOException {
-    return fileSystem.getFileBlockLocations(file, start, len);
+    Timer.Context timerCtx = getTimerContext("getblock");
+    try {
+      return fileSystem.getFileBlockLocations(file, start, len);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public BlockLocation[] getFileBlockLocations(Path p, long start, long len) throws IOException {
-    return fileSystem.getFileBlockLocations(convertToDefaultPath(p), start, len);
+    Timer.Context timerCtx = getTimerContext("getblock");
+    try {
+      return fileSystem.getFileBlockLocations(convertToDefaultPath(p), start, len);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
@@ -366,155 +488,285 @@ public class HoodieWrapperFileSystem extends FileSystem {
 
   @Override
   public FSDataInputStream open(Path f) throws IOException {
-    return fileSystem.open(convertToDefaultPath(f));
+    Timer.Context timerCtx = getTimerContext("open");
+    try {
+      return fileSystem.open(convertToDefaultPath(f));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FSDataOutputStream createNonRecursive(Path f, boolean overwrite, int bufferSize, short replication,
       long blockSize, Progressable progress) throws IOException {
-    Path p = convertToDefaultPath(f);
-    return wrapOutputStream(p,
-        fileSystem.createNonRecursive(p, overwrite, bufferSize, replication, blockSize, progress));
+    Timer.Context timerCtx = getTimerContext("create");
+    try {
+      Path p = convertToDefaultPath(f);
+      return wrapOutputStream(p,
+          fileSystem.createNonRecursive(p, overwrite, bufferSize, replication, blockSize, progress));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FSDataOutputStream createNonRecursive(Path f, FsPermission permission, boolean overwrite, int bufferSize,
       short replication, long blockSize, Progressable progress) throws IOException {
-    Path p = convertToDefaultPath(f);
-    return wrapOutputStream(p,
-        fileSystem.createNonRecursive(p, permission, overwrite, bufferSize, replication, blockSize, progress));
+    Timer.Context timerCtx = getTimerContext("create");
+    try {
+      Path p = convertToDefaultPath(f);
+      return wrapOutputStream(p,
+          fileSystem.createNonRecursive(p, permission, overwrite, bufferSize, replication, blockSize, progress));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FSDataOutputStream createNonRecursive(Path f, FsPermission permission, EnumSet<CreateFlag> flags,
       int bufferSize, short replication, long blockSize, Progressable progress) throws IOException {
-    Path p = convertToDefaultPath(f);
-    return wrapOutputStream(p,
-        fileSystem.createNonRecursive(p, permission, flags, bufferSize, replication, blockSize, progress));
+    Timer.Context timerCtx = getTimerContext("create");
+    try {
+      Path p = convertToDefaultPath(f);
+      return wrapOutputStream(p,
+          fileSystem.createNonRecursive(p, permission, flags, bufferSize, replication, blockSize, progress));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public boolean createNewFile(Path f) throws IOException {
-    boolean newFile = fileSystem.createNewFile(convertToDefaultPath(f));
-    if (newFile) {
-      try {
-        consistencyGuard.waitTillFileAppears(convertToDefaultPath(f));
-      } catch (TimeoutException e) {
-        throw new HoodieException("Timed out waiting for " + f + " to appear", e);
+    Timer.Context timerCtx = getTimerContext("create");
+    try {
+      boolean newFile = fileSystem.createNewFile(convertToDefaultPath(f));
+      if (newFile) {
+        try {
+          consistencyGuard.waitTillFileAppears(convertToDefaultPath(f));
+        } catch (TimeoutException e) {
+          throw new HoodieException("Timed out waiting for " + f + " to appear", e);
+        }
       }
+      return newFile;
+    } finally {
+      updateMetrics(timerCtx);
     }
-    return newFile;
   }
 
   @Override
   public FSDataOutputStream append(Path f) throws IOException {
-    return wrapOutputStream(f, fileSystem.append(convertToDefaultPath(f)));
+    Timer.Context timerCtx = getTimerContext("append");
+    try {
+      return wrapOutputStream(f, fileSystem.append(convertToDefaultPath(f)));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FSDataOutputStream append(Path f, int bufferSize) throws IOException {
-    return wrapOutputStream(f, fileSystem.append(convertToDefaultPath(f), bufferSize));
+    Timer.Context timerCtx = getTimerContext("append");
+    try {
+      return wrapOutputStream(f, fileSystem.append(convertToDefaultPath(f), bufferSize));
+    } finally {
+      updateMetrics(timerCtx, "write", bufferSize);
+    }
   }
 
   @Override
   public void concat(Path trg, Path[] psrcs) throws IOException {
-    Path[] psrcsNew = convertDefaults(psrcs);
-    fileSystem.concat(convertToDefaultPath(trg), psrcsNew);
+    Timer.Context timerCtx = getTimerContext("concat");
     try {
-      consistencyGuard.waitTillFileAppears(convertToDefaultPath(trg));
-    } catch (TimeoutException e) {
-      throw new HoodieException("Timed out waiting for " + trg + " to appear", e);
+      Path[] psrcsNew = convertDefaults(psrcs);
+      fileSystem.concat(convertToDefaultPath(trg), psrcsNew);
+      try {
+        consistencyGuard.waitTillFileAppears(convertToDefaultPath(trg));
+      } catch (TimeoutException e) {
+        throw new HoodieException("Timed out waiting for " + trg + " to appear", e);
+      }
+    } finally {
+      updateMetrics(timerCtx);
     }
   }
 
   @Override
   public short getReplication(Path src) throws IOException {
-    return fileSystem.getReplication(convertToDefaultPath(src));
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.getReplication(convertToDefaultPath(src));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public boolean setReplication(Path src, short replication) throws IOException {
-    return fileSystem.setReplication(convertToDefaultPath(src), replication);
+    Timer.Context timerCtx = getTimerContext("set");
+    try {
+      return fileSystem.setReplication(convertToDefaultPath(src), replication);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public boolean delete(Path f) throws IOException {
-    return delete(f, true);
+    Timer.Context timerCtx = getTimerContext("delete");
+    try {
+      return delete(f, true);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public boolean deleteOnExit(Path f) throws IOException {
-    return fileSystem.deleteOnExit(convertToDefaultPath(f));
+    Timer.Context timerCtx = getTimerContext("set");
+    try {
+      return fileSystem.deleteOnExit(convertToDefaultPath(f));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public boolean cancelDeleteOnExit(Path f) {
-    return fileSystem.cancelDeleteOnExit(convertToDefaultPath(f));
+    Timer.Context timerCtx = getTimerContext("set");
+    try {
+      return fileSystem.cancelDeleteOnExit(convertToDefaultPath(f));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public boolean exists(Path f) throws IOException {
-    return fileSystem.exists(convertToDefaultPath(f));
+    Timer.Context timerCtx = getTimerContext("exists");
+    try {
+      return fileSystem.exists(convertToDefaultPath(f));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public boolean isDirectory(Path f) throws IOException {
-    return fileSystem.isDirectory(convertToDefaultPath(f));
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.isDirectory(convertToDefaultPath(f));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public boolean isFile(Path f) throws IOException {
-    return fileSystem.isFile(convertToDefaultPath(f));
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.isFile(convertToDefaultPath(f));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public long getLength(Path f) throws IOException {
-    return fileSystem.getLength(convertToDefaultPath(f));
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.getLength(convertToDefaultPath(f));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public ContentSummary getContentSummary(Path f) throws IOException {
-    return fileSystem.getContentSummary(convertToDefaultPath(f));
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.getContentSummary(convertToDefaultPath(f));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public RemoteIterator<Path> listCorruptFileBlocks(Path path) throws IOException {
-    return fileSystem.listCorruptFileBlocks(convertToDefaultPath(path));
+    Timer.Context timerCtx = getTimerContext("getblock");
+    try {
+      return fileSystem.listCorruptFileBlocks(convertToDefaultPath(path));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FileStatus[] listStatus(Path f, PathFilter filter) throws IOException {
-    return fileSystem.listStatus(convertToDefaultPath(f), filter);
+    Timer.Context timerCtx = getTimerContext("list");
+    try {
+      return fileSystem.listStatus(convertToDefaultPath(f), filter);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FileStatus[] listStatus(Path[] files) throws IOException {
-    return fileSystem.listStatus(convertDefaults(files));
+    Timer.Context timerCtx = getTimerContext("list");
+    try {
+      return fileSystem.listStatus(convertDefaults(files));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FileStatus[] listStatus(Path[] files, PathFilter filter) throws IOException {
-    return fileSystem.listStatus(convertDefaults(files), filter);
+    Timer.Context timerCtx = getTimerContext("list");
+    try {
+      return fileSystem.listStatus(convertDefaults(files), filter);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FileStatus[] globStatus(Path pathPattern) throws IOException {
-    return fileSystem.globStatus(convertToDefaultPath(pathPattern));
+    Timer.Context timerCtx = getTimerContext("list");
+    try {
+      return fileSystem.globStatus(convertToDefaultPath(pathPattern));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FileStatus[] globStatus(Path pathPattern, PathFilter filter) throws IOException {
-    return fileSystem.globStatus(convertToDefaultPath(pathPattern), filter);
+    Timer.Context timerCtx = getTimerContext("list");
+    try {
+      return fileSystem.globStatus(convertToDefaultPath(pathPattern), filter);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public RemoteIterator<LocatedFileStatus> listLocatedStatus(Path f) throws IOException {
-    return fileSystem.listLocatedStatus(convertToDefaultPath(f));
+    Timer.Context timerCtx = getTimerContext("list");
+    try {
+      return fileSystem.listLocatedStatus(convertToDefaultPath(f));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public RemoteIterator<LocatedFileStatus> listFiles(Path f, boolean recursive) throws IOException {
-    return fileSystem.listFiles(convertToDefaultPath(f), recursive);
+    Timer.Context timerCtx = getTimerContext("list");
+    try {
+      return fileSystem.listFiles(convertToDefaultPath(f), recursive);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
@@ -524,95 +776,150 @@ public class HoodieWrapperFileSystem extends FileSystem {
 
   @Override
   public boolean mkdirs(Path f) throws IOException {
-    boolean success = fileSystem.mkdirs(convertToDefaultPath(f));
-    if (success) {
-      try {
-        consistencyGuard.waitTillFileAppears(convertToDefaultPath(f));
-      } catch (TimeoutException e) {
-        throw new HoodieException("Timed out waiting for directory " + f + " to appear", e);
+    Timer.Context timerCtx = getTimerContext("mkdir");
+    try {
+      boolean success = fileSystem.mkdirs(convertToDefaultPath(f));
+      if (success) {
+        try {
+          consistencyGuard.waitTillFileAppears(convertToDefaultPath(f));
+        } catch (TimeoutException e) {
+          throw new HoodieException("Timed out waiting for directory " + f + " to appear", e);
+        }
       }
+      return success;
+    } finally {
+      updateMetrics(timerCtx);
     }
-    return success;
   }
 
   @Override
   public void copyFromLocalFile(Path src, Path dst) throws IOException {
-    fileSystem.copyFromLocalFile(convertToLocalPath(src), convertToDefaultPath(dst));
+    Timer.Context timerCtx = getTimerContext("copy");
     try {
-      consistencyGuard.waitTillFileAppears(convertToDefaultPath(dst));
-    } catch (TimeoutException e) {
-      throw new HoodieException("Timed out waiting for destination " + dst + " to appear", e);
+      fileSystem.copyFromLocalFile(convertToLocalPath(src), convertToDefaultPath(dst));
+      try {
+        consistencyGuard.waitTillFileAppears(convertToDefaultPath(dst));
+      } catch (TimeoutException e) {
+        throw new HoodieException("Timed out waiting for destination " + dst + " to appear", e);
+      }
+    } finally {
+      updateMetrics(timerCtx);
     }
   }
 
   @Override
   public void moveFromLocalFile(Path[] srcs, Path dst) throws IOException {
-    fileSystem.moveFromLocalFile(convertLocalPaths(srcs), convertToDefaultPath(dst));
+    Timer.Context timerCtx = getTimerContext("move");
     try {
-      consistencyGuard.waitTillFileAppears(convertToDefaultPath(dst));
-    } catch (TimeoutException e) {
-      throw new HoodieException("Timed out waiting for destination " + dst + " to appear", e);
+      fileSystem.moveFromLocalFile(convertLocalPaths(srcs), convertToDefaultPath(dst));
+      try {
+        consistencyGuard.waitTillFileAppears(convertToDefaultPath(dst));
+      } catch (TimeoutException e) {
+        throw new HoodieException("Timed out waiting for destination " + dst + " to appear", e);
+      }
+    } finally {
+      updateMetrics(timerCtx);
     }
   }
 
   @Override
   public void moveFromLocalFile(Path src, Path dst) throws IOException {
-    fileSystem.moveFromLocalFile(convertToLocalPath(src), convertToDefaultPath(dst));
+    Timer.Context timerCtx = getTimerContext("move");
     try {
-      consistencyGuard.waitTillFileAppears(convertToDefaultPath(dst));
-    } catch (TimeoutException e) {
-      throw new HoodieException("Timed out waiting for destination " + dst + " to appear", e);
+      fileSystem.moveFromLocalFile(convertToLocalPath(src), convertToDefaultPath(dst));
+      try {
+        consistencyGuard.waitTillFileAppears(convertToDefaultPath(dst));
+      } catch (TimeoutException e) {
+        throw new HoodieException("Timed out waiting for destination " + dst + " to appear", e);
+      }
+    } finally {
+      updateMetrics(timerCtx);
     }
   }
 
   @Override
   public void copyFromLocalFile(boolean delSrc, Path src, Path dst) throws IOException {
-    fileSystem.copyFromLocalFile(delSrc, convertToLocalPath(src), convertToDefaultPath(dst));
+    Timer.Context timerCtx = getTimerContext("copy");
     try {
-      consistencyGuard.waitTillFileAppears(convertToDefaultPath(dst));
-    } catch (TimeoutException e) {
-      throw new HoodieException("Timed out waiting for destination " + dst + " to appear", e);
+      fileSystem.copyFromLocalFile(delSrc, convertToLocalPath(src), convertToDefaultPath(dst));
+      try {
+        consistencyGuard.waitTillFileAppears(convertToDefaultPath(dst));
+      } catch (TimeoutException e) {
+        throw new HoodieException("Timed out waiting for destination " + dst + " to appear", e);
+      }
+    } finally {
+      updateMetrics(timerCtx);
     }
   }
 
   @Override
   public void copyFromLocalFile(boolean delSrc, boolean overwrite, Path[] srcs, Path dst) throws IOException {
-    fileSystem.copyFromLocalFile(delSrc, overwrite, convertLocalPaths(srcs), convertToDefaultPath(dst));
+    Timer.Context timerCtx = getTimerContext("copy");
     try {
-      consistencyGuard.waitTillFileAppears(convertToDefaultPath(dst));
-    } catch (TimeoutException e) {
-      throw new HoodieException("Timed out waiting for destination " + dst + " to appear", e);
+      fileSystem.copyFromLocalFile(delSrc, overwrite, convertLocalPaths(srcs), convertToDefaultPath(dst));
+      try {
+        consistencyGuard.waitTillFileAppears(convertToDefaultPath(dst));
+      } catch (TimeoutException e) {
+        throw new HoodieException("Timed out waiting for destination " + dst + " to appear", e);
+      }
+    } finally {
+      updateMetrics(timerCtx);
     }
   }
 
   @Override
   public void copyFromLocalFile(boolean delSrc, boolean overwrite, Path src, Path dst) throws IOException {
-    fileSystem.copyFromLocalFile(delSrc, overwrite, convertToLocalPath(src), convertToDefaultPath(dst));
+    Timer.Context timerCtx = getTimerContext("copy");
     try {
-      consistencyGuard.waitTillFileAppears(convertToDefaultPath(dst));
-    } catch (TimeoutException e) {
-      throw new HoodieException("Timed out waiting for destination " + dst + " to appear", e);
+      fileSystem.copyFromLocalFile(delSrc, overwrite, convertToLocalPath(src), convertToDefaultPath(dst));
+      try {
+        consistencyGuard.waitTillFileAppears(convertToDefaultPath(dst));
+      } catch (TimeoutException e) {
+        throw new HoodieException("Timed out waiting for destination " + dst + " to appear", e);
+      }
+    } finally {
+      updateMetrics(timerCtx);
     }
   }
 
   @Override
   public void copyToLocalFile(Path src, Path dst) throws IOException {
-    fileSystem.copyToLocalFile(convertToDefaultPath(src), convertToLocalPath(dst));
+    Timer.Context timerCtx = getTimerContext("copy");
+    try {
+      fileSystem.copyToLocalFile(convertToDefaultPath(src), convertToLocalPath(dst));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public void moveToLocalFile(Path src, Path dst) throws IOException {
-    fileSystem.moveToLocalFile(convertToDefaultPath(src), convertToLocalPath(dst));
+    Timer.Context timerCtx = getTimerContext("move");
+    try {
+      fileSystem.moveToLocalFile(convertToDefaultPath(src), convertToLocalPath(dst));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public void copyToLocalFile(boolean delSrc, Path src, Path dst) throws IOException {
-    fileSystem.copyToLocalFile(delSrc, convertToDefaultPath(src), convertToLocalPath(dst));
+    Timer.Context timerCtx = getTimerContext("copy");
+    try {
+      fileSystem.copyToLocalFile(delSrc, convertToDefaultPath(src), convertToLocalPath(dst));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public void copyToLocalFile(boolean delSrc, Path src, Path dst, boolean useRawLocalFileSystem) throws IOException {
-    fileSystem.copyToLocalFile(delSrc, convertToDefaultPath(src), convertToLocalPath(dst), useRawLocalFileSystem);
+    Timer.Context timerCtx = getTimerContext("copy");
+    try {
+      fileSystem.copyToLocalFile(delSrc, convertToDefaultPath(src), convertToLocalPath(dst), useRawLocalFileSystem);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
@@ -635,52 +942,102 @@ public class HoodieWrapperFileSystem extends FileSystem {
 
   @Override
   public long getUsed() throws IOException {
-    return fileSystem.getUsed();
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.getUsed();
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public long getBlockSize(Path f) throws IOException {
-    return fileSystem.getBlockSize(convertToDefaultPath(f));
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.getBlockSize(convertToDefaultPath(f));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public long getDefaultBlockSize() {
-    return fileSystem.getDefaultBlockSize();
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.getDefaultBlockSize();
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public long getDefaultBlockSize(Path f) {
-    return fileSystem.getDefaultBlockSize(convertToDefaultPath(f));
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.getDefaultBlockSize(convertToDefaultPath(f));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public short getDefaultReplication() {
-    return fileSystem.getDefaultReplication();
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.getDefaultReplication();
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public short getDefaultReplication(Path path) {
-    return fileSystem.getDefaultReplication(convertToDefaultPath(path));
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.getDefaultReplication(convertToDefaultPath(path));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public void access(Path path, FsAction mode) throws IOException {
-    fileSystem.access(convertToDefaultPath(path), mode);
+    Timer.Context timerCtx = getTimerContext("access");
+    try {
+      fileSystem.access(convertToDefaultPath(path), mode);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public void createSymlink(Path target, Path link, boolean createParent) throws IOException {
-    fileSystem.createSymlink(convertToDefaultPath(target), convertToDefaultPath(link), createParent);
+    Timer.Context timerCtx = getTimerContext("create");
+    try {
+      fileSystem.createSymlink(convertToDefaultPath(target), convertToDefaultPath(link), createParent);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FileStatus getFileLinkStatus(Path f) throws IOException {
-    return fileSystem.getFileLinkStatus(convertToDefaultPath(f));
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.getFileLinkStatus(convertToDefaultPath(f));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public boolean supportsSymlinks() {
-    return fileSystem.supportsSymlinks();
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.supportsSymlinks();
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
@@ -690,127 +1047,252 @@ public class HoodieWrapperFileSystem extends FileSystem {
 
   @Override
   public FileChecksum getFileChecksum(Path f) throws IOException {
-    return fileSystem.getFileChecksum(convertToDefaultPath(f));
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.getFileChecksum(convertToDefaultPath(f));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FileChecksum getFileChecksum(Path f, long length) throws IOException {
-    return fileSystem.getFileChecksum(convertToDefaultPath(f), length);
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.getFileChecksum(convertToDefaultPath(f), length);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public void setVerifyChecksum(boolean verifyChecksum) {
-    fileSystem.setVerifyChecksum(verifyChecksum);
+    Timer.Context timerCtx = getTimerContext("set");
+    try {
+      fileSystem.setVerifyChecksum(verifyChecksum);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public void setWriteChecksum(boolean writeChecksum) {
-    fileSystem.setWriteChecksum(writeChecksum);
+    Timer.Context timerCtx = getTimerContext("set");
+    try {
+      fileSystem.setWriteChecksum(writeChecksum);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FsStatus getStatus() throws IOException {
-    return fileSystem.getStatus();
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.getStatus();
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public FsStatus getStatus(Path p) throws IOException {
-    return fileSystem.getStatus(convertToDefaultPath(p));
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.getStatus(convertToDefaultPath(p));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public void setPermission(Path p, FsPermission permission) throws IOException {
-    fileSystem.setPermission(convertToDefaultPath(p), permission);
+    Timer.Context timerCtx = getTimerContext("set");
+    try {
+      fileSystem.setPermission(convertToDefaultPath(p), permission);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public void setOwner(Path p, String username, String groupname) throws IOException {
-    fileSystem.setOwner(convertToDefaultPath(p), username, groupname);
+    Timer.Context timerCtx = getTimerContext("set");
+    try {
+      fileSystem.setOwner(convertToDefaultPath(p), username, groupname);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public void setTimes(Path p, long mtime, long atime) throws IOException {
-    fileSystem.setTimes(convertToDefaultPath(p), mtime, atime);
+    Timer.Context timerCtx = getTimerContext("set");
+    try {
+      fileSystem.setTimes(convertToDefaultPath(p), mtime, atime);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public Path createSnapshot(Path path, String snapshotName) throws IOException {
-    return convertToHoodiePath(fileSystem.createSnapshot(convertToDefaultPath(path), snapshotName));
+    Timer.Context timerCtx = getTimerContext("create");
+    try {
+      return convertToHoodiePath(fileSystem.createSnapshot(convertToDefaultPath(path), snapshotName));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public void renameSnapshot(Path path, String snapshotOldName, String snapshotNewName) throws IOException {
-    fileSystem.renameSnapshot(convertToDefaultPath(path), snapshotOldName, snapshotNewName);
+    Timer.Context timerCtx = getTimerContext("rename");
+    try {
+      fileSystem.renameSnapshot(convertToDefaultPath(path), snapshotOldName, snapshotNewName);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public void deleteSnapshot(Path path, String snapshotName) throws IOException {
-    fileSystem.deleteSnapshot(convertToDefaultPath(path), snapshotName);
+    Timer.Context timerCtx = getTimerContext("delete");
+    try {
+      fileSystem.deleteSnapshot(convertToDefaultPath(path), snapshotName);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public void modifyAclEntries(Path path, List<AclEntry> aclSpec) throws IOException {
-    fileSystem.modifyAclEntries(convertToDefaultPath(path), aclSpec);
+    Timer.Context timerCtx = getTimerContext("set");
+    try {
+      fileSystem.modifyAclEntries(convertToDefaultPath(path), aclSpec);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public void removeAclEntries(Path path, List<AclEntry> aclSpec) throws IOException {
-    fileSystem.removeAclEntries(convertToDefaultPath(path), aclSpec);
+    Timer.Context timerCtx = getTimerContext("set");
+    try {
+      fileSystem.removeAclEntries(convertToDefaultPath(path), aclSpec);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public void removeDefaultAcl(Path path) throws IOException {
-    fileSystem.removeDefaultAcl(convertToDefaultPath(path));
+    Timer.Context timerCtx = getTimerContext("set");
+    try {
+      fileSystem.removeDefaultAcl(convertToDefaultPath(path));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public void removeAcl(Path path) throws IOException {
-    fileSystem.removeAcl(convertToDefaultPath(path));
+    Timer.Context timerCtx = getTimerContext("set");
+    try {
+      fileSystem.removeAcl(convertToDefaultPath(path));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public void setAcl(Path path, List<AclEntry> aclSpec) throws IOException {
-    fileSystem.setAcl(convertToDefaultPath(path), aclSpec);
+    Timer.Context timerCtx = getTimerContext("set");
+    try {
+      fileSystem.setAcl(convertToDefaultPath(path), aclSpec);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public AclStatus getAclStatus(Path path) throws IOException {
-    return fileSystem.getAclStatus(convertToDefaultPath(path));
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.getAclStatus(convertToDefaultPath(path));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public void setXAttr(Path path, String name, byte[] value) throws IOException {
-    fileSystem.setXAttr(convertToDefaultPath(path), name, value);
+    Timer.Context timerCtx = getTimerContext("set");
+    try {
+      fileSystem.setXAttr(convertToDefaultPath(path), name, value);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public void setXAttr(Path path, String name, byte[] value, EnumSet<XAttrSetFlag> flag) throws IOException {
-    fileSystem.setXAttr(convertToDefaultPath(path), name, value, flag);
+    Timer.Context timerCtx = getTimerContext("set");
+    try {
+      fileSystem.setXAttr(convertToDefaultPath(path), name, value, flag);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public byte[] getXAttr(Path path, String name) throws IOException {
-    return fileSystem.getXAttr(convertToDefaultPath(path), name);
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.getXAttr(convertToDefaultPath(path), name);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public Map<String, byte[]> getXAttrs(Path path) throws IOException {
-    return fileSystem.getXAttrs(convertToDefaultPath(path));
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.getXAttrs(convertToDefaultPath(path));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public Map<String, byte[]> getXAttrs(Path path, List<String> names) throws IOException {
-    return fileSystem.getXAttrs(convertToDefaultPath(path), names);
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.getXAttrs(convertToDefaultPath(path), names);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public List<String> listXAttrs(Path path) throws IOException {
-    return fileSystem.listXAttrs(convertToDefaultPath(path));
+    Timer.Context timerCtx = getTimerContext("get");
+    try {
+      return fileSystem.listXAttrs(convertToDefaultPath(path));
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
   public void removeXAttr(Path path, String name) throws IOException {
-    fileSystem.removeXAttr(convertToDefaultPath(path), name);
+    Timer.Context timerCtx = getTimerContext("set");
+    try {
+      fileSystem.removeXAttr(convertToDefaultPath(path), name);
+    } finally {
+      updateMetrics(timerCtx);
+    }
   }
 
   @Override
@@ -882,4 +1364,56 @@ public class HoodieWrapperFileSystem extends FileSystem {
   public FileSystem getFileSystem() {
     return fileSystem;
   }
+
+  /**
+   * Returns a {@link Timer.Context} which can be used to time an operation.
+   *
+   * @param operationName The name of the operation which is being timed.
+   *                      The timer itself is registered with the name
+   *                      <metricPrefix>.<operationName>
+   * @return A {@link Timer.Context} or null if metrics are disabled
+   */
+  private Timer.Context getTimerContext(String operationName) {
+    if (metrics != null) {
+      Timer timer = timerMap.get(operationName);
+      if (timer == null) {
+        timer = Metrics.createTimer(metricPrefix + operationName);
+        timerMap.putIfAbsent(operationName, timer);
+      }
+
+      return timer.time();
+    }
+    return null;
+  }
+
+  /**
+   * Update the time spent on an operation.
+   *
+   * @param timerCtx A {@link Timer.Context} returned by getTimerContext. May be null
+   *                 if metrics are disabled.
+   */
+  private void updateMetrics(Timer.Context timerCtx) {
+    if (timerCtx != null) {
+      timerCtx.stop();
+    }
+  }
+
+  /**
+   * Update the time spent on an operation and an associated {@link Counter}.
+   *
+   * @param timerCtx A {@link Timer.Context} returned by getTimerContext. May be null
+   *                 if metrics are disabled.
+   * @param counterName Name of the Counter to increment
+   * @param increment The value to increment the Counter by.
+   */
+  private void updateMetrics(Timer.Context timerCtx, String counterName,
+                             long increment) {
+    updateMetrics(timerCtx);
+
+    if (metrics != null) {
+      Counter counter = Metrics.createCounter(counterName);
+      counter.inc(increment);
+    }
+  }
+
 }

@@ -76,7 +76,7 @@ public abstract class AbstractHoodieWriteClient<T extends HoodieRecordPayload> e
   protected AbstractHoodieWriteClient(JavaSparkContext jsc, HoodieIndex index, HoodieWriteConfig clientConfig,
       Option<EmbeddedTimelineService> timelineServer) {
     super(jsc, clientConfig, timelineServer);
-    this.metrics = new HoodieMetrics(config, config.getTableName());
+    this.metrics = new HoodieMetrics(config.getMetricsConfig(), config.getTableName());
     this.index = index;
   }
 

@@ -207,7 +207,8 @@ public class DeltaSync implements Serializable {
    */
   public Option<String> syncOnce() throws Exception {
     Option<String> scheduledCompaction = Option.empty();
-    HoodieDeltaStreamerMetrics metrics = new HoodieDeltaStreamerMetrics(getHoodieClientConfig(schemaProvider));
+    HoodieWriteConfig config = getHoodieClientConfig(schemaProvider);
+    HoodieDeltaStreamerMetrics metrics = new HoodieDeltaStreamerMetrics(config.getMetricsConfig(), config.getTableName());
     Timer.Context overallTimerContext = metrics.getOverallTimerContext();
 
     // Refresh Timeline

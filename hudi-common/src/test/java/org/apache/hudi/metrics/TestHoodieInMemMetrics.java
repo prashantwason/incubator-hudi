@@ -19,7 +19,7 @@
 package org.apache.hudi.metrics;
 
 import org.apache.hudi.common.model.HoodieCommitMetadata;
-import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.config.HoodieMetricsConfig;
 
 import com.codahale.metrics.Timer;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,16 +34,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-public class TestHoodieMetrics {
+public class TestHoodieInMemMetrics {
 
   private HoodieMetrics metrics;
 
   @BeforeEach
   public void start() {
-    HoodieWriteConfig config = mock(HoodieWriteConfig.class);
-    when(config.isMetricsOn()).thenReturn(true);
-    when(config.getMetricsReporterType()).thenReturn(MetricsReporterType.INMEMORY);
-    metrics = new HoodieMetrics(config, "raw_table");
+    HoodieMetricsConfig metricConfig = mock(HoodieMetricsConfig.class);
+    when(metricConfig.isMetricsOn()).thenReturn(true);
+    when(metricConfig.getMetricsReporterType()).thenReturn(MetricsReporterType.INMEMORY);
+    metrics = new HoodieMetrics(metricConfig, "raw_table");
   }
 
   @Test

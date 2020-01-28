@@ -127,7 +127,7 @@ public class HoodieWriteClient<T extends HoodieRecordPayload> extends AbstractHo
   public HoodieWriteClient(JavaSparkContext jsc, HoodieWriteConfig clientConfig, boolean rollbackPending,
       HoodieIndex index, Option<EmbeddedTimelineService> timelineService) {
     super(jsc, index, clientConfig, timelineService);
-    this.metrics = new HoodieMetrics(config, config.getTableName());
+    this.metrics = new HoodieMetrics(config.getMetricsConfig(), config.getTableName());
     this.rollbackPending = rollbackPending;
   }
 

@@ -20,7 +20,7 @@ package org.apache.hudi.metrics;
 
 import org.apache.hudi.common.model.HoodieCommitMetadata;
 import org.apache.hudi.common.table.timeline.HoodieTimeline;
-import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.config.HoodieMetricsConfig;
 
 import com.codahale.metrics.Timer;
 import org.apache.log4j.LogManager;
@@ -40,7 +40,7 @@ public class HoodieMetrics {
   public String finalizeTimerName = null;
   public String compactionTimerName = null;
   public String indexTimerName = null;
-  private HoodieWriteConfig config;
+  private HoodieMetricsConfig metricsConfig;
   private String tableName;
   private Timer rollbackTimer = null;
   private Timer cleanTimer = null;
@@ -50,11 +50,11 @@ public class HoodieMetrics {
   private Timer compactionTimer = null;
   private Timer indexTimer = null;
 
-  public HoodieMetrics(HoodieWriteConfig config, String tableName) {
-    this.config = config;
+  public HoodieMetrics(HoodieMetricsConfig metricsConfig, String tableName) {
+    this.metricsConfig = metricsConfig;
     this.tableName = tableName;
-    if (config.isMetricsOn()) {
-      Metrics.init(config);
+    if (metricsConfig.isMetricsOn()) {
+      Metrics.init(metricsConfig);
       this.rollbackTimerName = getMetricsName("timer", HoodieTimeline.ROLLBACK_ACTION);
       this.cleanTimerName = getMetricsName("timer", HoodieTimeline.CLEAN_ACTION);
       this.commitTimerName = getMetricsName("timer", HoodieTimeline.COMMIT_ACTION);
@@ -66,53 +66,53 @@ public class HoodieMetrics {
   }
 
   private Timer createTimer(String name) {
-    return config.isMetricsOn() ? Metrics.getInstance().getRegistry().timer(name) : null;
+    return metricsConfig.isMetricsOn() ? Metrics.createTimer(name) : null;
   }
 
   public Timer.Context getRollbackCtx() {
-    if (config.isMetricsOn() && rollbackTimer == null) {
+    if (metricsConfig.isMetricsOn() && rollbackTimer == null) {
       rollbackTimer = createTimer(rollbackTimerName);
     }
     return rollbackTimer == null ? null : rollbackTimer.time();
   }
 
   public Timer.Context getCompactionCtx() {
-    if (config.isMetricsOn() && compactionTimer == null) {
+    if (metricsConfig.isMetricsOn() && compactionTimer == null) {
       compactionTimer = createTimer(commitTimerName);
     }
     return compactionTimer == null ? null : compactionTimer.time();
   }
 
   public Timer.Context getCleanCtx() {
-    if (config.isMetricsOn() && cleanTimer == null) {
+    if (metricsConfig.isMetricsOn() && cleanTimer == null) {
       cleanTimer = createTimer(cleanTimerName);
     }
     return cleanTimer == null ? null : cleanTimer.time();
   }
 
   public Timer.Context getCommitCtx() {
-    if (config.isMetricsOn() && commitTimer == null) {
+    if (metricsConfig.isMetricsOn() && commitTimer == null) {
       commitTimer = createTimer(commitTimerName);
     }
     return commitTimer == null ? null : commitTimer.time();
   }
 
   public Timer.Context getFinalizeCtx() {
-    if (config.isMetricsOn() && finalizeTimer == null) {
+    if (metricsConfig.isMetricsOn() && finalizeTimer == null) {
       finalizeTimer = createTimer(finalizeTimerName);
     }
     return finalizeTimer == null ? null : finalizeTimer.time();
   }
 
   public Timer.Context getDeltaCommitCtx() {
-    if (config.isMetricsOn() && deltaCommitTimer == null) {
+    if (metricsConfig.isMetricsOn() && deltaCommitTimer == null) {
       deltaCommitTimer = createTimer(deltaCommitTimerName);
     }
     return deltaCommitTimer == null ? null : deltaCommitTimer.time();
   }
 
   public Timer.Context getIndexCtx() {
-    if (config.isMetricsOn() && indexTimer == null) {
+    if (metricsConfig.isMetricsOn() && indexTimer == null) {
       indexTimer = createTimer(indexTimerName);
     }
     return indexTimer == null ? null : indexTimer.time();
@@ -120,7 +120,7 @@ public class HoodieMetrics {
 
   public void updateCommitMetrics(long commitEpochTimeInMs, long durationInMs, HoodieCommitMetadata metadata,
       String actionType) {
-    if (config.isMetricsOn()) {
+    if (metricsConfig.isMetricsOn()) {
       long totalPartitionsWritten = metadata.fetchTotalPartitionsWritten();
       long totalFilesInsert = metadata.fetchTotalFilesInsert();
       long totalFilesUpdate = metadata.fetchTotalFilesUpdated();
@@ -153,7 +153,7 @@ public class HoodieMetrics {
   }
 
   public void updateRollbackMetrics(long durationInMs, long numFilesDeleted) {
-    if (config.isMetricsOn()) {
+    if (metricsConfig.isMetricsOn()) {
       LOG.info(
           String.format("Sending rollback metrics (duration=%d, numFilesDeleted=%d)", durationInMs, numFilesDeleted));
       Metrics.registerGauge(getMetricsName("rollback", "duration"), durationInMs);
@@ -162,7 +162,7 @@ public class HoodieMetrics {
   }
 
   public void updateCleanMetrics(long durationInMs, int numFilesDeleted) {
-    if (config.isMetricsOn()) {
+    if (metricsConfig.isMetricsOn()) {
       LOG.info(
           String.format("Sending clean metrics (duration=%d, numFilesDeleted=%d)", durationInMs, numFilesDeleted));
       Metrics.registerGauge(getMetricsName("clean", "duration"), durationInMs);
@@ -171,7 +171,7 @@ public class HoodieMetrics {
   }
 
   public void updateFinalizeWriteMetrics(long durationInMs, long numFilesFinalized) {
-    if (config.isMetricsOn()) {
+    if (metricsConfig.isMetricsOn()) {
       LOG.info(String.format("Sending finalize write metrics (duration=%d, numFilesFinalized=%d)", durationInMs,
           numFilesFinalized));
       Metrics.registerGauge(getMetricsName("finalize", "duration"), durationInMs);
@@ -180,14 +180,14 @@ public class HoodieMetrics {
   }
 
   public void updateIndexMetrics(final String action, final long durationInMs) {
-    if (config.isMetricsOn()) {
+    if (metricsConfig.isMetricsOn()) {
       LOG.info(String.format("Sending index metrics (%s.duration, %d)", action, durationInMs));
       Metrics.registerGauge(getMetricsName("index", String.format("%s.duration", action)), durationInMs);
     }
   }
 
   String getMetricsName(String action, String metric) {
-    return config == null ? null : String.format("%s.%s.%s", tableName, action, metric);
+    return metricsConfig == null ? null : String.format("%s.%s.%s", tableName, action, metric);
   }
 
   /**

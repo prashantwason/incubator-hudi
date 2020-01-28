@@ -27,9 +27,7 @@ import org.apache.hudi.common.table.timeline.versioning.TimelineLayoutVersion;
 import org.apache.hudi.common.table.view.FileSystemViewStorageConfig;
 import org.apache.hudi.common.util.ReflectionUtils;
 import org.apache.hudi.index.HoodieIndex;
-import org.apache.hudi.metrics.MetricsReporterType;
 import org.apache.hudi.table.compact.strategy.CompactionStrategy;
-
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 
 import javax.annotation.concurrent.Immutable;
@@ -468,32 +466,8 @@ public class HoodieWriteConfig extends DefaultHoodieConfig {
   /**
    * metrics properties.
    */
-  public boolean isMetricsOn() {
-    return Boolean.parseBoolean(props.getProperty(HoodieMetricsConfig.METRICS_ON));
-  }
-
-  public MetricsReporterType getMetricsReporterType() {
-    return MetricsReporterType.valueOf(props.getProperty(HoodieMetricsConfig.METRICS_REPORTER_TYPE));
-  }
-
-  public String getGraphiteServerHost() {
-    return props.getProperty(HoodieMetricsConfig.GRAPHITE_SERVER_HOST);
-  }
-
-  public int getGraphiteServerPort() {
-    return Integer.parseInt(props.getProperty(HoodieMetricsConfig.GRAPHITE_SERVER_PORT));
-  }
-
-  public String getGraphiteMetricPrefix() {
-    return props.getProperty(HoodieMetricsConfig.GRAPHITE_METRIC_PREFIX);
-  }
-
-  public String getJmxHost() {
-    return props.getProperty(HoodieMetricsConfig.JMX_HOST);
-  }
-
-  public String getJmxPort() {
-    return props.getProperty(HoodieMetricsConfig.JMX_PORT);
+  public HoodieMetricsConfig getMetricsConfig() {
+    return HoodieMetricsConfig.newBuilder().fromProperties(props).build();
   }
 
   /**

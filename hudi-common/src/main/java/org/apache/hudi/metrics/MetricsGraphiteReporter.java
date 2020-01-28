@@ -18,7 +18,7 @@
 
 package org.apache.hudi.metrics;
 
-import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.config.HoodieMetricsConfig;
 
 import com.codahale.metrics.MetricFilter;
 import com.codahale.metrics.MetricRegistry;
@@ -39,11 +39,11 @@ public class MetricsGraphiteReporter extends MetricsReporter {
   private static final Logger LOG = LogManager.getLogger(MetricsGraphiteReporter.class);
   private final MetricRegistry registry;
   private final GraphiteReporter graphiteReporter;
-  private final HoodieWriteConfig config;
+  private final HoodieMetricsConfig config;
   private String serverHost;
   private int serverPort;
 
-  public MetricsGraphiteReporter(HoodieWriteConfig config, MetricRegistry registry) {
+  public MetricsGraphiteReporter(HoodieMetricsConfig config, MetricRegistry registry) {
     this.registry = registry;
     this.config = config;
 
@@ -61,7 +61,7 @@ public class MetricsGraphiteReporter extends MetricsReporter {
   @Override
   public void start() {
     if (graphiteReporter != null) {
-      graphiteReporter.start(30, TimeUnit.SECONDS);
+      graphiteReporter.start(config.getMetricsPeriod(), TimeUnit.SECONDS);
     } else {
       LOG.error("Cannot start as the graphiteReporter is null.");
     }

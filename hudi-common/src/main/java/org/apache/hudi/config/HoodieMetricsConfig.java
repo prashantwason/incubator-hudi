@@ -39,6 +39,8 @@ public class HoodieMetricsConfig extends DefaultHoodieConfig {
   public static final boolean DEFAULT_METRICS_ON = false;
   public static final String METRICS_REPORTER_TYPE = METRIC_PREFIX + ".reporter.type";
   public static final MetricsReporterType DEFAULT_METRICS_REPORTER_TYPE = MetricsReporterType.GRAPHITE;
+  public static final String METRICS_PERIOD = METRIC_PREFIX + ".period";
+  public static final int DEFAULT_METRICS_PERIOD = 30; // seconds
 
   // Graphite
   public static final String GRAPHITE_PREFIX = METRIC_PREFIX + ".graphite";
@@ -92,6 +94,11 @@ public class HoodieMetricsConfig extends DefaultHoodieConfig {
       return this;
     }
 
+    public Builder withMetricsPeriod(int period) {
+      props.setProperty(METRICS_PERIOD, String.valueOf(period));
+      return this;
+    }
+
     public Builder toGraphiteHost(String host) {
       props.setProperty(GRAPHITE_SERVER_HOST, host);
       return this;
@@ -120,6 +127,7 @@ public class HoodieMetricsConfig extends DefaultHoodieConfig {
     public HoodieMetricsConfig build() {
       HoodieMetricsConfig config = new HoodieMetricsConfig(props);
       setDefaultOnCondition(props, !props.containsKey(METRICS_ON), METRICS_ON, String.valueOf(DEFAULT_METRICS_ON));
+      setDefaultOnCondition(props, !props.containsKey(METRICS_PERIOD), METRICS_PERIOD, String.valueOf(DEFAULT_METRICS_PERIOD));
       setDefaultOnCondition(props, !props.containsKey(METRICS_REPORTER_TYPE), METRICS_REPORTER_TYPE,
           DEFAULT_METRICS_REPORTER_TYPE.name());
       setDefaultOnCondition(props, !props.containsKey(GRAPHITE_SERVER_HOST), GRAPHITE_SERVER_HOST,
@@ -134,4 +142,38 @@ public class HoodieMetricsConfig extends DefaultHoodieConfig {
     }
   }
 
+  /**
+   * metrics properties.
+   */
+  public boolean isMetricsOn() {
+    return Boolean.parseBoolean(props.getProperty(HoodieMetricsConfig.METRICS_ON));
+  }
+
+  public MetricsReporterType getMetricsReporterType() {
+    return MetricsReporterType.valueOf(props.getProperty(HoodieMetricsConfig.METRICS_REPORTER_TYPE));
+  }
+
+  public int getMetricsPeriod() {
+    return Integer.parseInt(props.getProperty(HoodieMetricsConfig.METRICS_PERIOD));
+  }
+
+  public String getGraphiteServerHost() {
+    return props.getProperty(HoodieMetricsConfig.GRAPHITE_SERVER_HOST);
+  }
+
+  public int getGraphiteServerPort() {
+    return Integer.parseInt(props.getProperty(HoodieMetricsConfig.GRAPHITE_SERVER_PORT));
+  }
+
+  public String getGraphiteMetricPrefix() {
+    return props.getProperty(HoodieMetricsConfig.GRAPHITE_METRIC_PREFIX);
+  }
+
+  public String getJmxHost() {
+    return props.getProperty(HoodieMetricsConfig.JMX_HOST);
+  }
+
+  public String getJmxPort() {
+    return props.getProperty(HoodieMetricsConfig.JMX_PORT);
+  }
 }

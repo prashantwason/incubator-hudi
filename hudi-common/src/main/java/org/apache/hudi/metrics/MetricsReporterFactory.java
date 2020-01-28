@@ -18,7 +18,7 @@
 
 package org.apache.hudi.metrics;
 
-import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.config.HoodieMetricsConfig;
 
 import com.codahale.metrics.MetricRegistry;
 import org.apache.log4j.LogManager;
@@ -31,7 +31,7 @@ public class MetricsReporterFactory {
 
   private static final Logger LOG = LogManager.getLogger(MetricsReporterFactory.class);
 
-  public static MetricsReporter createReporter(HoodieWriteConfig config, MetricRegistry registry) {
+  public static MetricsReporter createReporter(HoodieMetricsConfig config, MetricRegistry registry) {
     MetricsReporterType type = config.getMetricsReporterType();
     MetricsReporter reporter = null;
     switch (type) {
@@ -43,6 +43,9 @@ public class MetricsReporterFactory {
         break;
       case JMX:
         reporter = new JmxMetricsReporter(config, registry);
+        break;
+      case CONSOLE:
+        reporter = new MetricsConsoleReporter(config, registry);
         break;
       default:
         LOG.error("Reporter type[" + type + "] is not supported.");
