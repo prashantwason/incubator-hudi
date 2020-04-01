@@ -1,0 +1,78 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+{
+ "namespace": "example.avro",
+ "type": "record",
+ "name": "SimpleLarge",
+ "fields": [
+     {"name": "s1", "type": "string"},
+     {"name": "s2", "type": "string"},
+     {"name": "s3", "type": "string"},
+     {"name": "s4", "type": "string"},
+     {"name": "s5", "type": "string"},
+     {"name": "s6", "type": "string"},
+     {"name": "s7", "type": "string"},
+     {"name": "s8", "type": "string"},
+     {"name": "s9", "type": "string"},
+     {"name": "s10", "type": "string"},
+
+     {"name": "i1", "type": "int"},
+     {"name": "i2", "type": "int"},
+     {"name": "i3", "type": "int"},
+     {"name": "i4", "type": "int"},
+     {"name": "i5", "type": "int"},
+     {"name": "i6", "type": "int"},
+     {"name": "i7", "type": "int"},
+     {"name": "i8", "type": "int"},
+     {"name": "i9", "type": "int"},
+     {"name": "i10", "type": "int"},
+
+     {"name": "d1", "type": "double"},
+     {"name": "d2", "type": "double"},
+     {"name": "d3", "type": "double"},
+     {"name": "d4", "type": "double"},
+     {"name": "d5", "type": "double"},
+     {"name": "d6", "type": "double"},
+     {"name": "d7", "type": "double"},
+     {"name": "d8", "type": "double"},
+     {"name": "d9", "type": "double"},
+     {"name": "d10", "type": "double"},
+
+     {"name": "b1", "type": "boolean"},
+     {"name": "b2", "type": "boolean"},
+     {"name": "b3", "type": "boolean"},
+     {"name": "b4", "type": "boolean"},
+     {"name": "b5", "type": "boolean"},
+     {"name": "b6", "type": "boolean"},
+     {"name": "b7", "type": "boolean"},
+     {"name": "b8", "type": "boolean"},
+     {"name": "b9", "type": "boolean"},
+     {"name": "b10", "type": "boolean"},
+
+     {"name": "l1", "type": "long"},
+     {"name": "l2", "type": "long"},
+     {"name": "l3", "type": "long"},
+     {"name": "l4", "type": "long"},
+     {"name": "l5", "type": "long"},
+     {"name": "l6", "type": "long"},
+     {"name": "l7", "type": "long"},
+     {"name": "l8", "type": "long"},
+     {"name": "l9", "type": "long"},
+     {"name": "l10", "type": "long"}
+ ]
+}

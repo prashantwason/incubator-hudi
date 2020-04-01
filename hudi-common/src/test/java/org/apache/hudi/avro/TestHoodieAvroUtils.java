@@ -19,11 +19,16 @@
 package org.apache.hudi.avro;
 
 import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericData;
+import org.apache.avro.generic.GenericRecord;
+import org.apache.hudi.common.util.SchemaTestUtil;
 import org.codehaus.jackson.JsonNode;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.io.IOException;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Tests hoodie avro utilities.
@@ -56,5 +61,29 @@ public class TestHoodieAvroUtils {
       }
     }
     Assert.assertTrue("column pii_col doesn't show up", piiPresent);
+  }
+
+  public void testRewriteRecordPerformance() throws IOException {
+    Schema origSchema = new Schema.Parser().parse(TestHoodieAvroUtils.class.getResourceAsStream("/simple-large.avsc"));
+    Schema writerSchema = HoodieAvroUtils.addMetadataFields(origSchema);
+
+    // Construct a record from the origSchema
+    GenericRecord origRecord = new GenericData.Record(origSchema);
+    for (int i = 1; i <= 10; ++i) {
+      origRecord.put("s" + i, "string_value");
+      origRecord.put("i" + i, i);
+      origRecord.put("l" + i, (long)i);
+      origRecord.put("d" + i, (double)i);
+      origRecord.put("b" + i, i%2 == 0);
+    }
+
+    int runs = 50*1000*1000;
+    long t1 = System.currentTimeMillis();
+    for (int i = 0; i < runs; ++i) {
+      GenericRecord newRecord = HoodieAvroUtils.rewriteRecord(origRecord, writerSchema);
+    }
+    long t2 = System.currentTimeMillis();
+
+    System.out.format("Conversion takes total %d msec (%.3f usec / record)%n", t2 - t1, (float)(1000 * (t2 - t1)) / runs);
   }
 }

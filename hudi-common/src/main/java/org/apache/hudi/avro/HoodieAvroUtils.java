@@ -44,6 +44,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -114,23 +115,42 @@ public class HoodieAvroUtils {
     Schema.Field fileNameField =
         new Schema.Field(HoodieRecord.FILENAME_METADATA_FIELD, METADATA_FIELD_SCHEMA, "", NullNode.getInstance());
 
-    parentFields.add(commitTimeField);
-    parentFields.add(commitSeqnoField);
-    parentFields.add(recordKeyField);
-    parentFields.add(partitionPathField);
-    parentFields.add(fileNameField);
+    Map<String, Schema.Field> metadataFields = new HashMap<>();
+    metadataFields.put(commitTimeField.name(), commitTimeField);
+    metadataFields.put(commitSeqnoField.name(), commitSeqnoField);
+    metadataFields.put(recordKeyField.name(), recordKeyField);
+    metadataFields.put(partitionPathField.name(), partitionPathField);
+    metadataFields.put(fileNameField.name(), fileNameField);
+
+    int fieldIndex = 0;
     for (Schema.Field field : schema.getFields()) {
+      assert field.pos() == fieldIndex++;
       if (!isMetadataField(field.name())) {
         Schema.Field newField = new Schema.Field(field.name(), field.schema(), field.doc(), field.defaultValue());
         for (Map.Entry<String, JsonNode> prop : field.getJsonProps().entrySet()) {
           newField.addProp(prop.getKey(), prop.getValue());
         }
         parentFields.add(newField);
+      } else {
+        Schema.Field newField = metadataFields.remove(field.name());
+        assert newField != null;
+        parentFields.add(newField);
       }
+    }
+
+    for (Schema.Field newField : metadataFields.values()) {
+      parentFields.add(newField);
     }
 
     Schema mergedSchema = Schema.createRecord(schema.getName(), schema.getDoc(), schema.getNamespace(), false);
     mergedSchema.setFields(parentFields);
+
+    // Ensure that the field positions remain the same in original and merged schemas
+    for (Schema.Field field : schema.getFields()) {
+      Schema.Field mergedField = mergedSchema.getField(field.name());
+      assert field.pos() == mergedField.pos();
+    }
+
     return mergedSchema;
   }
 
@@ -205,7 +225,7 @@ public class HoodieAvroUtils {
   private static GenericRecord rewrite(GenericRecord record, Schema schemaWithFields, Schema newSchema) {
     GenericRecord newRecord = new GenericData.Record(newSchema);
     for (Schema.Field f : schemaWithFields.getFields()) {
-      newRecord.put(f.name(), record.get(f.name()));
+      newRecord.put(f.pos(), record.get(f.pos()));
     }
     if (!GenericData.get().validate(newSchema, newRecord)) {
       throw new SchemaCompatabilityException(
