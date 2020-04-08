@@ -25,4 +25,4 @@ if [ -z "$CLIENT_JAR" ]; then
   echo "Client jar location not set, please set it in conf/hudi-env.sh"
 fi
 
-java -cp ${HADOOP_CONF_DIR}:${SPARK_CONF_DIR}:$DIR/target/lib/*:$HOODIE_JAR:${CLIENT_JAR} -DSPARK_CONF_DIR=${SPARK_CONF_DIR} -DHADOOP_CONF_DIR=${HADOOP_CONF_DIR} org.springframework.shell.Bootstrap $@
+java -cp ${HADOOP_CONF_DIR}:${SPARK_CONF_DIR}:$DIR/target/lib/*:$HOODIE_JAR:${CLIENT_JAR} -DSPARK_CONF_DIR=${SPARK_CONF_DIR} -DHADOOP_CONF_DIR=${HADOOP_CONF_DIR} -Dlogging.config=/home/pwason/incubator-hudi/hudi-cli/src/test/resources/log4j-surefire.properties  org.springframework.shell.Bootstrap $@

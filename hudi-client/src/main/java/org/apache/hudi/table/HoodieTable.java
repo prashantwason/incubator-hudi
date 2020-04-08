@@ -31,6 +31,7 @@ import org.apache.hudi.common.fs.ConsistencyGuard;
 import org.apache.hudi.common.fs.ConsistencyGuard.FileVisibility;
 import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.fs.FailSafeConsistencyGuard;
+import org.apache.hudi.common.metadata.MetadataStore;
 import org.apache.hudi.common.model.HoodieRecord;
 import org.apache.hudi.common.model.HoodieRecordPayload;
 import org.apache.hudi.common.model.HoodieWriteStat;
@@ -39,8 +40,10 @@ import org.apache.hudi.common.table.timeline.HoodieActiveTimeline;
 import org.apache.hudi.common.table.timeline.HoodieInstant;
 import org.apache.hudi.common.table.timeline.HoodieTimeline;
 import org.apache.hudi.common.table.timeline.TimelineMetadataUtils;
+import org.apache.hudi.common.table.view.AbstractTableFileSystemView;
 import org.apache.hudi.common.table.view.FileSystemViewManager;
 import org.apache.hudi.common.table.view.HoodieTableFileSystemView;
+import org.apache.hudi.common.table.view.MetaStoreFileSystemView;
 import org.apache.hudi.common.table.view.SyncableFileSystemView;
 import org.apache.hudi.common.table.view.TableFileSystemView;
 import org.apache.hudi.common.table.view.TableFileSystemView.BaseFileOnlyView;
@@ -171,6 +174,15 @@ public abstract class HoodieTable<T extends HoodieRecordPayload> implements Seri
   }
 
   /**
+   * Get a view of the file system which uses MetadataStore.
+   */
+  public SyncableFileSystemView getMetadataView() {
+    AbstractTableFileSystemView view = (AbstractTableFileSystemView) getViewManager().getFileSystemView(metaClient.getBasePath());
+    MetadataStore metaStore = MetadataStore.get(metaClient.getBasePath(), metaClient.getHadoopConf());
+    return new MetaStoreFileSystemView(metaStore, metaClient, view);
+  }
+
+  /**
    * Get only the completed (no-inflights) commit + deltacommit timeline.
    */
   public HoodieTimeline getCompletedCommitsTimeline() {
@@ -262,7 +274,7 @@ public abstract class HoodieTable<T extends HoodieRecordPayload> implements Seri
 
   /**
    * Schedule compaction for the instant time.
-   * 
+   *
    * @param jsc Spark Context
    * @param instantTime Instant Time for scheduling compaction
    * @return
@@ -281,7 +293,7 @@ public abstract class HoodieTable<T extends HoodieRecordPayload> implements Seri
 
   /**
    * Generates list of files that are eligible for cleaning.
-   * 
+   *
    * @param jsc Java Spark Context
    * @return Cleaner Plan containing list of files to be deleted.
    */
@@ -289,7 +301,7 @@ public abstract class HoodieTable<T extends HoodieRecordPayload> implements Seri
 
   /**
    * Cleans the files listed in the cleaner plan associated with clean instant.
-   * 
+   *
    * @param jsc Java Spark Context
    * @param cleanInstant Clean Instant
    * @param cleanerPlan Cleaner Plan
@@ -320,7 +332,7 @@ public abstract class HoodieTable<T extends HoodieRecordPayload> implements Seri
 
   /**
    * Delete Marker directory corresponding to an instant.
-   * 
+   *
    * @param instantTs Instant Time
    */
   protected void deleteMarkerDir(String instantTs) {
@@ -417,7 +429,7 @@ public abstract class HoodieTable<T extends HoodieRecordPayload> implements Seri
 
   /**
    * Ensures all files passed either appear or disappear.
-   * 
+   *
    * @param jsc JavaSparkContext
    * @param groupByPartition Files grouped by partition
    * @param visibility Appear/Disappear
