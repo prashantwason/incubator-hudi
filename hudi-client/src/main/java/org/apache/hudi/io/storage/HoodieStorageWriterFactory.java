@@ -24,6 +24,7 @@ import org.apache.hudi.common.bloom.BloomFilter;
 import org.apache.hudi.common.bloom.BloomFilterFactory;
 import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.model.HoodieRecordPayload;
+import org.apache.hudi.common.table.HoodieTableConfig;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.table.HoodieTable;
 
@@ -34,18 +35,21 @@ import org.apache.parquet.avro.AvroSchemaConverter;
 
 import java.io.IOException;
 
-import static org.apache.hudi.common.model.HoodieFileFormat.HOODIE_LOG;
 import static org.apache.hudi.common.model.HoodieFileFormat.PARQUET;
+import static org.apache.hudi.common.model.HoodieFileFormat.HFILE;
 
 public class HoodieStorageWriterFactory {
 
   public static <T extends HoodieRecordPayload, R extends IndexedRecord> HoodieStorageWriter<R> getStorageWriter(
       String instantTime, Path path, HoodieTable<T> hoodieTable, HoodieWriteConfig config, Schema schema,
       SparkTaskContextSupplier sparkTaskContextSupplier) throws IOException {
-    final String name = path.getName();
-    final String extension = FSUtils.isLogFile(path) ? HOODIE_LOG.getFileExtension() : FSUtils.getFileExtension(name);
+    final HoodieTableConfig tableConfig = hoodieTable.getMetaClient().getTableConfig();
+    final String extension = FSUtils.isLogFile(path) ? tableConfig.getLogFileFormat().getFileExtension() : tableConfig.getBaseFileFormat().getFileExtension();
     if (PARQUET.getFileExtension().equals(extension)) {
       return newParquetStorageWriter(instantTime, path, config, schema, hoodieTable, sparkTaskContextSupplier);
+    }
+    if (HFILE.getFileExtension().equals(extension)) {
+      return newHFileStorageWriter(instantTime, path, config, schema, hoodieTable, sparkTaskContextSupplier);
     }
     throw new UnsupportedOperationException(extension + " format not supported yet.");
   }
@@ -53,10 +57,7 @@ public class HoodieStorageWriterFactory {
   private static <T extends HoodieRecordPayload, R extends IndexedRecord> HoodieStorageWriter<R> newParquetStorageWriter(
       String instantTime, Path path, HoodieWriteConfig config, Schema schema, HoodieTable hoodieTable,
       SparkTaskContextSupplier sparkTaskContextSupplier) throws IOException {
-    BloomFilter filter = BloomFilterFactory
-        .createBloomFilter(config.getBloomFilterNumEntries(), config.getBloomFilterFPP(),
-            config.getDynamicBloomFilterMaxNumEntries(),
-            config.getBloomFilterType());
+    BloomFilter filter = createBloomFilter(config);
     HoodieAvroWriteSupport writeSupport =
         new HoodieAvroWriteSupport(new AvroSchemaConverter().convert(schema), schema, filter);
 
@@ -65,5 +66,22 @@ public class HoodieStorageWriterFactory {
         hoodieTable.getHadoopConf(), config.getParquetCompressionRatio());
 
     return new HoodieParquetWriter<>(instantTime, path, parquetConfig, schema, sparkTaskContextSupplier);
+  }
+
+  private static <T extends HoodieRecordPayload, R extends IndexedRecord> HoodieStorageWriter<R> newHFileStorageWriter(
+      String instantTime, Path path, HoodieWriteConfig config, Schema schema, HoodieTable hoodieTable,
+      SparkTaskContextSupplier sparkTaskContextSupplier) throws IOException {
+
+    BloomFilter filter = createBloomFilter(config);
+    HoodieHFileConfig hfileConfig = new HoodieHFileConfig(config.getHFileCompressionAlgorithm(),
+        config.getHFileBlockSize(), config.getHFileMaxFileSize(), hoodieTable.getHadoopConf(), filter);
+
+    return new HoodieHFileWriter<>(instantTime, path, hfileConfig, schema, sparkTaskContextSupplier);
+  }
+
+  private static BloomFilter createBloomFilter(HoodieWriteConfig config) {
+    return BloomFilterFactory.createBloomFilter(config.getBloomFilterNumEntries(), config.getBloomFilterFPP(),
+            config.getDynamicBloomFilterMaxNumEntries(),
+            config.getBloomFilterType());
   }
 }

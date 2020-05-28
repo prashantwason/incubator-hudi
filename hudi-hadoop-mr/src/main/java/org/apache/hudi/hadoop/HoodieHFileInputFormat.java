@@ -16,27 +16,39 @@
  * limitations under the License.
  */
 
-package org.apache.hudi.hadoop.realtime;
+package org.apache.hudi.hadoop;
 
-import org.apache.hudi.hadoop.UseFileSplitsFromInputFormat;
-import org.apache.hudi.hadoop.utils.HoodieInputFormatUtils;
-import org.apache.hudi.hadoop.utils.HoodieRealtimeInputFormatUtils;
-
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat;
-import org.apache.hudi.hadoop.UseRecordReaderFromInputFormat;
+import org.apache.hadoop.io.ArrayWritable;
+import org.apache.hadoop.io.NullWritable;
+import org.apache.hadoop.mapred.InputSplit;
+import org.apache.hadoop.mapred.JobConf;
+import org.apache.hadoop.mapred.RecordReader;
+import org.apache.hadoop.mapred.Reporter;
+
+import java.io.IOException;
 
 /**
- * HoodieRealtimeInputFormat for HUDI datasets which store data in Parquet base file format.
+ * HoodieInputFormat for HUDI datasets which store data in HFile base file format.
  */
-@UseRecordReaderFromInputFormat
 @UseFileSplitsFromInputFormat
-public class HoodieParquetRealtimeInputFormat extends HoodieRealtimeInputFormat {
-  // To make Hive on Spark queries work with RT tables. Our theory is that due to
-  // {@link org.apache.hadoop.hive.ql.io.parquet.ProjectionPusher}
-  // not handling empty list correctly, the ParquetRecordReaderWrapper ends up adding the same column ids multiple
-  // times which ultimately breaks the query.
+public class HoodieHFileInputFormat extends HoodieInputFormat {
 
-  public HoodieParquetRealtimeInputFormat() {
+  public HoodieHFileInputFormat() {
     super(new MapredParquetInputFormat());
+  }
+
+  @Override
+  public RecordReader<NullWritable, ArrayWritable> getRecordReader(final InputSplit split, final JobConf job,
+      final Reporter reporter) throws IOException {
+    return new HoodieHFileRecordReader(conf, split, job);
+  }
+
+  @Override
+  protected boolean isSplitable(FileSystem fs, Path filename) {
+    // This file isn't splittable.
+    return false;
   }
 }

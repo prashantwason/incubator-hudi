@@ -15,27 +15,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package com.databricks.spark.avro
 
-package org.apache.hudi.io;
-
-import org.apache.hudi.common.model.HoodieRecordPayload;
-import org.apache.hudi.common.util.collection.Pair;
-import org.apache.hudi.config.HoodieWriteConfig;
-import org.apache.hudi.table.HoodieTable;
-
-import java.io.IOException;
+import org.apache.avro.Schema
+import org.apache.avro.generic.GenericRecord
+import org.apache.spark.sql.Row
+import org.apache.spark.sql.types.DataType
 
 /**
- * Extract range information for a given file slice.
+ * This helper class is required since SchemaConverters.createConverterToSQL is currently private.
  */
-public class HoodieRangeInfoHandle<T extends HoodieRecordPayload> extends HoodieReadHandle<T> {
-
-  public HoodieRangeInfoHandle(HoodieWriteConfig config, HoodieTable<T> hoodieTable,
-      Pair<String, String> partitionPathFilePair) {
-    super(config, null, hoodieTable, partitionPathFilePair);
-  }
-
-  public String[] getMinMaxKeys() throws IOException {
-    return getStorageReader().readMinMaxRecordKeys();
-  }
+object HoodieAvroSchemaConversion {
+  def createConverterToSQL(avroSchema: Schema, sparkSchema: DataType): (GenericRecord) => Row =
+    SchemaConverters.createConverterToSQL(avroSchema, sparkSchema).asInstanceOf[(GenericRecord) => Row]
 }

@@ -34,6 +34,7 @@ import org.apache.hudi.common.fs.ConsistencyGuard;
 import org.apache.hudi.common.fs.ConsistencyGuard.FileVisibility;
 import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.fs.FailSafeConsistencyGuard;
+import org.apache.hudi.common.model.HoodieFileFormat;
 import org.apache.hudi.common.model.HoodieKey;
 import org.apache.hudi.common.model.HoodieRecord;
 import org.apache.hudi.common.model.HoodieRecordPayload;
@@ -422,9 +423,11 @@ public abstract class HoodieTable<T extends HoodieRecordPayload> implements Seri
         return;
       }
 
-      List<String> invalidDataPaths = FSUtils.getAllDataFilesForMarkers(fs, basePath, instantTs, markerDir.toString());
+      final String baseFileExtension = getBaseFileFormat().getFileExtension();
+      List<String> invalidDataPaths = FSUtils.getAllDataFilesForMarkers(fs, basePath, instantTs, markerDir.toString(),
+          baseFileExtension);
       List<String> validDataPaths = stats.stream().map(w -> String.format("%s/%s", basePath, w.getPath()))
-          .filter(p -> p.endsWith(".parquet")).collect(Collectors.toList());
+          .filter(p -> p.endsWith(baseFileExtension)).collect(Collectors.toList());
       // Contains list of partially created files. These needs to be cleaned up.
       invalidDataPaths.removeAll(validDataPaths);
       if (!invalidDataPaths.isEmpty()) {
@@ -561,5 +564,17 @@ public abstract class HoodieTable<T extends HoodieRecordPayload> implements Seri
     } catch (HoodieException e) {
       throw new HoodieInsertException("Failed insert schema compability check.", e);
     }
+  }
+
+  public HoodieFileFormat getBaseFileFormat() {
+    return metaClient.getTableConfig().getBaseFileFormat();
+  }
+
+  public HoodieFileFormat getLogFileFormat() {
+    return metaClient.getTableConfig().getLogFileFormat();
+  }
+
+  public boolean requireSortedRecords() {
+    return getBaseFileFormat() == HoodieFileFormat.HFILE;
   }
 }

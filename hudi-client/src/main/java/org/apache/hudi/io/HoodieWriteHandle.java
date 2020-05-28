@@ -86,7 +86,8 @@ public abstract class HoodieWriteHandle<T extends HoodieRecordPayload> extends H
       throw new HoodieIOException("Failed to make dir " + path, e);
     }
 
-    return new Path(path.toString(), FSUtils.makeDataFileName(instantTime, writeToken, fileId));
+    return new Path(path.toString(), FSUtils.makeDataFileName(instantTime, writeToken, fileId,
+        hoodieTable.getMetaClient().getTableConfig().getBaseFileFormat()));
   }
 
   /**

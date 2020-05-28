@@ -46,11 +46,11 @@ class RealtimeUnmergedRecordReader extends AbstractRealtimeRecordReader
   // Log Record unmerged scanner
   private final HoodieUnMergedLogRecordScanner logRecordScanner;
 
-  // Parquet record reader
-  private final RecordReader<NullWritable, ArrayWritable> parquetReader;
+  // Base file record reader
+  private final RecordReader<NullWritable, ArrayWritable> basefileReader;
 
-  // Parquet record iterator wrapper for the above reader
-  private final RecordReaderValueIterator<NullWritable, ArrayWritable> parquetRecordsIterator;
+  // Record iterator wrapper for the above reader
+  private final RecordReaderValueIterator<NullWritable, ArrayWritable> basefileRecordsIterator;
 
   // Executor that runs the above producers in parallel
   private final BoundedInMemoryExecutor<ArrayWritable, ArrayWritable, ?> executor;
@@ -69,9 +69,10 @@ class RealtimeUnmergedRecordReader extends AbstractRealtimeRecordReader
   public RealtimeUnmergedRecordReader(HoodieRealtimeFileSplit split, JobConf job,
       RecordReader<NullWritable, ArrayWritable> realReader) {
     super(split, job);
-    this.parquetReader = new SafeParquetRecordReaderWrapper(realReader);
+    // TODO: dont use parquet here
+    this.basefileReader = new SafeParquetRecordReaderWrapper(realReader);
     // Iterator for consuming records from parquet file
-    this.parquetRecordsIterator = new RecordReaderValueIterator<>(this.parquetReader);
+    this.basefileRecordsIterator = new RecordReaderValueIterator<>(this.basefileReader);
     this.executor = new BoundedInMemoryExecutor<>(getMaxCompactionMemoryInBytes(), getParallelProducers(),
         Option.empty(), x -> x, new DefaultSizeEstimator<>());
     // Consumer of this record reader
@@ -98,7 +99,7 @@ class RealtimeUnmergedRecordReader extends AbstractRealtimeRecordReader
       logRecordScanner.scan();
       return null;
     }));
-    producers.add(new IteratorBasedQueueProducer<>(parquetRecordsIterator));
+    producers.add(new IteratorBasedQueueProducer<>(basefileRecordsIterator));
     return producers;
   }
 
@@ -114,12 +115,12 @@ class RealtimeUnmergedRecordReader extends AbstractRealtimeRecordReader
 
   @Override
   public NullWritable createKey() {
-    return parquetReader.createKey();
+    return basefileReader.createKey();
   }
 
   @Override
   public ArrayWritable createValue() {
-    return parquetReader.createValue();
+    return basefileReader.createValue();
   }
 
   @Override
@@ -131,12 +132,12 @@ class RealtimeUnmergedRecordReader extends AbstractRealtimeRecordReader
 
   @Override
   public void close() throws IOException {
-    this.parquetRecordsIterator.close();
+    this.basefileRecordsIterator.close();
     this.executor.shutdownNow();
   }
 
   @Override
   public float getProgress() throws IOException {
-    return Math.min(parquetReader.getProgress(), logRecordScanner.getProgress());
+    return Math.min(basefileReader.getProgress(), logRecordScanner.getProgress());
   }
 }

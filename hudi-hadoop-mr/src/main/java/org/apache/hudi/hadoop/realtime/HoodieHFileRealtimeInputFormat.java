@@ -18,25 +18,35 @@
 
 package org.apache.hudi.hadoop.realtime;
 
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hudi.hadoop.HoodieHFileInputFormat;
 import org.apache.hudi.hadoop.UseFileSplitsFromInputFormat;
-import org.apache.hudi.hadoop.utils.HoodieInputFormatUtils;
-import org.apache.hudi.hadoop.utils.HoodieRealtimeInputFormatUtils;
-
-import org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat;
 import org.apache.hudi.hadoop.UseRecordReaderFromInputFormat;
 
 /**
- * HoodieRealtimeInputFormat for HUDI datasets which store data in Parquet base file format.
+ * HoodieRealtimeInputFormat for HUDI datasets which store data in HFile base file format.
  */
 @UseRecordReaderFromInputFormat
 @UseFileSplitsFromInputFormat
-public class HoodieParquetRealtimeInputFormat extends HoodieRealtimeInputFormat {
-  // To make Hive on Spark queries work with RT tables. Our theory is that due to
-  // {@link org.apache.hadoop.hive.ql.io.parquet.ProjectionPusher}
-  // not handling empty list correctly, the ParquetRecordReaderWrapper ends up adding the same column ids multiple
-  // times which ultimately breaks the query.
+public class HoodieHFileRealtimeInputFormat extends HoodieRealtimeInputFormat {
+  private HoodieHFileInputFormat hfileInputFormat;
 
-  public HoodieParquetRealtimeInputFormat() {
-    super(new MapredParquetInputFormat());
+  public HoodieHFileRealtimeInputFormat() {
+    super(new HoodieHFileInputFormat());
+    this.hfileInputFormat = (HoodieHFileInputFormat)baseInputFormat;
+  }
+
+  @Override
+  protected boolean isSplitable(FileSystem fs, Path filename) {
+    // This file isn't splittable.
+    return false;
+  }
+
+  @Override
+  public void setConf(Configuration conf) {
+    super.setConf(conf);
+    hfileInputFormat.setConf(conf);
   }
 }

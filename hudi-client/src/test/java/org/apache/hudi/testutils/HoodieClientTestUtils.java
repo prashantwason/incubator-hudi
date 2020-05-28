@@ -29,6 +29,7 @@ import org.apache.hudi.common.bloom.BloomFilterTypeCode;
 import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.model.HoodieBaseFile;
 import org.apache.hudi.common.model.HoodieCommitMetadata;
+import org.apache.hudi.common.model.HoodieFileFormat;
 import org.apache.hudi.common.model.HoodieKey;
 import org.apache.hudi.common.model.HoodieRecord;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
@@ -46,16 +47,29 @@ import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hbase.Cell;
+import org.apache.hadoop.hbase.io.hfile.CacheConfig;
+import org.apache.hadoop.hbase.io.hfile.HFile;
+import org.apache.hadoop.hbase.io.hfile.HFileScanner;
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
 import org.apache.parquet.avro.AvroSchemaConverter;
 import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.apache.spark.SparkConf;
+import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SQLContext;
+import org.apache.spark.sql.types.DataType;
+import org.apache.spark.sql.types.StructType;
+
+import com.databricks.spark.avro.SchemaConverters;
+
+import scala.Function1;
+
+import com.databricks.spark.avro.HoodieAvroSchemaConversion;
 
 import java.io.File;
 import java.io.IOException;
@@ -65,6 +79,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
@@ -181,15 +196,22 @@ public class HoodieClientTestUtils {
   /**
    * Obtain all new data written into the Hoodie table since the given timestamp.
    */
-  public static Dataset<Row> readSince(String basePath, SQLContext sqlContext, HoodieTimeline commitTimeline,
-                                       String lastCommitTime) {
+  public static Dataset<Row> readSince(JavaSparkContext jsc, String basePath, SQLContext sqlContext,
+                                       HoodieTimeline commitTimeline, String lastCommitTime) {
     List<HoodieInstant> commitsToReturn =
         commitTimeline.findInstantsAfter(lastCommitTime, Integer.MAX_VALUE).getInstants().collect(Collectors.toList());
     try {
       // Go over the commit metadata, and obtain the new files that need to be read.
       HashMap<String, String> fileIdToFullPath = getLatestFileIDsToFullPath(basePath, commitTimeline, commitsToReturn);
-      return sqlContext.read().parquet(fileIdToFullPath.values().toArray(new String[fileIdToFullPath.size()]))
-          .filter(String.format("%s >'%s'", HoodieRecord.COMMIT_TIME_METADATA_FIELD, lastCommitTime));
+      String[] paths = fileIdToFullPath.values().toArray(new String[fileIdToFullPath.size()]);
+      Dataset<Row> rows = null;
+      if (paths[0].endsWith(HoodieFileFormat.PARQUET.getFileExtension())) {
+        rows = sqlContext.read().parquet(paths);
+      } else if (paths[0].endsWith(HoodieFileFormat.HFILE.getFileExtension())) {
+        rows = readHFile(jsc, sqlContext, paths);
+      }
+
+      return rows.filter(String.format("%s >'%s'", HoodieRecord.COMMIT_TIME_METADATA_FIELD, lastCommitTime));
     } catch (IOException e) {
       throw new HoodieException("Error pulling data incrementally from commitTimestamp :" + lastCommitTime, e);
     }
@@ -215,6 +237,51 @@ public class HoodieClientTestUtils {
     } catch (Exception e) {
       throw new HoodieException("Error reading hoodie table as a dataframe", e);
     }
+  }
+
+  public static Dataset<Row> readHFile(JavaSparkContext jsc, SQLContext sqlContext, String[] paths) {
+    // TODO: this should be ported to use HoodieStorageReader
+    List<byte[]> valuesAsList = new LinkedList<>();
+
+    FileSystem fs = FSUtils.getFs(paths[0], jsc.hadoopConfiguration());
+    CacheConfig cacheConfig = new CacheConfig(fs.getConf());
+    Schema schema = null;
+    for (String path : paths) {
+      try {
+        HFile.Reader reader = HFile.createReader(fs, new Path(path), cacheConfig, fs.getConf());
+        if (schema == null) {
+          schema = new Schema.Parser().parse(new String(reader.loadFileInfo().get("schema".getBytes())));
+        }
+        HFileScanner scanner = reader.getScanner(false, false);
+        if (!scanner.seekTo()) {
+          // EOF reached
+          continue;
+        }
+
+        do {
+          Cell c = scanner.getKeyValue();
+          //byte[] keyBytes = Arrays.copyOfRange(c.getRowArray(), c.getRowOffset(), c.getRowOffset() + c.getRowLength());
+          byte[] value = Arrays.copyOfRange(c.getValueArray(), c.getValueOffset(), c.getValueOffset() + c.getValueLength());
+          valuesAsList.add(value);
+        } while (scanner.next());
+      } catch (IOException e) {
+        throw new HoodieException("Error reading hfile " + path + " as a dataframe", e);
+      }
+    }
+
+    final DataType sparkSchema = SchemaConverters.toSqlType(schema).dataType();
+    final Function1<GenericRecord, Row> avroRecordConverter =
+        HoodieAvroSchemaConversion.createConverterToSQL(schema, sparkSchema);
+
+    // TODO: schema conversion is sub optimal
+    final String schemaStr = schema.toString();
+    JavaRDD<Row> rowRDD = jsc.parallelize(valuesAsList).map(v -> {
+      Schema s = new Schema.Parser().parse(schemaStr);
+      GenericRecord record = HoodieAvroUtils.bytesToAvro(v, s);
+      return avroRecordConverter.apply(record);
+    });
+
+    return sqlContext.createDataFrame(rowRDD, (StructType)sparkSchema).toDF();
   }
 
   public static String writeParquetFile(String basePath, String partitionPath, String filename,
