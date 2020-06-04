@@ -29,6 +29,7 @@ import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericDatumReader;
 import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.generic.GenericRecord;
+import org.apache.avro.generic.IndexedRecord;
 import org.apache.avro.io.BinaryDecoder;
 import org.apache.avro.io.BinaryEncoder;
 import org.apache.avro.io.DatumWriter;
@@ -72,8 +73,8 @@ public class HoodieAvroUtils {
   /**
    * Convert a given avro record to bytes.
    */
-  public static byte[] avroToBytes(GenericRecord record) throws IOException {
-    GenericDatumWriter<GenericRecord> writer = new GenericDatumWriter<>(record.getSchema());
+  public static <T extends IndexedRecord> byte[] avroToBytes(T record) throws IOException {
+    GenericDatumWriter<T> writer = new GenericDatumWriter<>(record.getSchema());
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     BinaryEncoder encoder = EncoderFactory.get().binaryEncoder(out, reuseEncoder.get());
     reuseEncoder.set(encoder);

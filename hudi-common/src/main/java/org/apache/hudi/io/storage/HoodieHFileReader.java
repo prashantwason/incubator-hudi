@@ -18,6 +18,7 @@
 
 package org.apache.hudi.io.storage;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -31,8 +32,12 @@ import java.util.Set;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.IndexedRecord;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.PositionedReadable;
+import org.apache.hadoop.fs.Seekable;
 import org.apache.hadoop.hbase.Cell;
+import org.apache.hadoop.hbase.io.FSDataInputStreamWrapper;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.io.hfile.HFile;
 import org.apache.hadoop.hbase.io.hfile.HFileScanner;
@@ -63,6 +68,15 @@ public class HoodieHFileReader<R extends IndexedRecord> implements HoodieStorage
     this.conf = configuration;
     this.path = path;
     this.reader = HFile.createReader(FSUtils.getFs(path.toString(), configuration), path, cacheConfig, conf);
+  }
+
+  public HoodieHFileReader(byte[] content) throws IOException {
+    Configuration conf = new Configuration();
+    Path path = new Path("hoodie");
+    SeekableByteArrayInputStream bis = new SeekableByteArrayInputStream(content);
+    FSDataInputStream fsdis = new FSDataInputStream(bis);
+    this.reader = HFile.createReader(FSUtils.getFs("hoodie", conf), path, new FSDataInputStreamWrapper(fsdis),
+        content.length, new CacheConfig(conf), conf);
   }
 
   @Override
@@ -119,9 +133,8 @@ public class HoodieHFileReader<R extends IndexedRecord> implements HoodieStorage
     }
   }
 
-  private List<Tuple2<String, R>> readAllRecords() throws IOException {
+  public List<Tuple2<String, R>> readAllRecords(Schema schema) throws IOException {
     List<Tuple2<String, R>> recordList = new LinkedList<>();
-    Schema schema = new Schema.Parser().parse(new String(reader.loadFileInfo().get("schema".getBytes())));
     try {
       HFileScanner scanner = reader.getScanner(false, false);
       if (scanner.seekTo()) {
@@ -137,6 +150,11 @@ public class HoodieHFileReader<R extends IndexedRecord> implements HoodieStorage
     } catch (IOException e) {
       throw new HoodieException("Error reading hfile " + path + " as a dataframe", e);
     }
+  }
+
+  public List<Tuple2<String, R>> readAllRecords() throws IOException {
+    Schema schema = new Schema.Parser().parse(new String(reader.loadFileInfo().get("schema".getBytes())));
+    return readAllRecords(schema);
   }
 
   @Override
@@ -202,6 +220,63 @@ public class HoodieHFileReader<R extends IndexedRecord> implements HoodieStorage
       reader = null;
     } catch (IOException e) {
       e.printStackTrace();
+    }
+  }
+
+  static class SeekableByteArrayInputStream extends ByteArrayInputStream implements Seekable, PositionedReadable {
+    public SeekableByteArrayInputStream(byte[] buf) {
+      super(buf);
+    }
+
+    @Override
+    public long getPos() throws IOException {
+      return pos;
+    }
+
+    @Override
+    public void seek(long pos) throws IOException {
+      if (mark != 0) {
+        throw new IllegalStateException();
+      }
+
+      reset();
+      long skipped = skip(pos);
+
+      if (skipped != pos) {
+        throw new IOException();
+      }
+    }
+
+    @Override
+    public boolean seekToNewSource(long targetPos) throws IOException {
+      return false;
+    }
+
+    @Override
+    public int read(long position, byte[] buffer, int offset, int length) throws IOException {
+
+      if (position >= buf.length) {
+        throw new IllegalArgumentException();
+      }
+      if (position + length > buf.length) {
+        throw new IllegalArgumentException();
+      }
+      if (length > buffer.length) {
+        throw new IllegalArgumentException();
+      }
+
+      System.arraycopy(buf, (int) position, buffer, offset, length);
+      return length;
+    }
+
+    @Override
+    public void readFully(long position, byte[] buffer) throws IOException {
+      read(position, buffer, 0, buffer.length);
+    }
+
+    @Override
+    public void readFully(long position, byte[] buffer, int offset, int length) throws IOException {
+      read(position, buffer, offset, length);
     }
   }
 }
