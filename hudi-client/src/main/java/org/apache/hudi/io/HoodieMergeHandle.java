@@ -37,8 +37,8 @@ import org.apache.hudi.common.util.collection.ExternalSpillableMap;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.exception.HoodieIOException;
 import org.apache.hudi.exception.HoodieUpsertException;
-import org.apache.hudi.io.storage.HoodieStorageWriter;
-import org.apache.hudi.io.storage.HoodieStorageWriterFactory;
+import org.apache.hudi.io.storage.HoodieFileWriter;
+import org.apache.hudi.io.storage.HoodieFileWriterFactory;
 import org.apache.hudi.table.HoodieTable;
 
 import org.apache.avro.Schema;
@@ -63,7 +63,7 @@ public class HoodieMergeHandle<T extends HoodieRecordPayload> extends HoodieWrit
 
   private Map<String, HoodieRecord<T>> keyToNewRecords;
   private Set<String> writtenRecordKeys;
-  private HoodieStorageWriter<IndexedRecord> storageWriter;
+  private HoodieFileWriter<IndexedRecord> storageWriter;
   private Path newFilePath;
   private Path oldFilePath;
   private long recordsWritten = 0;
@@ -135,7 +135,7 @@ public class HoodieMergeHandle<T extends HoodieRecordPayload> extends HoodieWrit
 
       // Create the writer for writing the new version file
       storageWriter =
-          HoodieStorageWriterFactory.getStorageWriter(instantTime, newFilePath, hoodieTable, config, writerSchema, sparkTaskContextSupplier);
+          HoodieFileWriterFactory.getFileWriter(instantTime, newFilePath, hoodieTable, config, writerSchema, sparkTaskContextSupplier);
 
       if (hoodieTable.requireSortedRecords()) {
         newRecordKeysSorted = new PriorityQueue<>();

@@ -53,7 +53,7 @@ import java.util.concurrent.atomic.AtomicLong;
  *  2. There are no column stats
  */
 public class HoodieHFileWriter<T extends HoodieRecordPayload, R extends IndexedRecord>
-    implements HoodieStorageWriter<R> {
+    implements HoodieFileWriter<R> {
   private static AtomicLong recordIndex = new AtomicLong(1);
   private static final Logger LOG = LogManager.getLogger(HoodieHFileWriter.class);
 

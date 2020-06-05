@@ -33,7 +33,7 @@ import org.apache.parquet.avro.AvroParquetReader;
 import org.apache.parquet.avro.AvroReadSupport;
 import org.apache.parquet.hadoop.ParquetReader;
 
-public class HoodieParquetReader<R extends IndexedRecord> implements HoodieStorageReader {
+public class HoodieParquetReader<R extends IndexedRecord> implements HoodieFileReader {
   private Path path;
   private Configuration conf;
 

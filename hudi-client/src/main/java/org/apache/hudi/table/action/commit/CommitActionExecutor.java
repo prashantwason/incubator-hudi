@@ -31,8 +31,8 @@ import org.apache.hudi.exception.HoodieUpsertException;
 import org.apache.hudi.execution.LazyInsertIterable;
 import org.apache.hudi.execution.SparkBoundedInMemoryExecutor;
 import org.apache.hudi.io.HoodieMergeHandle;
-import org.apache.hudi.io.storage.HoodieStorageReader;
-import org.apache.hudi.io.storage.HoodieStorageReaderFactory;
+import org.apache.hudi.io.storage.HoodieFileReader;
+import org.apache.hudi.io.storage.HoodieFileReaderFactory;
 import org.apache.hudi.table.HoodieTable;
 import org.apache.hudi.table.WorkloadProfile;
 
@@ -89,8 +89,8 @@ public abstract class CommitActionExecutor<T extends HoodieRecordPayload<T>>
     } else {
       BoundedInMemoryExecutor<GenericRecord, GenericRecord, Void> wrapper = null;
       try {
-        HoodieStorageReader<IndexedRecord> storageReader =
-            HoodieStorageReaderFactory.getStorageReader(table.getHadoopConf(), upsertHandle.getOldFilePath());
+        HoodieFileReader<IndexedRecord> storageReader =
+            HoodieFileReaderFactory.getFileReader(table.getHadoopConf(), upsertHandle.getOldFilePath());
         wrapper =
             new SparkBoundedInMemoryExecutor(config, storageReader.getRecordIterator(upsertHandle.getWriterSchema()),
             new UpdateHandler(upsertHandle), x -> x);

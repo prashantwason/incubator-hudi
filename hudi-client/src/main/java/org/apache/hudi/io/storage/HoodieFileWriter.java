@@ -24,7 +24,7 @@ import org.apache.avro.generic.IndexedRecord;
 
 import java.io.IOException;
 
-public interface HoodieStorageWriter<R extends IndexedRecord> {
+public interface HoodieFileWriter<R extends IndexedRecord> {
 
   void writeAvroWithMetadata(R newRecord, HoodieRecord record) throws IOException;
 

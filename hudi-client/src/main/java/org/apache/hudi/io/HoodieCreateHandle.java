@@ -30,8 +30,8 @@ import org.apache.hudi.common.model.HoodieWriteStat.RuntimeStats;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.exception.HoodieInsertException;
-import org.apache.hudi.io.storage.HoodieStorageWriter;
-import org.apache.hudi.io.storage.HoodieStorageWriterFactory;
+import org.apache.hudi.io.storage.HoodieFileWriter;
+import org.apache.hudi.io.storage.HoodieFileWriterFactory;
 import org.apache.hudi.table.HoodieTable;
 
 import org.apache.avro.generic.GenericRecord;
@@ -47,7 +47,7 @@ public class HoodieCreateHandle<T extends HoodieRecordPayload> extends HoodieWri
 
   private static final Logger LOG = LogManager.getLogger(HoodieCreateHandle.class);
 
-  private final HoodieStorageWriter<IndexedRecord> storageWriter;
+  private final HoodieFileWriter<IndexedRecord> storageWriter;
   private final Path path;
   private long recordsWritten = 0;
   private long insertRecordsWritten = 0;
@@ -69,7 +69,7 @@ public class HoodieCreateHandle<T extends HoodieRecordPayload> extends HoodieWri
       partitionMetadata.trySave(getPartitionId());
       createMarkerFile(partitionPath);
       this.storageWriter =
-          HoodieStorageWriterFactory.getStorageWriter(instantTime, path, hoodieTable, config, writerSchema, this.sparkTaskContextSupplier);
+          HoodieFileWriterFactory.getFileWriter(instantTime, path, hoodieTable, config, writerSchema, this.sparkTaskContextSupplier);
     } catch (IOException e) {
       throw new HoodieInsertException("Failed to initialize HoodieStorageWriter for path " + path, e);
     }

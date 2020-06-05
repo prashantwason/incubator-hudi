@@ -24,7 +24,6 @@ import org.apache.hudi.common.bloom.BloomFilter;
 import org.apache.hudi.common.bloom.BloomFilterFactory;
 import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.model.HoodieRecordPayload;
-import org.apache.hudi.common.table.HoodieTableConfig;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.table.HoodieTable;
 
@@ -38,23 +37,22 @@ import java.io.IOException;
 import static org.apache.hudi.common.model.HoodieFileFormat.PARQUET;
 import static org.apache.hudi.common.model.HoodieFileFormat.HFILE;
 
-public class HoodieStorageWriterFactory {
+public class HoodieFileWriterFactory {
 
-  public static <T extends HoodieRecordPayload, R extends IndexedRecord> HoodieStorageWriter<R> getStorageWriter(
+  public static <T extends HoodieRecordPayload, R extends IndexedRecord> HoodieFileWriter<R> getFileWriter(
       String instantTime, Path path, HoodieTable<T> hoodieTable, HoodieWriteConfig config, Schema schema,
       SparkTaskContextSupplier sparkTaskContextSupplier) throws IOException {
-    final HoodieTableConfig tableConfig = hoodieTable.getMetaClient().getTableConfig();
-    final String extension = FSUtils.isLogFile(path) ? tableConfig.getLogFileFormat().getFileExtension() : tableConfig.getBaseFileFormat().getFileExtension();
+    final String extension = FSUtils.getFileExtension(path.getName());
     if (PARQUET.getFileExtension().equals(extension)) {
-      return newParquetStorageWriter(instantTime, path, config, schema, hoodieTable, sparkTaskContextSupplier);
+      return newParquetFileWriter(instantTime, path, config, schema, hoodieTable, sparkTaskContextSupplier);
     }
     if (HFILE.getFileExtension().equals(extension)) {
-      return newHFileStorageWriter(instantTime, path, config, schema, hoodieTable, sparkTaskContextSupplier);
+      return newHFileFileWriter(instantTime, path, config, schema, hoodieTable, sparkTaskContextSupplier);
     }
     throw new UnsupportedOperationException(extension + " format not supported yet.");
   }
 
-  private static <T extends HoodieRecordPayload, R extends IndexedRecord> HoodieStorageWriter<R> newParquetStorageWriter(
+  private static <T extends HoodieRecordPayload, R extends IndexedRecord> HoodieFileWriter<R> newParquetFileWriter(
       String instantTime, Path path, HoodieWriteConfig config, Schema schema, HoodieTable hoodieTable,
       SparkTaskContextSupplier sparkTaskContextSupplier) throws IOException {
     BloomFilter filter = createBloomFilter(config);
@@ -68,7 +66,7 @@ public class HoodieStorageWriterFactory {
     return new HoodieParquetWriter<>(instantTime, path, parquetConfig, schema, sparkTaskContextSupplier);
   }
 
-  private static <T extends HoodieRecordPayload, R extends IndexedRecord> HoodieStorageWriter<R> newHFileStorageWriter(
+  private static <T extends HoodieRecordPayload, R extends IndexedRecord> HoodieFileWriter<R> newHFileFileWriter(
       String instantTime, Path path, HoodieWriteConfig config, Schema schema, HoodieTable hoodieTable,
       SparkTaskContextSupplier sparkTaskContextSupplier) throws IOException {
 

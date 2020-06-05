@@ -44,8 +44,8 @@ import org.apache.hudi.exception.HoodieUpsertException;
 import org.apache.hudi.execution.SparkBoundedInMemoryExecutor;
 import org.apache.hudi.io.HoodieCreateHandle;
 import org.apache.hudi.io.HoodieMergeHandle;
-import org.apache.hudi.io.storage.HoodieStorageReader;
-import org.apache.hudi.io.storage.HoodieStorageReaderFactory;
+import org.apache.hudi.io.storage.HoodieFileReader;
+import org.apache.hudi.io.storage.HoodieFileReaderFactory;
 import org.apache.hudi.table.action.clean.CleanActionExecutor;
 import org.apache.hudi.table.action.HoodieWriteMetadata;
 import org.apache.hudi.table.action.commit.BulkInsertCommitActionExecutor;
@@ -152,8 +152,8 @@ public class HoodieCopyOnWriteTable<T extends HoodieRecordPayload> extends Hoodi
           "Error in finding the old file path at commit " + instantTime + " for fileId: " + fileId);
     } else {
       BoundedInMemoryExecutor<GenericRecord, GenericRecord, Void> wrapper = null;
-      HoodieStorageReader<IndexedRecord> storageReader =
-          HoodieStorageReaderFactory.getStorageReader(getHadoopConf(), upsertHandle.getOldFilePath());
+      HoodieFileReader<IndexedRecord> storageReader =
+          HoodieFileReaderFactory.getFileReader(getHadoopConf(), upsertHandle.getOldFilePath());
 
       try {
         wrapper =

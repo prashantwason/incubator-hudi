@@ -42,7 +42,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * the current file can take more records with the <code>canWrite()</code>
  */
 public class HoodieParquetWriter<T extends HoodieRecordPayload, R extends IndexedRecord>
-    extends ParquetWriter<IndexedRecord> implements HoodieStorageWriter<R> {
+    extends ParquetWriter<IndexedRecord> implements HoodieFileWriter<R> {
 
   private static AtomicLong recordIndex = new AtomicLong(1);
 

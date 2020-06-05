@@ -22,8 +22,8 @@ import org.apache.hudi.common.model.HoodieAvroPayload;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.log.LogReaderUtils;
 import org.apache.hudi.exception.HoodieIOException;
-import org.apache.hudi.io.storage.HoodieStorageReader;
-import org.apache.hudi.io.storage.HoodieStorageReaderFactory;
+import org.apache.hudi.io.storage.HoodieFileReader;
+import org.apache.hudi.io.storage.HoodieFileReaderFactory;
 
 import org.apache.avro.Schema;
 import org.apache.avro.Schema.Field;
@@ -77,7 +77,7 @@ public abstract class AbstractRealtimeRecordReader {
 
   private static Schema readSchema(Configuration conf, Path filePath) {
     try {
-      HoodieStorageReader storageReader = HoodieStorageReaderFactory.getStorageReader(conf, filePath);
+      HoodieFileReader storageReader = HoodieFileReaderFactory.getFileReader(conf, filePath);
       return storageReader.getSchema();
     } catch (IOException e) {
       throw new HoodieIOException("Failed to read scheam from " + filePath, e);

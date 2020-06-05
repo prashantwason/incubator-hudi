@@ -52,7 +52,7 @@ import org.apache.log4j.Logger;
 
 import scala.Tuple2;
 
-public class HoodieHFileReader<R extends IndexedRecord> implements HoodieStorageReader {
+public class HoodieHFileReader<R extends IndexedRecord> implements HoodieFileReader {
   private static final Logger LOG = LogManager.getLogger(HoodieHFileReader.class);
   private Path path;
   private Configuration conf;
