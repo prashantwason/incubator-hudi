@@ -157,6 +157,8 @@ public abstract class BootstrapIndex implements Serializable {
 
   public static BootstrapIndex getBootstrapIndex(HoodieTableMetaClient metaClient) {
     return ((BootstrapIndex)(ReflectionUtils.loadClass(
-        metaClient.getTableConfig().getBootstrapIndexClass(), metaClient)));
+        // metaClient can also be of type HoodieTableGloballyConsistentMetaClient. So explicitly cast to HoodieTableMetaClient.
+        // Otherwise reflection doesnt work because HFileBootstrapIndex doesnt have constructor that takes HoddieTableGloballyConsistentMetaClient
+        metaClient.getTableConfig().getBootstrapIndexClass(), new Class[] { HoodieTableMetaClient.class }, metaClient))); 
   }
 }

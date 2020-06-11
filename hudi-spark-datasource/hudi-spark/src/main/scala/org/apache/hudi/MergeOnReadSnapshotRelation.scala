@@ -135,7 +135,7 @@ class MergeOnReadSnapshotRelation(val sqlContext: SQLContext,
         .filterCompletedInstants, fileStatuses.toArray)
     val latestFiles: List[HoodieBaseFile] = fsView.getLatestBaseFiles.iterator().asScala.toList
     val latestCommit = fsView.getLastInstant.get().getTimestamp
-    val fileGroup = HoodieRealtimeInputFormatUtils.groupLogsByBaseFile(conf, latestFiles.asJava).asScala
+    val fileGroup = HoodieRealtimeInputFormatUtils.groupLogsByBaseFile(jobConf, latestFiles.asJava).asScala
     val fileSplits = fileGroup.map(kv => {
       val baseFile = kv._1
       val logPaths = if (kv._2.isEmpty) Option.empty else Option(kv._2.asScala.toList)

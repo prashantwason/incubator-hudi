@@ -18,6 +18,7 @@
 
 package org.apache.hudi.hadoop.utils;
 
+import org.apache.hadoop.mapred.JobConf;
 import org.apache.hudi.common.engine.HoodieLocalEngineContext;
 import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.model.FileSlice;
@@ -59,7 +60,7 @@ public class HoodieRealtimeInputFormatUtils extends HoodieInputFormatUtils {
 
   private static final Logger LOG = LogManager.getLogger(HoodieRealtimeInputFormatUtils.class);
 
-  public static InputSplit[] getRealtimeSplits(Configuration conf, Stream<FileSplit> fileSplits) throws IOException {
+  public static InputSplit[] getRealtimeSplits(JobConf conf, Stream<FileSplit> fileSplits) throws IOException {
     Map<Path, List<FileSplit>> partitionsToParquetSplits =
         fileSplits.collect(Collectors.groupingBy(split -> split.getPath().getParent()));
     // TODO(vc): Should we handle also non-hoodie splits here?
@@ -135,7 +136,7 @@ public class HoodieRealtimeInputFormatUtils extends HoodieInputFormatUtils {
   }
 
   // Return parquet file with a list of log files in the same file group.
-  public static Map<HoodieBaseFile, List<String>> groupLogsByBaseFile(Configuration conf, List<HoodieBaseFile> fileStatuses) {
+  public static Map<HoodieBaseFile, List<String>> groupLogsByBaseFile(JobConf conf, List<HoodieBaseFile> fileStatuses) {
     Map<Path, List<HoodieBaseFile>> partitionsToParquetSplits =
         fileStatuses.stream().collect(Collectors.groupingBy(file -> file.getFileStatus().getPath().getParent()));
     // TODO(vc): Should we handle also non-hoodie splits here?

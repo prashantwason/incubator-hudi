@@ -60,8 +60,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TestHoodieParquetInputFormat {
 
-  private HoodieParquetInputFormat inputFormat;
-  private JobConf jobConf;
+  protected HoodieParquetInputFormat inputFormat;
+  protected JobConf jobConf;
   private final HoodieFileFormat baseFileFormat = HoodieFileFormat.PARQUET;
   private final String baseFileExtension = baseFileFormat.getFileExtension();
 
@@ -116,6 +116,7 @@ public class TestHoodieParquetInputFormat {
     assertFalse(filteredTimeline.containsInstant(t4));
     assertFalse(filteredTimeline.containsInstant(t5));
     assertFalse(filteredTimeline.containsInstant(t6));
+
 
     // remove compaction instant and setup timeline again
     instants.remove(t3);
@@ -381,7 +382,7 @@ public class TestHoodieParquetInputFormat {
     String incrementalMode1 = String.format(HoodieHiveUtils.HOODIE_CONSUME_MODE_PATTERN, expectedincrTables[0]);
     conf.set(incrementalMode1, HoodieHiveUtils.INCREMENTAL_SCAN_MODE);
     String incrementalMode2 = String.format(HoodieHiveUtils.HOODIE_CONSUME_MODE_PATTERN, expectedincrTables[1]);
-    conf.set(incrementalMode2, HoodieHiveUtils.INCREMENTAL_SCAN_MODE);
+    conf.set(incrementalMode2,HoodieHiveUtils.INCREMENTAL_SCAN_MODE);
     String incrementalMode3 = String.format(HoodieHiveUtils.HOODIE_CONSUME_MODE_PATTERN, "db3.model_trips");
     conf.set(incrementalMode3, HoodieHiveUtils.INCREMENTAL_SCAN_MODE.toLowerCase());
     String defaultmode = String.format(HoodieHiveUtils.HOODIE_CONSUME_MODE_PATTERN, "db3.first_trips");
