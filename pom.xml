@@ -246,7 +246,8 @@
         <version>${maven-surefire-plugin.version}</version>
         <configuration>
           <skip>${skipUTs}</skip>
-          <argLine>-Xmx2g</argLine>
+          <!--argLine>-Xmx2g</argLine-->
+          <argLine>-Xmx2g -javaagent:/home/pwason/work/java/uber-java-agent/target/uber-java-agent-1.2.0-jar-with-dependencies.jar=metricInterval=3600000,durationProfiling=org.apache.hudi.*,durationProfiling=org.apache.parquet.hadoop.ParquetWriter.*,reporter=com.uber.profiling.reporters.FileOutputReporter,outputDir=/home/pwason/work/java/incubator-hudi</argLine>
           <forkedProcessExitTimeoutInSeconds>120</forkedProcessExitTimeoutInSeconds>
           <systemPropertyVariables>
             <log4j.configuration>

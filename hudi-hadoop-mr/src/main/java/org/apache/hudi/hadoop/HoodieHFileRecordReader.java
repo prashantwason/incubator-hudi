@@ -33,7 +33,7 @@ import org.apache.hadoop.mapred.FileSplit;
 import org.apache.hadoop.mapred.InputSplit;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.RecordReader;
-import org.apache.hudi.hadoop.realtime.AbstractRealtimeRecordReader;
+import org.apache.hudi.hadoop.utils.HoodieRealtimeRecordReaderUtils;
 import org.apache.hudi.io.storage.HoodieHFileReader;
 
 public class HoodieHFileRecordReader implements RecordReader<NullWritable, ArrayWritable> {
@@ -64,7 +64,7 @@ public class HoodieHFileRecordReader implements RecordReader<NullWritable, Array
     }
 
     GenericRecord record = recordIterator.next();
-    ArrayWritable aWritable = (ArrayWritable) AbstractRealtimeRecordReader.avroToArrayWritable(record, schema);
+    ArrayWritable aWritable = (ArrayWritable) HoodieRealtimeRecordReaderUtils.avroToArrayWritable(record, schema);
     value.set(aWritable.get());
     count++;
     return true;

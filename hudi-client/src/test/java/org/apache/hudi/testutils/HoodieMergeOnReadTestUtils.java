@@ -21,16 +21,17 @@ package org.apache.hudi.testutils;
 import org.apache.hudi.avro.HoodieAvroUtils;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.testutils.HoodieTestUtils;
-import org.apache.hudi.hadoop.HoodieInputFormat;
-
+import org.apache.hudi.hadoop.utils.HoodieInputFormatUtils;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.GenericRecordBuilder;
+import org.apache.hadoop.conf.Configurable;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.metastore.api.hive_metastoreConstants;
 import org.apache.hadoop.hive.serde2.ColumnProjectionUtils;
 import org.apache.hadoop.io.ArrayWritable;
 import org.apache.hadoop.io.Writable;
+import org.apache.hadoop.mapred.FileInputFormat;
 import org.apache.hadoop.mapred.InputSplit;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.RecordReader;
@@ -55,7 +56,7 @@ public class HoodieMergeOnReadTestUtils {
                                                                JobConf jobConf,
                                                                boolean realtime) {
     HoodieTableMetaClient metaClient = new HoodieTableMetaClient(conf, basePath);
-    HoodieInputFormat inputFormat = HoodieInputFormat.createInputFormat(metaClient.getTableConfig().getBaseFileFormat(),
+    FileInputFormat inputFormat = HoodieInputFormatUtils.getInputFormat(metaClient.getTableConfig().getBaseFileFormat(),
         realtime);
 
     Schema schema = HoodieAvroUtils.addMetadataFields(
@@ -92,7 +93,7 @@ public class HoodieMergeOnReadTestUtils {
     }).orElse(new ArrayList<GenericRecord>());
   }
 
-  private static void setPropsForInputFormat(HoodieInputFormat inputFormat, JobConf jobConf, Schema schema,
+  private static void setPropsForInputFormat(FileInputFormat inputFormat, JobConf jobConf, Schema schema,
                                              String basePath) {
     List<Schema.Field> fields = schema.getFields();
     String names = fields.stream().map(f -> f.name().toString()).collect(Collectors.joining(","));
@@ -115,7 +116,10 @@ public class HoodieMergeOnReadTestUtils {
     conf.set(ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR, postions);
     conf.set(hive_metastoreConstants.META_TABLE_PARTITION_COLUMNS, "datestr");
     conf.set(hive_metastoreConstants.META_TABLE_COLUMN_TYPES, hiveColumnTypes);
-    inputFormat.setConf(conf);
+
+    // Hoodie Input formats are also configurable
+    Configurable configurable = (Configurable)inputFormat;
+    configurable.setConf(conf);
     jobConf.addResource(conf);
   }
 

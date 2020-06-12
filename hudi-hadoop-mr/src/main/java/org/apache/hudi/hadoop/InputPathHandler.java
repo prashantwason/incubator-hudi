@@ -33,7 +33,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.apache.hudi.hadoop.HoodieInputFormat.getTableMetaClient;
+import static org.apache.hudi.hadoop.utils.HoodieInputFormatUtils.getTableMetaClientForBasePath;
 
 /**
  * InputPathHandler takes in a set of input paths and incremental tables list. Then, classifies the
@@ -51,7 +51,7 @@ public class InputPathHandler {
   private final List<Path> snapshotPaths;
   private final List<Path> nonHoodieInputPaths;
 
-  InputPathHandler(Configuration conf, Path[] inputPaths, List<String> incrementalTables) throws IOException {
+  public InputPathHandler(Configuration conf, Path[] inputPaths, List<String> incrementalTables) throws IOException {
     this.conf = conf;
     tableMetaClientMap = new HashMap<>();
     snapshotPaths = new ArrayList<>();

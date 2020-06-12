@@ -45,13 +45,13 @@ class RealtimeCompactedRecordReader extends AbstractRealtimeRecordReader
 
   private static final Logger LOG = LogManager.getLogger(AbstractRealtimeRecordReader.class);
 
-  protected final RecordReader<NullWritable, ArrayWritable> basefileReader;
+  protected final RecordReader<NullWritable, ArrayWritable> parquetReader;
   private final Map<String, HoodieRecord<? extends HoodieRecordPayload>> deltaRecordMap;
 
   public RealtimeCompactedRecordReader(HoodieRealtimeFileSplit split, JobConf job,
       RecordReader<NullWritable, ArrayWritable> realReader) throws IOException {
     super(split, job);
-    this.basefileReader = realReader;
+    this.parquetReader = realReader;
     this.deltaRecordMap = getMergedLogRecordScanner().getRecords();
   }
 
@@ -80,7 +80,7 @@ class RealtimeCompactedRecordReader extends AbstractRealtimeRecordReader
   public boolean next(NullWritable aVoid, ArrayWritable arrayWritable) throws IOException {
     // Call the underlying parquetReader.next - which may replace the passed in ArrayWritable
     // with a new block of values
-    boolean result = this.basefileReader.next(aVoid, arrayWritable);
+    boolean result = this.parquetReader.next(aVoid, arrayWritable);
     if (!result) {
       // if the result is false, then there are no more records
       return false;
@@ -88,7 +88,7 @@ class RealtimeCompactedRecordReader extends AbstractRealtimeRecordReader
       // TODO(VC): Right now, we assume all records in log, have a matching base record. (which
       // would be true until we have a way to index logs too)
       // return from delta records map if we have some match.
-      String key = arrayWritable.get()[HoodieRealtimeInputFormat.HOODIE_RECORD_KEY_COL_POS].toString();
+      String key = arrayWritable.get()[HoodieInputFormatUtils.HOODIE_RECORD_KEY_COL_POS].toString();
       if (deltaRecordMap.containsKey(key)) {
         // TODO(NA): Invoke preCombine here by converting arrayWritable to Avro. This is required since the
         // deltaRecord may not be a full record and needs values of columns from the parquet
@@ -137,26 +137,26 @@ class RealtimeCompactedRecordReader extends AbstractRealtimeRecordReader
 
   @Override
   public NullWritable createKey() {
-    return basefileReader.createKey();
+    return parquetReader.createKey();
   }
 
   @Override
   public ArrayWritable createValue() {
-    return basefileReader.createValue();
+    return parquetReader.createValue();
   }
 
   @Override
   public long getPos() throws IOException {
-    return basefileReader.getPos();
+    return parquetReader.getPos();
   }
 
   @Override
   public void close() throws IOException {
-    basefileReader.close();
+    parquetReader.close();
   }
 
   @Override
   public float getProgress() throws IOException {
-    return basefileReader.getProgress();
+    return parquetReader.getProgress();
   }
 }
