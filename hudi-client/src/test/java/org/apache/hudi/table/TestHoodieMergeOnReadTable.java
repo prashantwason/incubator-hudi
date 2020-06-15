@@ -877,7 +877,6 @@ public class TestHoodieMergeOnReadTable extends HoodieClientTestHarness {
       assertFalse(commit.isPresent());
 
       allFiles = listAllDataFilesInPath(hoodieTable, cfg.getBasePath());
-      allFiles = HoodieTestUtils.listAllDataFilesInPath(metaClient.getFs(), cfg.getBasePath());
       roView = getHoodieTableFileSystemView(metaClient,
           hoodieTable.getActiveTimeline().reload().getCommitsTimeline().filterCompletedInstants(), allFiles);
       dataFilesToRead = roView.getLatestBaseFiles();

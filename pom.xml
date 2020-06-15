@@ -246,8 +246,7 @@
         <version>${maven-surefire-plugin.version}</version>
         <configuration>
           <skip>${skipUTs}</skip>
-          <!--argLine>-Xmx2g</argLine-->
-          <argLine>-Xmx2g -javaagent:/home/pwason/work/java/uber-java-agent/target/uber-java-agent-1.2.0-jar-with-dependencies.jar=metricInterval=3600000,durationProfiling=org.apache.hudi.*,durationProfiling=org.apache.parquet.hadoop.ParquetWriter.*,reporter=com.uber.profiling.reporters.FileOutputReporter,outputDir=/home/pwason/work/java/incubator-hudi</argLine>
+          <argLine>-Xmx2g</argLine>
           <forkedProcessExitTimeoutInSeconds>120</forkedProcessExitTimeoutInSeconds>
           <systemPropertyVariables>
             <log4j.configuration>
@@ -511,6 +510,14 @@
         <artifactId>spark-avro_${scala.binary.version}</artifactId>
         <version>${spark.version}</version>
         <scope>provided</scope>
+      </dependency>
+
+      <!-- Spark Avro from databricks -->
+      <dependency>
+        <groupId>com.databricks</groupId>
+        <artifactId>spark-avro_${scala.binary.version}</artifactId>
+        <version>4.0.0</version>
+        <scope>test</scope>
       </dependency>
 
       <!-- Dropwizard Metrics -->

@@ -69,11 +69,11 @@ import com.databricks.spark.avro.SchemaConverters;
 
 import scala.Function1;
 
-import com.databricks.spark.avro.HoodieAvroSchemaConversion;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -270,8 +270,22 @@ public class HoodieClientTestUtils {
     }
 
     final DataType sparkSchema = SchemaConverters.toSqlType(schema).dataType();
-    final Function1<GenericRecord, Row> avroRecordConverter =
-        HoodieAvroSchemaConversion.createConverterToSQL(schema, sparkSchema);
+
+    // This method from spark-avro package is not visible any longer. Hence, we are using reflection to
+    // access this method for unit testing.
+    Function1<GenericRecord, Row> avroRecordConverter;
+    try {
+      Class c2 = Class.forName("com.databricks.spark.avro.SchemaConverters$");
+      Constructor<?> constructor = c2.getDeclaredConstructors()[0];
+      constructor.setAccessible(true);
+      Method method = c2.getDeclaredMethod("createConverterToSQL", Schema.class, DataType.class);
+      method.setAccessible(true);
+      Object r = method.invoke(constructor.newInstance(), schema, sparkSchema);
+      avroRecordConverter = (Function1<GenericRecord, Row>) r;
+    } catch (Exception e) {
+      e.printStackTrace();
+      throw new RuntimeException("Could not access SchemaConverters.createConverterToSQL()", e);
+    }
 
     // TODO: schema conversion is sub optimal
     final String schemaStr = schema.toString();
