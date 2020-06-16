@@ -76,7 +76,7 @@ public class HoodieHFileWriter<T extends HoodieRecordPayload, R extends IndexedR
   public HoodieHFileWriter(String instantTime, Path file, HoodieHFileConfig hfileConfig, Schema schema,
       SparkTaskContextSupplier sparkTaskContextSupplier) throws IOException {
 
-    Configuration conf = registerFileSystem(file, hfileConfig.getHadoopConf());
+    Configuration conf = HoodieFileWriter.registerFileSystem(file, hfileConfig.getHadoopConf());
     this.file = HoodieWrapperFileSystem.convertToHoodiePath(file, conf);
     this.fs = (HoodieWrapperFileSystem) this.file.getFileSystem(conf);
     this.hfileConfig = hfileConfig;
@@ -98,14 +98,6 @@ public class HoodieHFileWriter<T extends HoodieRecordPayload, R extends IndexedR
     this.writer = HFile.getWriterFactory(conf, cacheConfig).withPath(this.fs, this.file).withFileContext(context).create();
 
     writer.appendFileInfo(KEY_SCHEMA.getBytes(), schema.toString().getBytes());
-  }
-
-  public static Configuration registerFileSystem(Path file, Configuration conf) {
-    Configuration returnConf = new Configuration(conf);
-    String scheme = FSUtils.getFs(file.toString(), conf).getScheme();
-    returnConf.set("fs." + HoodieWrapperFileSystem.getHoodieScheme(scheme) + ".impl",
-        HoodieWrapperFileSystem.class.getName());
-    return returnConf;
   }
 
   @Override

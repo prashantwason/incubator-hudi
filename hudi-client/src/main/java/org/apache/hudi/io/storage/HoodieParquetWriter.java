@@ -51,7 +51,6 @@ public class HoodieParquetWriter<T extends HoodieRecordPayload, R extends Indexe
   private final long maxFileSize;
   private final HoodieAvroWriteSupport writeSupport;
   private final String instantTime;
-  private final Schema schema;
   private final SparkTaskContextSupplier sparkTaskContextSupplier;
 
   public HoodieParquetWriter(String instantTime, Path file, HoodieParquetConfig parquetConfig,
@@ -60,10 +59,10 @@ public class HoodieParquetWriter<T extends HoodieRecordPayload, R extends Indexe
         ParquetFileWriter.Mode.CREATE, parquetConfig.getWriteSupport(), parquetConfig.getCompressionCodecName(),
         parquetConfig.getBlockSize(), parquetConfig.getPageSize(), parquetConfig.getPageSize(),
         ParquetWriter.DEFAULT_IS_DICTIONARY_ENABLED, ParquetWriter.DEFAULT_IS_VALIDATING_ENABLED,
-        ParquetWriter.DEFAULT_WRITER_VERSION, registerFileSystem(file, parquetConfig.getHadoopConf()));
+        ParquetWriter.DEFAULT_WRITER_VERSION, HoodieFileWriter.registerFileSystem(file, parquetConfig.getHadoopConf()));
     this.file = HoodieWrapperFileSystem.convertToHoodiePath(file, parquetConfig.getHadoopConf());
     this.fs =
-        (HoodieWrapperFileSystem) this.file.getFileSystem(registerFileSystem(file, parquetConfig.getHadoopConf()));
+        (HoodieWrapperFileSystem) this.file.getFileSystem(HoodieFileWriter.registerFileSystem(file, parquetConfig.getHadoopConf()));
     // We cannot accurately measure the snappy compressed output file size. We are choosing a
     // conservative 10%
     // TODO - compute this compression ratio dynamically by looking at the bytes written to the
@@ -72,16 +71,7 @@ public class HoodieParquetWriter<T extends HoodieRecordPayload, R extends Indexe
         + Math.round(parquetConfig.getMaxFileSize() * parquetConfig.getCompressionRatio());
     this.writeSupport = parquetConfig.getWriteSupport();
     this.instantTime = instantTime;
-    this.schema = schema;
     this.sparkTaskContextSupplier = sparkTaskContextSupplier;
-  }
-
-  public static Configuration registerFileSystem(Path file, Configuration conf) {
-    Configuration returnConf = new Configuration(conf);
-    String scheme = FSUtils.getFs(file.toString(), conf).getScheme();
-    returnConf.set("fs." + HoodieWrapperFileSystem.getHoodieScheme(scheme) + ".impl",
-        HoodieWrapperFileSystem.class.getName());
-    return returnConf;
   }
 
   @Override

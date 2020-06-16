@@ -52,10 +52,6 @@ public class WriteHelper<T extends HoodieRecordPayload<T>> {
       }
       Duration indexLookupDuration = Duration.between(lookupBegin, Instant.now());
 
-      if (table.requireSortedRecords()) {
-        taggedRecords = taggedRecords.sortBy(r -> r.getRecordKey(), true, taggedRecords.getNumPartitions());
-      }
-
       HoodieWriteMetadata result = executor.execute(taggedRecords);
       result.setIndexLookupDuration(indexLookupDuration);
       return result;

@@ -18,9 +18,13 @@
 
 package org.apache.hudi.io.storage;
 
+import org.apache.hudi.common.fs.FSUtils;
+import org.apache.hudi.common.fs.HoodieWrapperFileSystem;
 import org.apache.hudi.common.model.HoodieRecord;
 
 import org.apache.avro.generic.IndexedRecord;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
 
 import java.io.IOException;
 
@@ -33,4 +37,12 @@ public interface HoodieFileWriter<R extends IndexedRecord> {
   void close() throws IOException;
 
   void writeAvro(String key, R oldRecord) throws IOException;
+
+  static Configuration registerFileSystem(Path file, Configuration conf) {
+    Configuration returnConf = new Configuration(conf);
+    String scheme = FSUtils.getFs(file.toString(), conf).getScheme();
+    returnConf.set("fs." + HoodieWrapperFileSystem.getHoodieScheme(scheme) + ".impl",
+        HoodieWrapperFileSystem.class.getName());
+    return returnConf;
+  }
 }
