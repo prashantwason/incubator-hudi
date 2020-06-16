@@ -41,6 +41,7 @@ import org.apache.hadoop.hbase.io.FSDataInputStreamWrapper;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.io.hfile.HFile;
 import org.apache.hadoop.hbase.io.hfile.HFileScanner;
+import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hudi.avro.HoodieAvroUtils;
 import org.apache.hudi.common.bloom.BloomFilter;
 import org.apache.hudi.common.bloom.BloomFilterFactory;
@@ -49,8 +50,6 @@ import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieIOException;
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
-
-import scala.Tuple2;
 
 public class HoodieHFileReader<R extends IndexedRecord> implements HoodieFileReader {
   private static final Logger LOG = LogManager.getLogger(HoodieHFileReader.class);
@@ -120,11 +119,11 @@ public class HoodieHFileReader<R extends IndexedRecord> implements HoodieFileRea
   @Override
   public Set<String> filterRowKeys(Set candidateRowKeys) {
     try {
-      List<Tuple2<String, R>> allRecords = readAllRecords();
+      List<Pair<String, R>> allRecords = readAllRecords();
       Set<String> rowKeys = new HashSet<>();
       allRecords.forEach(t -> {
-        if (candidateRowKeys.contains(t._1)) {
-          rowKeys.add(t._1);
+        if (candidateRowKeys.contains(t.getFirst())) {
+          rowKeys.add(t.getFirst());
         }
       });
       return rowKeys;
@@ -133,8 +132,8 @@ public class HoodieHFileReader<R extends IndexedRecord> implements HoodieFileRea
     }
   }
 
-  public List<Tuple2<String, R>> readAllRecords(Schema schema) throws IOException {
-    List<Tuple2<String, R>> recordList = new LinkedList<>();
+  public List<Pair<String, R>> readAllRecords(Schema schema) throws IOException {
+    List<Pair<String, R>> recordList = new LinkedList<>();
     try {
       HFileScanner scanner = reader.getScanner(false, false);
       if (scanner.seekTo()) {
@@ -142,7 +141,7 @@ public class HoodieHFileReader<R extends IndexedRecord> implements HoodieFileRea
           Cell c = scanner.getKeyValue();
           byte[] keyBytes = Arrays.copyOfRange(c.getRowArray(), c.getRowOffset(), c.getRowOffset() + c.getRowLength());
           R record = readNextRecord(c, schema);
-          recordList.add(new Tuple2<>(new String(keyBytes), record));
+          recordList.add(new Pair<>(new String(keyBytes), record));
         } while (scanner.next());
       }
 
@@ -152,7 +151,7 @@ public class HoodieHFileReader<R extends IndexedRecord> implements HoodieFileRea
     }
   }
 
-  public List<Tuple2<String, R>> readAllRecords() throws IOException {
+  public List<Pair<String, R>> readAllRecords() throws IOException {
     Schema schema = new Schema.Parser().parse(new String(reader.loadFileInfo().get("schema".getBytes())));
     return readAllRecords(schema);
   }

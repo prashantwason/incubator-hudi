@@ -27,8 +27,6 @@ import org.apache.hudi.io.storage.HoodieHFileReader;
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
 
-import scala.Tuple2;
-
 import org.apache.avro.Schema;
 import org.apache.avro.Schema.Field;
 import org.apache.avro.generic.IndexedRecord;
@@ -41,6 +39,7 @@ import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.io.hfile.HFile;
 import org.apache.hadoop.hbase.io.hfile.HFileContext;
 import org.apache.hadoop.hbase.io.hfile.HFileContextBuilder;
+import org.apache.hadoop.hbase.util.Pair;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -151,8 +150,8 @@ public class HoodieHFileDataBlock extends HoodieDataBlock {
 
     // Read the content
     HoodieHFileReader reader = new HoodieHFileReader<>(getContent().get());
-    List<Tuple2<String, IndexedRecord>> records = reader.readAllRecords(schema);
-    this.records = records.stream().map(t -> t._2).collect(Collectors.toList());
+    List<Pair<String, IndexedRecord>> records = reader.readAllRecords(schema);
+    this.records = records.stream().map(t -> t.getSecond()).collect(Collectors.toList());
 
     // Free up content to be GC'd, deflate
     deflate();
