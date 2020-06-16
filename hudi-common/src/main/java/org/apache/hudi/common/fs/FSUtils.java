@@ -112,8 +112,8 @@ public class FSUtils {
     return String.format("%s_%s_%s%s", fileId, writeToken, instantTime, HoodieFileFormat.PARQUET.getFileExtension());
   }
 
-  public static String makeDataFileName(String instantTime, String writeToken, String fileId, HoodieFileFormat fileFormat) {
-    return String.format("%s_%s_%s%s", fileId, writeToken, instantTime, fileFormat.getFileExtension());
+  public static String makeDataFileName(String instantTime, String writeToken, String fileId, String fileExtension) {
+    return String.format("%s_%s_%s%s", fileId, writeToken, instantTime, fileExtension);
   }
 
   public static String makeMarkerFile(String instantTime, String writeToken, String fileId) {

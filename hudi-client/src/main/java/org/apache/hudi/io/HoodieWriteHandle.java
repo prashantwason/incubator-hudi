@@ -87,7 +87,7 @@ public abstract class HoodieWriteHandle<T extends HoodieRecordPayload> extends H
     }
 
     return new Path(path.toString(), FSUtils.makeDataFileName(instantTime, writeToken, fileId,
-        hoodieTable.getMetaClient().getTableConfig().getBaseFileFormat()));
+        hoodieTable.getMetaClient().getTableConfig().getBaseFileFormat().getFileExtension()));
   }
 
   /**

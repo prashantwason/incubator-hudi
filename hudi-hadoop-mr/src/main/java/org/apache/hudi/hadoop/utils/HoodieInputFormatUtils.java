@@ -18,6 +18,7 @@
 
 package org.apache.hudi.hadoop.utils;
 
+import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.model.HoodieBaseFile;
 import org.apache.hudi.common.model.HoodieCommitMetadata;
 import org.apache.hudi.common.model.HoodieFileFormat;
@@ -83,6 +84,17 @@ public class HoodieInputFormatUtils {
       default:
         throw new HoodieIOException("Hoodie InputFormat not implemented for base file format " + baseFileFormat);
     }
+  }
+
+  public static FileInputFormat getInputFormat(String path, boolean realtime) {
+    final String extension = FSUtils.getFileExtension(path.toString());
+    if (extension.equals(HoodieFileFormat.PARQUET.getFileExtension())) {
+      return getInputFormat(HoodieFileFormat.PARQUET, realtime);
+    }
+    if (extension.equals(HoodieFileFormat.HFILE.getFileExtension())) {
+      return getInputFormat(HoodieFileFormat.HFILE, realtime);
+    }
+    throw new HoodieIOException("Hoodie InputFormat not implemented for base file of type " + extension);
   }
 
   /**
@@ -279,19 +291,20 @@ public class HoodieInputFormatUtils {
    * Takes in a list of filesStatus and a list of table metadatas. Groups the files status list
    * based on given table metadata.
    * @param fileStatuses
+   * @param fileExtension
    * @param metaClientList
    * @return
    * @throws IOException
    */
   public static Map<HoodieTableMetaClient, List<FileStatus>> groupFileStatusForSnapshotPaths(
-      FileStatus[] fileStatuses, Collection<HoodieTableMetaClient> metaClientList) {
+      FileStatus[] fileStatuses, String fileExtension, Collection<HoodieTableMetaClient> metaClientList) {
     // This assumes the paths for different tables are grouped together
     Map<HoodieTableMetaClient, List<FileStatus>> grouped = new HashMap<>();
     HoodieTableMetaClient metadata = null;
     for (FileStatus status : fileStatuses) {
       Path inputPath = status.getPath();
-      if (!inputPath.getName().endsWith(".parquet")) {
-        //FIXME(vc): skip non parquet files for now. This wont be needed once log file name start
+      if (!inputPath.getName().endsWith(fileExtension)) {
+        //FIXME(vc): skip non data files for now. This wont be needed once log file name start
         // with "."
         continue;
       }

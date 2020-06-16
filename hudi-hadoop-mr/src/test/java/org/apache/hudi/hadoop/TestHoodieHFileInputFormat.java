@@ -56,11 +56,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class TestHoodieParquetInputFormat {
+public class TestHoodieHFileInputFormat {
 
-  private HoodieParquetInputFormat inputFormat;
+  private HoodieHFileInputFormat inputFormat;
   private JobConf jobConf;
-  private final HoodieFileFormat baseFileFormat = HoodieFileFormat.PARQUET;
+  private final HoodieFileFormat baseFileFormat = HoodieFileFormat.HFILE;
   private final String baseFileExtension = baseFileFormat.getFileExtension();
 
   public static void ensureFilesInCommit(String msg, FileStatus[] files, String commit, int expected) {
@@ -76,7 +76,7 @@ public class TestHoodieParquetInputFormat {
 
   @BeforeEach
   public void setUp() {
-    inputFormat = new HoodieParquetInputFormat();
+    inputFormat = new HoodieHFileInputFormat();
     jobConf = new JobConf();
     inputFormat.setConf(jobConf);
   }
@@ -102,7 +102,7 @@ public class TestHoodieParquetInputFormat {
     instants.add(t4);
     instants.add(t5);
     instants.add(t6);
-    HoodieTableMetaClient metaClient = HoodieTestUtils.init(basePath.toString());
+    HoodieTableMetaClient metaClient = HoodieTestUtils.init(basePath.toString(), HoodieFileFormat.HFILE);
     HoodieActiveTimeline timeline = new HoodieActiveTimeline(metaClient);
     timeline.setInstants(instants);
 
@@ -154,11 +154,10 @@ public class TestHoodieParquetInputFormat {
     // Add the paths
     FileInputFormat.setInputPaths(jobConf, partitionDir.getPath());
 
-    InputSplit[] inputSplits = inputFormat.getSplits(jobConf, 10);
-    assertEquals(10, inputSplits.length);
-
     FileStatus[] files = inputFormat.listStatus(jobConf);
     assertEquals(10, files.length);
+    InputSplit[] inputSplits = inputFormat.getSplits(jobConf, 10);
+    assertEquals(10, inputSplits.length);
   }
 
   @Test
@@ -186,39 +185,6 @@ public class TestHoodieParquetInputFormat {
         + "files from 100 commit", files, "200", 5);
     ensureFilesInCommit("5 files have been updated to commit 200. We should see 5 files from commit 100 and 5 "
         + "files from 200 commit", files, "100", 5);
-  }
-
-  @Test
-  public void testInputFormatWithCompaction() throws IOException {
-    // initial commit
-    File partitionDir = InputFormatTestUtil.prepareTable(basePath, 10, "100");
-    InputFormatTestUtil.commit(basePath, "100");
-
-    // Add the paths
-    FileInputFormat.setInputPaths(jobConf, partitionDir.getPath());
-
-    InputSplit[] inputSplits = inputFormat.getSplits(jobConf, 10);
-    assertEquals(10, inputSplits.length);
-
-    FileStatus[] files = inputFormat.listStatus(jobConf);
-    assertEquals(10, files.length);
-
-    // simulate compaction requested
-    createCompactionFile(basePath, "125");
-
-    // add inserts after compaction timestamp
-    InputFormatTestUtil.simulateInserts(partitionDir, "fileId2", 5, "200");
-    InputFormatTestUtil.commit(basePath, "200");
-
-    // verify snapshot reads show all new inserts even though there is pending compaction
-    files = inputFormat.listStatus(jobConf);
-    assertEquals(15, files.length);
-
-    // verify that incremental reads do NOT show inserts after compaction timestamp
-    InputFormatTestUtil.setupIncremental(jobConf, "100", 10);
-    files = inputFormat.listStatus(jobConf);
-    assertEquals(0, files.length,
-        "We should exclude commit 200 when there is a pending compaction at 150");
   }
 
   @Test

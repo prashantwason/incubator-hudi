@@ -31,6 +31,7 @@ import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.RecordReader;
 import org.apache.hadoop.mapred.Reporter;
 import org.apache.hadoop.mapreduce.Job;
+import org.apache.hudi.common.model.HoodieFileFormat;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.timeline.HoodieDefaultTimeline;
 import org.apache.hudi.common.table.timeline.HoodieInstant;
@@ -99,7 +100,8 @@ public class HoodieHFileInputFormat extends FileInputFormat<NullWritable, ArrayW
       setInputPaths(job, snapshotPaths.toArray(new Path[snapshotPaths.size()]));
       FileStatus[] fileStatuses = super.listStatus(job);
       Map<HoodieTableMetaClient, List<FileStatus>> groupedFileStatus =
-          HoodieInputFormatUtils.groupFileStatusForSnapshotPaths(fileStatuses, tableMetaClientMap.values());
+          HoodieInputFormatUtils.groupFileStatusForSnapshotPaths(fileStatuses, HoodieFileFormat.HFILE.getFileExtension(),
+              tableMetaClientMap.values());
       LOG.info("Found a total of " + groupedFileStatus.size() + " groups");
       for (Map.Entry<HoodieTableMetaClient, List<FileStatus>> entry : groupedFileStatus.entrySet()) {
         List<FileStatus> result = HoodieInputFormatUtils.filterFileStatusForSnapshotMode(job, entry.getKey(), entry.getValue());

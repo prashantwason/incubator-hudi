@@ -118,7 +118,8 @@ public class HoodieMergeHandle<T extends HoodieRecordPayload> extends HoodieWrit
 
       oldFilePath = new Path(config.getBasePath() + "/" + partitionPath + "/" + latestValidFilePath);
       String relativePath = new Path((partitionPath.isEmpty() ? "" : partitionPath + "/")
-          + FSUtils.makeDataFileName(instantTime, writeToken, fileId, hoodieTable.getBaseFileFormat())).toString();
+          + FSUtils.makeDataFileName(instantTime, writeToken, fileId,
+              hoodieTable.getBaseFileFormat().getFileExtension())).toString();
       newFilePath = new Path(config.getBasePath(), relativePath);
 
       LOG.info(String.format("Merging new data into oldPath %s, as newPath %s", oldFilePath.toString(),
