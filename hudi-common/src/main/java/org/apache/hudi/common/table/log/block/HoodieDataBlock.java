@@ -40,8 +40,7 @@ import java.util.Map;
  * The Datablock contains:
  *   1. Data Block version
  *   2. Total number of records in the block
- *   3. Size of a record
- *   4. Actual serialized content of the records
+ *   3. Actual serialized content of the records
  */
 public abstract class HoodieDataBlock extends HoodieLogBlock {
 
