@@ -52,8 +52,6 @@ import java.io.IOException;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.PriorityQueue;
-import java.util.Queue;
 import java.util.Set;
 
 @SuppressWarnings("Duplicates")
@@ -61,17 +59,16 @@ public class HoodieMergeHandle<T extends HoodieRecordPayload> extends HoodieWrit
 
   private static final Logger LOG = LogManager.getLogger(HoodieMergeHandle.class);
 
-  private Map<String, HoodieRecord<T>> keyToNewRecords;
-  private Set<String> writtenRecordKeys;
+  protected Map<String, HoodieRecord<T>> keyToNewRecords;
+  protected Set<String> writtenRecordKeys;
   private HoodieFileWriter<IndexedRecord> storageWriter;
   private Path newFilePath;
   private Path oldFilePath;
   private long recordsWritten = 0;
   private long recordsDeleted = 0;
   private long updatedRecordsWritten = 0;
-  private long insertRecordsWritten = 0;
-  private boolean useWriterSchema;
-  private Queue<String> newRecordKeysSorted;
+  protected long insertRecordsWritten = 0;
+  protected boolean useWriterSchema;
 
   public HoodieMergeHandle(HoodieWriteConfig config, String instantTime, HoodieTable<T> hoodieTable,
        Iterator<HoodieRecord<T>> recordItr, String partitionPath, String fileId, SparkTaskContextSupplier sparkTaskContextSupplier) {
@@ -138,11 +135,6 @@ public class HoodieMergeHandle<T extends HoodieRecordPayload> extends HoodieWrit
       storageWriter =
           HoodieFileWriterFactory.getFileWriter(instantTime, newFilePath, hoodieTable, config, writerSchema, sparkTaskContextSupplier);
 
-      if (hoodieTable.requireSortedRecords()) {
-        newRecordKeysSorted = new PriorityQueue<>();
-        newRecordKeysSorted.addAll(keyToNewRecords.keySet());
-      }
-
     } catch (IOException io) {
       LOG.error("Error in update task at commit " + instantTime, io);
       writeStatus.setGlobalError(io);
@@ -188,7 +180,7 @@ public class HoodieMergeHandle<T extends HoodieRecordPayload> extends HoodieWrit
     return writeRecord(hoodieRecord, indexedRecord);
   }
 
-  private boolean writeRecord(HoodieRecord<T> hoodieRecord, Option<IndexedRecord> indexedRecord) {
+  protected boolean writeRecord(HoodieRecord<T> hoodieRecord, Option<IndexedRecord> indexedRecord) {
     Option recordMetadata = hoodieRecord.getData().getMetadata();
     if (!partitionPath.equals(hoodieRecord.getPartitionPath())) {
       HoodieUpsertException failureEx = new HoodieUpsertException("mismatched partition path, record partition: "
@@ -224,35 +216,6 @@ public class HoodieMergeHandle<T extends HoodieRecordPayload> extends HoodieWrit
    */
   public void write(GenericRecord oldRecord) {
     String key = oldRecord.get(HoodieRecord.RECORD_KEY_METADATA_FIELD).toString();
-
-    if (hoodieTable.requireSortedRecords()) {
-      // To maintain overall sorted order across updates and inserts, write any new inserts whose keys are less than
-      // the oldRecord's key.
-      while (!newRecordKeysSorted.isEmpty() && newRecordKeysSorted.peek().compareTo(key) <= 0) {
-        String keyToPreWrite = newRecordKeysSorted.remove();
-        if (keyToPreWrite.equals(key)) {
-          // will be handled as an update later
-          break;
-        }
-
-        // This is a new insert
-        HoodieRecord<T> hoodieRecord = new HoodieRecord<>(keyToNewRecords.get(keyToPreWrite));
-        if (writtenRecordKeys.contains(keyToPreWrite)) {
-          throw new HoodieUpsertException("Insert/Update not in sorted order");
-        }
-        try {
-          if (useWriterSchema) {
-            writeRecord(hoodieRecord, hoodieRecord.getData().getInsertValue(writerSchema));
-          } else {
-            writeRecord(hoodieRecord, hoodieRecord.getData().getInsertValue(originalSchema));
-          }
-          insertRecordsWritten++;
-          writtenRecordKeys.add(keyToPreWrite);
-        } catch (IOException e) {
-          throw new HoodieUpsertException("Failed to write records", e);
-        }
-      }
-    }
 
     boolean copyOldRecord = true;
     if (keyToNewRecords.containsKey(key)) {
@@ -301,36 +264,17 @@ public class HoodieMergeHandle<T extends HoodieRecordPayload> extends HoodieWrit
   public WriteStatus close() {
     try {
       // write out any pending records (this can happen when inserts are turned into updates)
-      if (hoodieTable.requireSortedRecords()) {
-        newRecordKeysSorted.stream().sorted().forEach(key -> {
-          try {
-            HoodieRecord<T> hoodieRecord = keyToNewRecords.get(key);
-            if (!writtenRecordKeys.contains(hoodieRecord.getRecordKey())) {
-              if (useWriterSchema) {
-                writeRecord(hoodieRecord, hoodieRecord.getData().getInsertValue(writerSchema));
-              } else {
-                writeRecord(hoodieRecord, hoodieRecord.getData().getInsertValue(originalSchema));
-              }
-              insertRecordsWritten++;
-            }
-          } catch (IOException e) {
-            throw new HoodieUpsertException("Failed to close UpdateHandle", e);
+      Iterator<HoodieRecord<T>> newRecordsItr = (keyToNewRecords instanceof ExternalSpillableMap)
+          ? ((ExternalSpillableMap)keyToNewRecords).iterator() : keyToNewRecords.values().iterator();
+      while (newRecordsItr.hasNext()) {
+        HoodieRecord<T> hoodieRecord = newRecordsItr.next();
+        if (!writtenRecordKeys.contains(hoodieRecord.getRecordKey())) {
+          if (useWriterSchema) {
+            writeRecord(hoodieRecord, hoodieRecord.getData().getInsertValue(writerSchema));
+          } else {
+            writeRecord(hoodieRecord, hoodieRecord.getData().getInsertValue(originalSchema));
           }
-        });
-        newRecordKeysSorted.clear();
-      } else {
-        Iterator<HoodieRecord<T>> newRecordsItr = (keyToNewRecords instanceof ExternalSpillableMap)
-            ? ((ExternalSpillableMap)keyToNewRecords).iterator() : keyToNewRecords.values().iterator();
-        while (newRecordsItr.hasNext()) {
-          HoodieRecord<T> hoodieRecord = newRecordsItr.next();
-          if (!writtenRecordKeys.contains(hoodieRecord.getRecordKey())) {
-            if (useWriterSchema) {
-              writeRecord(hoodieRecord, hoodieRecord.getData().getInsertValue(writerSchema));
-            } else {
-              writeRecord(hoodieRecord, hoodieRecord.getData().getInsertValue(originalSchema));
-            }
-            insertRecordsWritten++;
-          }
+          insertRecordsWritten++;
         }
       }
       keyToNewRecords.clear();
