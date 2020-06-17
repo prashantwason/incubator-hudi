@@ -191,7 +191,7 @@ public class TestHoodieParquetInputFormat {
   @Test
   public void testInputFormatWithCompaction() throws IOException {
     // initial commit
-    File partitionDir = InputFormatTestUtil.prepareTable(basePath, 10, "100");
+    File partitionDir = InputFormatTestUtil.prepareTable(basePath, baseFileFormat, 10, "100");
     InputFormatTestUtil.commit(basePath, "100");
 
     // Add the paths
@@ -207,7 +207,7 @@ public class TestHoodieParquetInputFormat {
     createCompactionFile(basePath, "125");
 
     // add inserts after compaction timestamp
-    InputFormatTestUtil.simulateInserts(partitionDir, "fileId2", 5, "200");
+    InputFormatTestUtil.simulateInserts(partitionDir, baseFileExtension, "fileId2", 5, "200");
     InputFormatTestUtil.commit(basePath, "200");
 
     // verify snapshot reads show all new inserts even though there is pending compaction

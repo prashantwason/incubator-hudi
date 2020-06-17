@@ -57,7 +57,7 @@ public class HoodieMergeOnReadTestUtils {
                                                                boolean realtime) {
     HoodieTableMetaClient metaClient = new HoodieTableMetaClient(conf, basePath);
     FileInputFormat inputFormat = HoodieInputFormatUtils.getInputFormat(metaClient.getTableConfig().getBaseFileFormat(),
-        realtime);
+        realtime, jobConf);
 
     Schema schema = HoodieAvroUtils.addMetadataFields(
         new Schema.Parser().parse(HoodieTestDataGenerator.TRIP_EXAMPLE_SCHEMA));

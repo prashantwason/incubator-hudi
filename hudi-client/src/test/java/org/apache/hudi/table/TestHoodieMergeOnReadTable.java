@@ -47,8 +47,12 @@ import org.apache.hudi.config.HoodieCompactionConfig;
 import org.apache.hudi.config.HoodieIndexConfig;
 import org.apache.hudi.config.HoodieStorageConfig;
 import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.exception.HoodieIOException;
 import org.apache.hudi.hadoop.utils.HoodieHiveUtils;
+import org.apache.hudi.hadoop.utils.HoodieInputFormatUtils;
+import org.apache.hudi.hadoop.HoodieHFileInputFormat;
 import org.apache.hudi.hadoop.HoodieParquetInputFormat;
+import org.apache.hudi.hadoop.realtime.HoodieHFileRealtimeInputFormat;
 import org.apache.hudi.hadoop.realtime.HoodieParquetRealtimeInputFormat;
 import org.apache.hudi.index.HoodieIndex;
 import org.apache.hudi.index.HoodieIndex.IndexType;
@@ -114,7 +118,7 @@ public class TestHoodieMergeOnReadTable extends HoodieClientTestHarness {
     metaClient = HoodieTestUtils.init(hadoopConf, basePath, HoodieTableType.MERGE_ON_READ, baseFileFormat);
     initTestDataGenerator();
 
-    roSnapshotJobConf = new JobConf(jsc.hadoopConfiguration());
+    roSnapshotJobConf = new JobConf(hadoopConf);
     roJobConf = new JobConf(hadoopConf);
     rtJobConf = new JobConf(hadoopConf);
   }
@@ -193,29 +197,17 @@ public class TestHoodieMergeOnReadTable extends HoodieClientTestHarness {
       List<HoodieRecord> records001 = dataGen.generateInserts(commitTime1, 200);
       insertAndGetFilePaths(records001, client, cfg, commitTime1);
 
-<<<<<<< HEAD
       // verify only one base file shows up with commit time 001
       FileStatus[] snapshotROFiles = getROSnapshotFiles(partitionPath);
-      validateFiles(partitionPath,1, snapshotROFiles, roSnapshotInputFormat,
-          roSnapshotJobConf,200, commitTime1);
+      validateFiles(partitionPath, 1, snapshotROFiles, false, roSnapshotJobConf, 200, commitTime1);
 
       FileStatus[] incrementalROFiles = getROIncrementalFiles(partitionPath, true);
-      validateFiles(partitionPath, 1, incrementalROFiles, roInputFormat,
-              roJobConf,200, commitTime1);
+      validateFiles(partitionPath, 1, incrementalROFiles, false, roJobConf, 200, commitTime1);
       Path firstFilePath = incrementalROFiles[0].getPath();
 
       FileStatus[] incrementalRTFiles = getRTIncrementalFiles(partitionPath);
-      validateFiles(partitionPath, 1, incrementalRTFiles, rtInputFormat,
-              rtJobConf,200, commitTime1);
-=======
-      // verify only one base files shows up with commit time 001
-      FileStatus[] incrementalROFiles = getROIncrementalFiles(partitionPath, true);
-      validateIncrementalFiles(partitionPath, 1, incrementalROFiles, false, 200, commitTime1);
-      Path firstFilePath = incrementalROFiles[0].getPath();
+      validateFiles(partitionPath, 1, incrementalRTFiles, true, rtJobConf,200, commitTime1);
 
-      FileStatus[] incrementalRTFiles = getRTIncrementalFiles(partitionPath);
-      validateIncrementalFiles(partitionPath, 1, incrementalRTFiles, true, 200, commitTime1);
->>>>>>> [HUDI-684] Introduced abstraction for writing and reading different types of base file formats.
       assertEquals(firstFilePath, incrementalRTFiles[0].getPath());
 
       /**
@@ -228,22 +220,12 @@ public class TestHoodieMergeOnReadTable extends HoodieClientTestHarness {
 
       // verify RO incremental reads - only one parquet file shows up because updates to into log files
       incrementalROFiles = getROIncrementalFiles(partitionPath, false);
-<<<<<<< HEAD
-      validateFiles(partitionPath, 1, incrementalROFiles, roInputFormat,
-              roJobConf, 200, commitTime1);
-=======
-      validateIncrementalFiles(partitionPath, 1, incrementalROFiles, false, 200, commitTime1);
->>>>>>> [HUDI-684] Introduced abstraction for writing and reading different types of base file formats.
+      validateFiles(partitionPath, 1, incrementalROFiles, false, roJobConf, 200, commitTime1);
       assertEquals(firstFilePath, incrementalROFiles[0].getPath());
 
       // verify RT incremental reads includes updates also
       incrementalRTFiles = getRTIncrementalFiles(partitionPath);
-<<<<<<< HEAD
-      validateFiles(partitionPath, 1, incrementalRTFiles, rtInputFormat,
-              rtJobConf, 200, commitTime1, updateTime);
-=======
-      validateIncrementalFiles(partitionPath, 1, incrementalRTFiles, true, 200, commitTime1, updateTime);
->>>>>>> [HUDI-684] Introduced abstraction for writing and reading different types of base file formats.
+      validateFiles(partitionPath, 1, incrementalRTFiles, true, rtJobConf, 200, commitTime1, updateTime);
 
       // request compaction, but do not perform compaction
       String compactionCommitTime = "005";
@@ -251,21 +233,11 @@ public class TestHoodieMergeOnReadTable extends HoodieClientTestHarness {
 
       // verify RO incremental reads - only one parquet file shows up because updates go into log files
       incrementalROFiles = getROIncrementalFiles(partitionPath, true);
-<<<<<<< HEAD
-      validateFiles(partitionPath,1, incrementalROFiles, roInputFormat,
-              roJobConf, 200, commitTime1);
+      validateFiles(partitionPath,1, incrementalROFiles, false, roJobConf, 200, commitTime1);
 
       // verify RT incremental reads includes updates also
       incrementalRTFiles = getRTIncrementalFiles(partitionPath);
-      validateFiles(partitionPath, 1, incrementalRTFiles, rtInputFormat,
-              rtJobConf, 200, commitTime1, updateTime);
-=======
-      validateIncrementalFiles(partitionPath,1, incrementalROFiles, false, 200, commitTime1);
-
-      // verify RT incremental reads includes updates also
-      incrementalRTFiles = getRTIncrementalFiles(partitionPath);
-      validateIncrementalFiles(partitionPath, 1, incrementalRTFiles, true, 200, commitTime1, updateTime);
->>>>>>> [HUDI-684] Introduced abstraction for writing and reading different types of base file formats.
+      validateFiles(partitionPath, 1, incrementalRTFiles, true, rtJobConf, 200, commitTime1, updateTime);
 
       // write 3 - more inserts
       String insertsTime = "006";
@@ -275,55 +247,35 @@ public class TestHoodieMergeOnReadTable extends HoodieClientTestHarness {
 
       // verify new write shows up in snapshot mode even though there is pending compaction
       snapshotROFiles = getROSnapshotFiles(partitionPath);
-      validateFiles(partitionPath, 2, snapshotROFiles, roSnapshotInputFormat,
-          roSnapshotJobConf,400, commitTime1, insertsTime);
+      validateFiles(partitionPath, 2, snapshotROFiles, false, roSnapshotJobConf,400, commitTime1, insertsTime);
 
       incrementalROFiles = getROIncrementalFiles(partitionPath, true);
       assertEquals(firstFilePath, incrementalROFiles[0].getPath());
       // verify 006 does not show up in RO mode because of pending compaction
-<<<<<<< HEAD
-      validateFiles(partitionPath, 1, incrementalROFiles, roInputFormat,
-              roJobConf, 200, commitTime1);
+
+      validateFiles(partitionPath, 1, incrementalROFiles, false, roJobConf, 200, commitTime1);
 
       // verify that if stopAtCompaction is disabled, inserts from "insertsTime" show up
       incrementalROFiles = getROIncrementalFiles(partitionPath, false);
-      validateFiles(partitionPath,2, incrementalROFiles, roInputFormat,
-          roJobConf, 400, commitTime1, insertsTime);
+      validateFiles(partitionPath,2, incrementalROFiles, false, roJobConf, 400, commitTime1, insertsTime);
 
       // verify 006 shows up in RT views
       incrementalRTFiles = getRTIncrementalFiles(partitionPath);
-      validateFiles(partitionPath, 2, incrementalRTFiles, rtInputFormat,
-              rtJobConf, 400, commitTime1, updateTime, insertsTime);
-=======
-      validateIncrementalFiles(partitionPath, 1, incrementalROFiles, false, 200, commitTime1);
-
-      // verify that if stopAtCompaction is disabled, inserts from "insertsTime" show up
-      incrementalROFiles = getROIncrementalFiles(partitionPath, false);
-      validateIncrementalFiles(partitionPath,2, incrementalROFiles, false, 400, commitTime1, insertsTime);
-
-      // verify 006 shows up in RT views
-      incrementalRTFiles = getRTIncrementalFiles(partitionPath);
-      validateIncrementalFiles(partitionPath, 2, incrementalRTFiles, true, 400, commitTime1, updateTime, insertsTime);
->>>>>>> [HUDI-684] Introduced abstraction for writing and reading different types of base file formats.
+      validateFiles(partitionPath, 2, incrementalRTFiles, true, rtJobConf, 400, commitTime1, updateTime, insertsTime);
 
       // perform the scheduled compaction
       client.compact(compactionCommitTime);
 
       // verify new write shows up in snapshot mode after compaction is complete
       snapshotROFiles = getROSnapshotFiles(partitionPath);
-      validateFiles(partitionPath,2, snapshotROFiles, roSnapshotInputFormat,
-          roSnapshotJobConf,400, commitTime1, compactionCommitTime, insertsTime);
+      validateFiles(partitionPath,2, snapshotROFiles, false, roSnapshotJobConf,400, commitTime1, compactionCommitTime,
+          insertsTime);
 
       incrementalROFiles = getROIncrementalFiles(partitionPath, "002", -1, true);
       assertTrue(incrementalROFiles.length == 2);
       // verify 006 shows up because of pending compaction
-<<<<<<< HEAD
-      validateFiles(partitionPath, 2, incrementalROFiles, roInputFormat,
-              roJobConf, 400, commitTime1, compactionCommitTime, insertsTime);
-=======
-      validateIncrementalFiles(partitionPath, 2, incrementalROFiles, false, 400, commitTime1, compactionCommitTime,
-          insertsTime);
->>>>>>> [HUDI-684] Introduced abstraction for writing and reading different types of base file formats.
+      validateFiles(partitionPath, 2, incrementalROFiles, false, roJobConf, 400, commitTime1, compactionCommitTime,
+                    insertsTime);
     }
   }
 
@@ -1543,9 +1495,8 @@ public class TestHoodieMergeOnReadTable extends HoodieClientTestHarness {
 
   private FileStatus[] getROSnapshotFiles(String partitionPath)
       throws Exception {
-    HoodieTestUtils.init(hadoopConf, basePath, HoodieTableType.MERGE_ON_READ);
     FileInputFormat.setInputPaths(roSnapshotJobConf, basePath + "/" + partitionPath);
-    return roSnapshotInputFormat.listStatus(roSnapshotJobConf);
+    return listStatus(roSnapshotJobConf, false);
   }
 
   private FileStatus[] getROIncrementalFiles(String partitionPath, boolean stopAtCompaction)
@@ -1557,9 +1508,7 @@ public class TestHoodieMergeOnReadTable extends HoodieClientTestHarness {
           throws Exception {
     setupIncremental(roJobConf, startCommitTime, numCommitsToPull, stopAtCompaction);
     FileInputFormat.setInputPaths(roJobConf, Paths.get(basePath, partitionPath).toString());
-    HoodieParquetInputFormat roInputFormat = new HoodieParquetInputFormat();
-    roInputFormat.setConf(hadoopConf);
-    return roInputFormat.listStatus(roJobConf);
+    return listStatus(roJobConf, false);
   }
 
   private FileStatus[] getRTIncrementalFiles(String partitionPath)
@@ -1571,9 +1520,7 @@ public class TestHoodieMergeOnReadTable extends HoodieClientTestHarness {
           throws Exception {
     setupIncremental(rtJobConf, startCommitTime, numCommitsToPull, false);
     FileInputFormat.setInputPaths(rtJobConf, Paths.get(basePath, partitionPath).toString());
-    HoodieParquetRealtimeInputFormat rtInputFormat = new HoodieParquetRealtimeInputFormat();
-    rtInputFormat.setConf(hadoopConf);
-    return rtInputFormat.listStatus(rtJobConf);
+    return listStatus(rtJobConf, true);
   }
 
   private void setupIncremental(JobConf jobConf, String startCommit, int numberOfCommitsToPull, boolean stopAtCompaction) {
@@ -1595,10 +1542,9 @@ public class TestHoodieMergeOnReadTable extends HoodieClientTestHarness {
   }
 
   private void validateFiles(String partitionPath, int expectedNumFiles,
-                             FileStatus[] files, boolean realtime,
+                             FileStatus[] files, boolean realtime, JobConf jobConf,
                              int expectedRecords, String... expectedCommits) {
 
-    JobConf jobConf = realtime ? rtJobConf : roJobConf;
     assertEquals(expectedNumFiles, files.length);
     Set<String> expectedCommitsSet = Arrays.stream(expectedCommits).collect(Collectors.toSet());
     List<GenericRecord> records = HoodieMergeOnReadTestUtils.getRecordsUsingInputFormat(hadoopConf,
@@ -1612,6 +1558,28 @@ public class TestHoodieMergeOnReadTable extends HoodieClientTestHarness {
   private FileStatus[] listAllDataFilesInPath(HoodieTable table, String basePath) throws IOException {
     return HoodieTestUtils.listAllDataFilesInPath(metaClient.getFs(), basePath,
         table.getBaseFileFormat().getFileExtension());
+  }
+
+  private FileStatus[] listStatus(JobConf jobConf, boolean realtime) throws IOException {
+    // This is required as Hoodie InputFormats do not extend a common base class and FileInputFormat's
+    // listStatus() is protected.
+    FileInputFormat inputFormat = HoodieInputFormatUtils.getInputFormat(baseFileFormat, realtime, jobConf);
+    switch (baseFileFormat) {
+      case PARQUET:
+        if (realtime) {
+          return ((HoodieParquetRealtimeInputFormat)inputFormat).listStatus(jobConf);
+        } else {
+          return ((HoodieParquetInputFormat)inputFormat).listStatus(jobConf);
+        }
+      case HFILE:
+        if (realtime) {
+          return ((HoodieHFileRealtimeInputFormat)inputFormat).listStatus(jobConf);
+        } else {
+          return ((HoodieHFileInputFormat)inputFormat).listStatus(jobConf);
+        }
+      default:
+        throw new HoodieIOException("Hoodie InputFormat not implemented for base file format " + baseFileFormat);
+    }
   }
 }
 

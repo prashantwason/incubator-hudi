@@ -67,32 +67,40 @@ public class HoodieInputFormatUtils {
 
   private static final Logger LOG = LogManager.getLogger(HoodieInputFormatUtils.class);
 
-  public static FileInputFormat getInputFormat(HoodieFileFormat baseFileFormat, boolean realtime) {
+  public static FileInputFormat getInputFormat(HoodieFileFormat baseFileFormat, boolean realtime, Configuration conf) {
     switch (baseFileFormat) {
       case PARQUET:
         if (realtime) {
-          return new HoodieParquetRealtimeInputFormat();
+          HoodieParquetRealtimeInputFormat inputFormat = new HoodieParquetRealtimeInputFormat();
+          inputFormat.setConf(conf);
+          return inputFormat;
         } else {
-          return new HoodieParquetInputFormat();
+          HoodieParquetInputFormat inputFormat = new HoodieParquetInputFormat();
+          inputFormat.setConf(conf);
+          return inputFormat;
         }
       case HFILE:
         if (realtime) {
-          return new HoodieHFileRealtimeInputFormat();
+          HoodieHFileRealtimeInputFormat inputFormat = new HoodieHFileRealtimeInputFormat();
+          inputFormat.setConf(conf);
+          return inputFormat;
         } else {
-          return new HoodieHFileInputFormat();
+          HoodieHFileInputFormat inputFormat = new HoodieHFileInputFormat();
+          inputFormat.setConf(conf);
+          return inputFormat;
         }
       default:
         throw new HoodieIOException("Hoodie InputFormat not implemented for base file format " + baseFileFormat);
     }
   }
 
-  public static FileInputFormat getInputFormat(String path, boolean realtime) {
+  public static FileInputFormat getInputFormat(String path, boolean realtime, Configuration conf) {
     final String extension = FSUtils.getFileExtension(path.toString());
     if (extension.equals(HoodieFileFormat.PARQUET.getFileExtension())) {
-      return getInputFormat(HoodieFileFormat.PARQUET, realtime);
+      return getInputFormat(HoodieFileFormat.PARQUET, realtime, conf);
     }
     if (extension.equals(HoodieFileFormat.HFILE.getFileExtension())) {
-      return getInputFormat(HoodieFileFormat.HFILE, realtime);
+      return getInputFormat(HoodieFileFormat.HFILE, realtime, conf);
     }
     throw new HoodieIOException("Hoodie InputFormat not implemented for base file of type " + extension);
   }
