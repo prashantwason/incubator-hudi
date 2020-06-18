@@ -104,6 +104,8 @@
                   <include>org.apache.hive:hive-service-rpc</include>
                   <include>org.apache.hive:hive-metastore</include>
                   <include>org.apache.hive:hive-jdbc</include>
+
+                  <include>org.apache.hbase:hbase-common</include>
                 </includes>
               </artifactSet>
               <relocations>
@@ -250,6 +252,13 @@
       <artifactId>hive-common</artifactId>
       <version>${hive.version}</version>
       <scope>${utilities.bundle.hive.scope}</scope>
+    </dependency>
+
+    <!-- Hbase -->
+    <dependency>
+      <groupId>org.apache.hbase</groupId>
+      <artifactId>hbase-common</artifactId>
+      <version>${hbase.version}</version>
     </dependency>
   </dependencies>
 
