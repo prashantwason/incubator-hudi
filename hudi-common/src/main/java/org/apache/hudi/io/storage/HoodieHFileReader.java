@@ -132,7 +132,7 @@ public class HoodieHFileReader<R extends IndexedRecord> implements HoodieFileRea
     }
   }
 
-  public List<Pair<String, R>> readAllRecords(Schema schema) throws IOException {
+  public List<Pair<String, R>> readAllRecords(Schema writerSchema, Schema readerSchema) throws IOException {
     List<Pair<String, R>> recordList = new LinkedList<>();
     try {
       HFileScanner scanner = reader.getScanner(false, false);
@@ -140,7 +140,7 @@ public class HoodieHFileReader<R extends IndexedRecord> implements HoodieFileRea
         do {
           Cell c = scanner.getKeyValue();
           byte[] keyBytes = Arrays.copyOfRange(c.getRowArray(), c.getRowOffset(), c.getRowOffset() + c.getRowLength());
-          R record = readNextRecord(c, schema);
+          R record = readNextRecord(c, writerSchema, readerSchema);
           recordList.add(new Pair<>(new String(keyBytes), record));
         } while (scanner.next());
       }
@@ -153,7 +153,7 @@ public class HoodieHFileReader<R extends IndexedRecord> implements HoodieFileRea
 
   public List<Pair<String, R>> readAllRecords() throws IOException {
     Schema schema = new Schema.Parser().parse(new String(reader.loadFileInfo().get("schema".getBytes())));
-    return readAllRecords(schema);
+    return readAllRecords(schema, schema);
   }
 
   @Override
@@ -169,7 +169,7 @@ public class HoodieHFileReader<R extends IndexedRecord> implements HoodieFileRea
           // To handle when hasNext() is called multiple times for idempotency and/or the first time
           if (this.next == null && !this.eof) {
             if (!scanner.isSeeked() && scanner.seekTo()) {
-                this.next = (R)readNextRecord(scanner.getKeyValue(), schema);
+                this.next = (R)readNextRecord(scanner.getKeyValue(), schema, schema);
             }
           }
           return this.next != null;
@@ -189,7 +189,7 @@ public class HoodieHFileReader<R extends IndexedRecord> implements HoodieFileRea
           }
           R retVal = this.next;
           if (scanner.next()) {
-            this.next = (R)readNextRecord(scanner.getKeyValue(), schema);
+            this.next = (R)readNextRecord(scanner.getKeyValue(), schema, schema);
           } else {
             this.next = null;
             this.eof = true;
@@ -202,9 +202,9 @@ public class HoodieHFileReader<R extends IndexedRecord> implements HoodieFileRea
     };
   }
 
-  private R readNextRecord(Cell c, Schema schema) throws IOException {
+  private R readNextRecord(Cell c, Schema writerSchema, Schema readerSchema) throws IOException {
     byte[] value = Arrays.copyOfRange(c.getValueArray(), c.getValueOffset(), c.getValueOffset() + c.getValueLength());
-    return (R)HoodieAvroUtils.bytesToAvro(value, schema);
+    return (R)HoodieAvroUtils.bytesToAvro(value, writerSchema, readerSchema);
   }
 
   @Override

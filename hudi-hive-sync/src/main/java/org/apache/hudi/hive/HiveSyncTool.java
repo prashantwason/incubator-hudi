@@ -19,10 +19,10 @@
 package org.apache.hudi.hive;
 
 import org.apache.hudi.common.fs.FSUtils;
+import org.apache.hudi.common.model.HoodieFileFormat;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.exception.InvalidTableException;
-import org.apache.hudi.hadoop.HoodieParquetInputFormat;
-import org.apache.hudi.hadoop.realtime.HoodieParquetRealtimeInputFormat;
+import org.apache.hudi.hadoop.utils.HoodieInputFormatUtils;
 import org.apache.hudi.hive.HoodieHiveClient.PartitionEvent;
 import org.apache.hudi.hive.HoodieHiveClient.PartitionEvent.PartitionEventType;
 import org.apache.hudi.hive.util.HiveSchemaUtil;
@@ -146,21 +146,22 @@ public class HiveSyncTool {
     // Check and sync schema
     if (!tableExists) {
       LOG.info("Hive table " + tableName + " is not found. Creating it");
-      if (!useRealTimeInputFormat) {
-        String inputFormatClassName = cfg.usePreApacheInputFormat ? com.uber.hoodie.hadoop.HoodieInputFormat.class.getName()
-            : HoodieParquetInputFormat.class.getName();
-        hoodieHiveClient.createTable(tableName, schema, inputFormatClassName, MapredParquetOutputFormat.class.getName(),
-            ParquetHiveSerDe.class.getName());
-      } else {
-        // Custom serde will not work with ALTER TABLE REPLACE COLUMNS
-        // https://github.com/apache/hive/blob/release-1.1.0/ql/src/java/org/apache/hadoop/hive
-        // /ql/exec/DDLTask.java#L3488
-        String inputFormatClassName =
-            cfg.usePreApacheInputFormat ? com.uber.hoodie.hadoop.realtime.HoodieRealtimeInputFormat.class.getName()
-                : HoodieParquetRealtimeInputFormat.class.getName();
-        hoodieHiveClient.createTable(tableName, schema, inputFormatClassName, MapredParquetOutputFormat.class.getName(),
-            ParquetHiveSerDe.class.getName());
+      HoodieFileFormat baseFileFormat = HoodieFileFormat.valueOf(cfg.baseFileFormat.toUpperCase());
+      String inputFormatClassName = HoodieInputFormatUtils.getInputFormatClassName(baseFileFormat, useRealTimeInputFormat,
+          new Configuration());
+
+      if (baseFileFormat.equals(HoodieFileFormat.PARQUET) && cfg.usePreApacheInputFormat) {
+        // Parquet input format had an InputFormat class visible under the old naming scheme.
+        inputFormatClassName = useRealTimeInputFormat
+            ? com.uber.hoodie.hadoop.realtime.HoodieRealtimeInputFormat.class.getName()
+            : com.uber.hoodie.hadoop.HoodieInputFormat.class.getName();
       }
+
+      // Custom serde will not work with ALTER TABLE REPLACE COLUMNS
+      // https://github.com/apache/hive/blob/release-1.1.0/ql/src/java/org/apache/hadoop/hive
+      // /ql/exec/DDLTask.java#L3488
+      hoodieHiveClient.createTable(tableName, schema, inputFormatClassName, MapredParquetOutputFormat.class.getName(),
+          ParquetHiveSerDe.class.getName());
     } else {
       // Check if the table schema has evolved
       Map<String, String> tableSchema = hoodieHiveClient.getTableSchema(tableName);

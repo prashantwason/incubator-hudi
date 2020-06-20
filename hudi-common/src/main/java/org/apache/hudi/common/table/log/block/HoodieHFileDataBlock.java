@@ -121,7 +121,7 @@ public class HoodieHFileDataBlock extends HoodieDataBlock {
       recordMap.put(recordKey, recordBytes);
     }
 
-    // 4. Write the records
+    // Write the records
     recordMap.forEach((recordKey, recordBytes) -> {
       try {
         KeyValue kv = new KeyValue(recordKey.getBytes(), null, null, recordBytes);
@@ -150,7 +150,7 @@ public class HoodieHFileDataBlock extends HoodieDataBlock {
 
     // Read the content
     HoodieHFileReader reader = new HoodieHFileReader<>(getContent().get());
-    List<Pair<String, IndexedRecord>> records = reader.readAllRecords(schema);
+    List<Pair<String, IndexedRecord>> records = reader.readAllRecords(writerSchema, schema);
     this.records = records.stream().map(t -> t.getSecond()).collect(Collectors.toList());
 
     // Free up content to be GC'd, deflate

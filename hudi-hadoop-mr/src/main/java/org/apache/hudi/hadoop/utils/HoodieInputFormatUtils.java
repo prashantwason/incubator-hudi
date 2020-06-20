@@ -94,6 +94,11 @@ public class HoodieInputFormatUtils {
     }
   }
 
+  public static String getInputFormatClassName(HoodieFileFormat baseFileFormat, boolean realtime, Configuration conf) {
+    FileInputFormat inputFormat = getInputFormat(baseFileFormat, realtime, conf);
+    return inputFormat.getClass().getName();
+  }
+
   public static FileInputFormat getInputFormat(String path, boolean realtime, Configuration conf) {
     final String extension = FSUtils.getFileExtension(path.toString());
     if (extension.equals(HoodieFileFormat.PARQUET.getFileExtension())) {

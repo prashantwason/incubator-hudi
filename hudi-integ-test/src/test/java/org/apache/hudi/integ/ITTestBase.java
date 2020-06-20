@@ -18,6 +18,7 @@
 
 package org.apache.hudi.integ;
 
+import org.apache.hudi.common.model.HoodieFileFormat;
 import org.apache.hudi.common.util.FileIOUtils;
 import org.apache.hudi.common.util.collection.Pair;
 
