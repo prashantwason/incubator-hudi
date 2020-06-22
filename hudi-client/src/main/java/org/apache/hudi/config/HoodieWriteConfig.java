@@ -105,6 +105,14 @@ public class HoodieWriteConfig extends DefaultHoodieConfig {
   private static final String MAX_CONSISTENCY_CHECKS_PROP = "hoodie.consistency.check.max_checks";
   private static int DEFAULT_MAX_CONSISTENCY_CHECKS = 7;
 
+  // Enable use of file metadata
+  private static final String USE_FILE_LISTING_METADATA = "hoodie.metadata.enable";
+  private static final String DEFAULT_USE_FILE_LISTING_METADATA = "false";
+
+  // Validate file listing metadata against the actual filesystem
+  private static final String FILE_LISTING_METADATA_VERIFY = "hoodie.metadata.verify";
+  private static final String DEFAULT_FILE_LISTING_METADATA_VERIFY = "false";
+
   /**
    * HUDI-858 : There are users who had been directly using RDD APIs and have relied on a behavior in 0.4.x to allow
    * multiple write operations (upsert/buk-insert/...) to be executed within a single commit.
@@ -641,6 +649,17 @@ public class HoodieWriteConfig extends DefaultHoodieConfig {
     return clientSpecifiedViewStorageConfig;
   }
 
+  /**
+   * File listing metadata configs.
+   */
+  public boolean useFileListingMetadata() {
+    return Boolean.parseBoolean(props.getProperty(USE_FILE_LISTING_METADATA));
+  }
+
+  public boolean getFileListingMetadataVerify() {
+    return Boolean.parseBoolean(props.getProperty(FILE_LISTING_METADATA_VERIFY));
+  }
+
   public static class Builder {
 
     private final Properties props = new Properties();
@@ -807,6 +826,16 @@ public class HoodieWriteConfig extends DefaultHoodieConfig {
       return this;
     }
 
+    public Builder withUseFileListingMetadata(boolean enable) {
+      props.setProperty(USE_FILE_LISTING_METADATA, String.valueOf(enable));
+      return this;
+    }
+
+    public Builder withFileListingMetadataVerify(boolean enable) {
+      props.setProperty(FILE_LISTING_METADATA_VERIFY, String.valueOf(enable));
+      return this;
+    }
+
     public HoodieWriteConfig build() {
       // Check for mandatory properties
       setDefaultOnCondition(props, !props.containsKey(INSERT_PARALLELISM), INSERT_PARALLELISM, DEFAULT_PARALLELISM);
@@ -845,6 +874,11 @@ public class HoodieWriteConfig extends DefaultHoodieConfig {
       setDefaultOnCondition(props, !props.containsKey(FAIL_ON_TIMELINE_ARCHIVING_ENABLED_PROP),
           FAIL_ON_TIMELINE_ARCHIVING_ENABLED_PROP, DEFAULT_FAIL_ON_TIMELINE_ARCHIVING_ENABLED);
       setDefaultOnCondition(props, !props.containsKey(AVRO_SCHEMA_VALIDATE), AVRO_SCHEMA_VALIDATE, DEFAULT_AVRO_SCHEMA_VALIDATE);
+
+      setDefaultOnCondition(props, !props.containsKey(USE_FILE_LISTING_METADATA), USE_FILE_LISTING_METADATA,
+          DEFAULT_USE_FILE_LISTING_METADATA);
+      setDefaultOnCondition(props, !props.containsKey(FILE_LISTING_METADATA_VERIFY), FILE_LISTING_METADATA_VERIFY,
+          DEFAULT_FILE_LISTING_METADATA_VERIFY);
 
       // Make sure the props is propagated
       setDefaultOnCondition(props, !isIndexConfigSet, HoodieIndexConfig.newBuilder().fromProperties(props).build());
