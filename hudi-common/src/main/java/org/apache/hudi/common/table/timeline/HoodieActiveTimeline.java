@@ -78,9 +78,14 @@ public class HoodieActiveTimeline extends HoodieDefaultTimeline {
   public static String createNewInstantTime() {
     return lastInstantTime.updateAndGet((oldVal) -> {
       String newCommitTime;
-      do {
-        newCommitTime = HoodieActiveTimeline.COMMIT_FORMATTER.format(new Date());
-      } while (HoodieTimeline.compareTimestamps(newCommitTime, LESSER_THAN_OR_EQUALS, oldVal));
+      Date now = new Date();
+      newCommitTime = HoodieActiveTimeline.COMMIT_FORMATTER.format(now);
+      while (HoodieTimeline.compareTimestamps(newCommitTime, LESSER_THAN_OR_EQUALS, oldVal)) {
+        // Resolution of COMMIT_FORMATTER is 1 second. So instead of a busy loop, jump to the
+        // next second to generate a unique instant time.
+        now.setTime(now.getTime() + 1000);
+        newCommitTime = HoodieActiveTimeline.COMMIT_FORMATTER.format(now);
+      }
       return newCommitTime;
     });
   }
