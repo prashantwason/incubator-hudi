@@ -106,7 +106,7 @@ public abstract class AbstractTableFileSystemView implements SyncableFileSystemV
 
   /**
    * Refresh commits timeline.
-   * 
+   *
    * @param visibleActiveTimeline Visible Active Timeline
    */
   protected void refreshTimeline(HoodieTimeline visibleActiveTimeline) {
@@ -242,7 +242,7 @@ public abstract class AbstractTableFileSystemView implements SyncableFileSystemV
           Path partitionPath = FSUtils.getPartitionPath(metaClient.getBasePath(), partitionPathStr);
           FSUtils.createPathIfNotExists(metaClient.getFs(), partitionPath);
           long beginLsTs = System.currentTimeMillis();
-          FileStatus[] statuses = metaClient.getFs().listStatus(partitionPath);
+          FileStatus[] statuses = listPartition(partitionPath);
           long endLsTs = System.currentTimeMillis();
           LOG.info("#files found in partition (" + partitionPathStr + ") =" + statuses.length + ", Time taken ="
               + (endLsTs - beginLsTs));
@@ -261,6 +261,16 @@ public abstract class AbstractTableFileSystemView implements SyncableFileSystemV
       LOG.info("Time to load partition (" + partitionPathStr + ") =" + (endTs - beginTs));
       return true;
     });
+  }
+
+  /**
+   * Return all the files from the partition.
+   *
+   * @param partitionPath The absolute path of the partition
+   * @throws IOException
+   */
+  protected FileStatus[] listPartition(Path partitionPath) throws IOException {
+    return metaClient.getFs().listStatus(partitionPath);
   }
 
   /**
@@ -858,7 +868,7 @@ public abstract class AbstractTableFileSystemView implements SyncableFileSystemV
 
   /**
    * Default implementation for fetching latest base-file.
-   * 
+   *
    * @param partitionPath Partition path
    * @param fileId File Id
    * @return base File if present
@@ -870,7 +880,7 @@ public abstract class AbstractTableFileSystemView implements SyncableFileSystemV
 
   /**
    * Default implementation for fetching file-slice.
-   * 
+   *
    * @param partitionPath Partition path
    * @param fileId File Id
    * @return File Slice if present
@@ -919,7 +929,7 @@ public abstract class AbstractTableFileSystemView implements SyncableFileSystemV
 
   /**
    * Return Only Commits and Compaction timeline for building file-groups.
-   * 
+   *
    * @return {@code HoodieTimeline}
    */
   public HoodieTimeline getVisibleCommitsAndCompactionTimeline() {
