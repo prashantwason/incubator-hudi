@@ -66,7 +66,7 @@ public class HoodieWriteConfig extends DefaultHoodieConfig {
   public static final String AVRO_SCHEMA = "hoodie.avro.schema";
   public static final String AVRO_SCHEMA_VALIDATE = "hoodie.avro.schema.validate";
   public static final String DEFAULT_AVRO_SCHEMA_VALIDATE = "false";
-  public static final String DEFAULT_PARALLELISM = "1500";
+  public static final String DEFAULT_PARALLELISM = "5";
   public static final String INSERT_PARALLELISM = "hoodie.insert.shuffle.parallelism";
   public static final String BULKINSERT_PARALLELISM = "hoodie.bulkinsert.shuffle.parallelism";
   public static final String BULKINSERT_USER_DEFINED_PARTITIONER_CLASS = "hoodie.bulkinsert.user.defined.partitioner.class";
