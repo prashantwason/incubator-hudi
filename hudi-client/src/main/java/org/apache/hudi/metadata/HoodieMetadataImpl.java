@@ -50,12 +50,12 @@ import org.apache.hudi.common.fs.ConsistencyGuardConfig;
 import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.model.FileSlice;
 import org.apache.hudi.common.model.HoodieBaseFile;
-import org.apache.hudi.common.model.HoodieCleaningPolicy;
 import org.apache.hudi.common.model.HoodieCommitMetadata;
 import org.apache.hudi.common.model.HoodieFileFormat;
 import org.apache.hudi.common.model.HoodieLogFile;
 import org.apache.hudi.common.model.HoodiePartitionMetadata;
 import org.apache.hudi.common.model.HoodieRecord;
+import org.apache.hudi.common.model.HoodieRecordLocation;
 import org.apache.hudi.common.model.HoodieRecordPayload;
 import org.apache.hudi.common.model.HoodieTableType;
 import org.apache.hudi.common.model.HoodieWriteStat;
@@ -65,13 +65,12 @@ import org.apache.hudi.common.table.timeline.HoodieInstant;
 import org.apache.hudi.common.table.timeline.HoodieTimeline;
 import org.apache.hudi.common.table.timeline.TimelineMetadataUtils;
 import org.apache.hudi.common.table.view.HoodieTableFileSystemView;
+import org.apache.hudi.common.table.view.TableFileSystemView.SliceView;
 import org.apache.hudi.common.util.CleanerUtils;
 import org.apache.hudi.common.util.FileIOUtils;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.SpillableMapUtils;
 import org.apache.hudi.common.util.ValidationUtils;
-import org.apache.hudi.config.HoodieCompactionConfig;
-import org.apache.hudi.config.HoodieIndexConfig;
 import org.apache.hudi.config.HoodieMetricsConfig;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.exception.HoodieException;
@@ -80,9 +79,11 @@ import org.apache.hudi.exception.HoodieMetadataException;
 import org.apache.hudi.io.storage.HoodieFileReader;
 import org.apache.hudi.io.storage.HoodieFileReaderFactory;
 import org.apache.hudi.metrics.HoodieMetrics;
+import org.apache.hudi.table.HoodieTable;
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
 import org.apache.spark.api.java.JavaPairRDD;
+import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 
 import com.codahale.metrics.Timer;
@@ -215,7 +216,6 @@ public class HoodieMetadataImpl {
         .withSchema(schemaStr)
         .forTable(tableName)
         .withParallelism(1, 1).withDeleteParallelism(1).withRollbackParallelism(1).withFinalizeWriteParallelism(1)
-        .withIndexConfig(HoodieIndexConfig.newBuilder().withIndexClass(HoodieMetadataIndex.class.getName()).build())
         .withCompactionConfig(writeConfig.getMetadataCompactionConfig());
 
     if (writeConfig.isMetricsOn()) {
@@ -566,7 +566,7 @@ public class HoodieMetadataImpl {
 
     LOG.info("Updating at " + instantTime + " from Commit/" + commitMetadata.getOperationType()
         + ". #partitions_updated=" + records.size());
-    commit(records, instantTime, true);
+    commit(prepRecords(records, METADATA_PARTITION_NAME), instantTime, true);
   }
 
   /**
@@ -600,7 +600,7 @@ public class HoodieMetadataImpl {
 
     LOG.info("Updating at " + instantTime + " from CleanerPlan. #partitions_updated=" + records.size()
         + ", #files_deleted=" + fileDeleteCount[0]);
-    commit(records, instantTime, true);
+    commit(prepRecords(records, METADATA_PARTITION_NAME), instantTime, true);
   }
 
   /**
@@ -625,7 +625,7 @@ public class HoodieMetadataImpl {
 
     LOG.info("Updating at " + instantTime + " from Clean. #partitions_updated=" + records.size()
         + ", #files_deleted=" + fileDeleteCount[0]);
-    commit(records, instantTime, true);
+    commit(prepRecords(records, METADATA_PARTITION_NAME), instantTime, true);
   }
 
   /**
@@ -718,20 +718,20 @@ public class HoodieMetadataImpl {
     if (!records.isEmpty()) {
       LOG.info("Updating at " + instantTime + " from " + operation + ". #partitions_updated=" + records.size()
           + ", #files_deleted=" + fileDeleteCount);
-      commit(records, instantTime, true);
+      commit(prepRecords(records, METADATA_PARTITION_NAME), instantTime, true);
     }
   }
 
   /**
    * Commit the {@code HoodieRecord}s to Metadata Table as a new delta-commit.
    *
-   * @param records The records to commit
+   * @param recordRDD The records to commit
    * @param instantTime The timestamp of instant to create
    * @param performUpdate If True, records are upserted. If False, records are inserted
    */
-  private synchronized void commit(List<HoodieRecord> records, String instantTime, boolean performUpdate) {
+  private synchronized void commit(JavaRDD<HoodieRecord> recordRDD, String instantTime, boolean performUpdate) {
     ValidationUtils.checkState(!readOnly, "Metadata table cannot be committed in readonly mode");
-    ValidationUtils.checkArgument(!records.isEmpty());
+    //ValidationUtils.checkArgument(!recordRDD.isEmpty());
 
     // Close all readers
     if (basefileReader != null) {
@@ -744,9 +744,9 @@ public class HoodieMetadataImpl {
       writeClient.startCommitWithTime(instantTime);
       List<WriteStatus> statuses;
       if (performUpdate) {
-        statuses = writeClient.upsert(jsc.parallelize(records), instantTime).collect();
+        statuses = writeClient.upsertPreppedRecords(recordRDD, instantTime).collect();
       } else {
-        statuses = writeClient.insert(jsc.parallelize(records), instantTime).collect();
+        statuses = writeClient.insertPreppedRecords(recordRDD, instantTime).collect();
       }
       statuses.forEach(writeStatus -> {
         if (writeStatus.hasErrors()) {
@@ -754,6 +754,52 @@ public class HoodieMetadataImpl {
         }
       });
     }
+  }
+
+  /**
+   * Tag each record with the location.
+   *
+   * Since we only read the latest base file in a partition, we tag the records with the instant time of the latest
+   * base file.
+   */
+  private JavaRDD<HoodieRecord> prepRecords(List<HoodieRecord> records, String partitionName) {
+    HoodieTable table = HoodieTable.create(metaClient, config, hadoopConf);
+    SliceView fsView = table.getSliceView();
+    List<HoodieBaseFile> baseFiles = fsView.getLatestFileSlices(partitionName)
+        .map(s -> s.getBaseFile())
+        .filter(b -> b.isPresent())
+        .map(b -> b.get())
+        .collect(Collectors.toList());
+
+    // All the metadata fits within a single base file
+    if (partitionName.equals(METADATA_PARTITION_NAME)) {
+      if (baseFiles.size() > 1) {
+        throw new HoodieMetadataException("Multiple base files found in metadata partition");
+      }
+    }
+
+    String fileId;
+    String instantTime;
+    if (!baseFiles.isEmpty()) {
+      fileId = baseFiles.get(0).getFileId();
+      instantTime = baseFiles.get(0).getCommitTime();
+    } else {
+      // If there is a log file then we can assume that it has the data
+      List<HoodieLogFile> logFiles = fsView.getLatestFileSlices(HoodieMetadataImpl.METADATA_PARTITION_NAME)
+          .map(s -> s.getLatestLogFile())
+          .filter(b -> b.isPresent())
+          .map(b -> b.get())
+          .collect(Collectors.toList());
+      if (logFiles.isEmpty()) {
+        // No base and log files. All are new inserts
+        return jsc.parallelize(records);
+      }
+
+      fileId = logFiles.get(0).getFileId();
+      instantTime = logFiles.get(0).getBaseCommitTime();
+    }
+
+    return jsc.parallelize(records).map(r -> r.setCurrentLocation(new HoodieRecordLocation(instantTime, fileId)));
   }
 
   /**
@@ -943,7 +989,7 @@ public class HoodieMetadataImpl {
     if (logHoodieRecord.isPresent()) {
       if (hoodieRecord != null) {
         // Merge the payloads
-        HoodieRecordPayload mergedPayload = hoodieRecord.getData().preCombine(logHoodieRecord.get().getData());
+        HoodieRecordPayload mergedPayload = logHoodieRecord.get().getData().preCombine(hoodieRecord.getData());
         hoodieRecord = new HoodieRecord(hoodieRecord.getKey(), mergedPayload);
       } else {
         hoodieRecord = logHoodieRecord.get();
