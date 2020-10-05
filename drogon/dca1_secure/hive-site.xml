@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<configuration>
+  <property>
+    <name>datanucleus.autoCreateSchema</name>
+    <value>false</value>
+  </property>
+  <property>
+    <name>datanucleus.metadata.validate</name>
+    <value>false</value>
+  </property>
+  <property>
+    <name>hive.metastore.schema.verification</name>
+    <value>true</value>
+  </property>
+  <property>
+    <name>datanucleus.autoStartMechanism</name>
+    <value>SchemaTable</value>
+  </property>
+  <property>
+    <name>hive.metastore.uris</name>
+    <value>thrift://hadoopservice17-dca8.prod.uber.internal:9083,thrift://hadoopservice18-dca8.prod.uber.internal:9083,thrift://hadoopservice19-dca8.prod.uber.internal:9083</value>
+  </property>
+  <property>
+    <name>hive.metastore.kerberos.principal</name>
+    <value>hive/_HOST@DATASRE.PROD.UBER.INTERNAL</value>
+  </property>
+  <property>
+    <name>hive.metastore.client.socket.timeout</name>
+    <value>300</value>
+  </property>
+  <property>
+    <name>hive.metastore.warehouse.dir</name>
+    <value>/secure/user/hive/warehouse</value>
+  </property>
+  <property>
+    <name>hive.warehouse.subdir.inherit.perms</name>
+    <value>true</value>
+  </property>
+  <property>
+    <name>hive.metastore.sasl.enabled</name>
+    <value>true</value>
+  </property>
+  <property>
+    <name>hive.support.concurrency</name>
+    <value>false</value>
+  </property>
+  <property>
+    <name>hive.metastore.execute.setugi</name>
+    <value>true</value>
+  </property>
+  <property>
+    <name>hive.support.concurrency</name>
+    <value>false</value>
+  </property>
+  <property>
+    <name>hive.cluster.delegation.token.store.class</name>
+    <value>org.apache.hadoop.hive.thrift.MemoryTokenStore</value>
+  </property>
+
+<!--viewfs section -->
+  <property>
+    <name>hive.exec.stagingdir</name>
+    <value>.hive_stagingdir</value>
+  </property>
+
+  <property>
+    <name>hive.exec.scratchdir</name>
+    <value>/secure/tmp/hive_scratchdir</value>
+  </property>
+
+  <!--this is not honored-->
+  <property>
+    <name>hive.scratch.dir.permission</name>
+    <value>777</value>
+  </property>
+
+  <property>
+    <name>yarn.app.mapreduce.am.staging-dir</name>
+    <value>/secure/user</value>
+  </property>
+  <property>
+    <name>spark.yarn.stagingDir</name>
+    <value>/secure/tmp/spark-staging</value>
+  </property>
+
+  <property>
+    <name>hive.user.install.directory</name>
+    <value>/secure/user</value>
+  </property>
+
+  <property>
+    <name>mapreduce.jobhistory.intermediate-done-dir</name>
+    <value>/secure/system/mr-history/intermediate</value>
+  </property>
+  <property>
+    <name>mapreduce.jobhistory.done-dir</name>
+    <value>/secure/system/mr-history/finished</value>
+  </property>
+
+</configuration>

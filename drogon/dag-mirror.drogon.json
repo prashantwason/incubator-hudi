@@ -1,0 +1,50 @@
+{
+  "project_name": "hudi_test_suite051",
+  "project_hdfs_dir": "/user/${UBER_LDAP_UID}/hudi_test_suite051/",
+
+  "deployment": {
+    "artifacts": {
+      "file": "packaging/hudi-spark-bundle/target/hudi-spark-bundle_2.11-0.5.1.1.jar",
+      "jars": [
+        "hudi-utilities/target/hudi-utilities_2.11-0.5.1.1.jar"
+      ]
+    },
+    "flatten_directories": true
+  },
+
+  "launch": {
+    "className": "org.apache.hudi.DagMirror",
+    "jars": [
+      "https://repo1.maven.org/maven2/org/apache/spark/spark-avro_2.11/2.4.4/spark-avro_2.11-2.4.4.jar",
+      "https://repo1.maven.org/maven2/com/databricks/spark-avro_2.11/4.0.0/spark-avro_2.11-4.0.0.jar"
+    ],
+    "conf": {
+      "spark.driver._extraClassPath": "hoodie-spark-bundle-0.4.5-UBER-16.jar",
+      "spark.executor._extraClassPath": "hoodie-spark-bundle-0.4.5-UBER-16.jar",
+      "spark.serializer": "org.apache.spark.serializer.KryoSerializer",
+      "spark.yarn.jars.exclusionRegex": "(hoodie.*)|(hudi.*)",
+      "spark.driver._extraJavaOptions": "-verbose:class",
+      "spark.shuffle.service.enable": "true",
+      "spark.shuffle.compress": "true",
+      "spark.shuffle.spill.compress": "true",
+      "spark.yarn.maxAppAttempts": "1",
+      "spark.hudi.dag_mirror.run_name": "${name}"
+    },
+    "driverMemory": "13g",
+    "executorMemory": "13g",
+    "numExecutors": 20,
+    "queue": "hadoop-platform-adhoc",
+    "sparkEnv": "SPARK_24"
+  },
+
+  "build": {
+    "shell_command": "mvn clean package -DskipTests -Dcheckstyle.skip",
+    "cd_enabled": false
+  },
+
+  "variables": {
+    "UBER_LDAP_UID": "hudi",
+    "USER": "hudi",
+    "name": "051"
+  }
+}

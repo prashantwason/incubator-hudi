@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<configuration>
+    <!-- hdrone service properties -->
+    <property>
+        <name>com.uber.data.security.kerberos.service.principal</name>
+        <value>hdrone/hadoopservice10-phx2.prod.uber.internal@DATASRE.PROD.UBER.INTERNAL</value>
+    </property>
+    <property>
+        <name>com.uber.data.security.kerberos.service.keytab</name>
+        <value>/opt/hadoop/keytabs/hdrone.keytab</value>
+    </property>
+    <!-- hive properties -->
+    <property>
+        <name>com.uber.data.security.kerberos.hive.principal</name>
+        <value>hive/_HOST@DATASRE.PROD.UBER.INTERNAL</value>
+    </property>
+    <property>
+        <name>com.uber.data.security.hive.host</name>
+        <value>hadoopservice10-phx2.prod.uber.internal</value>
+    </property>
+    <property>
+        <name>com.uber.data.security.hive.port</name>
+        <value>10010</value>
+    </property>
+    <property>
+        <name>com.uber.data.security.hive.transport.mode</name>
+        <value>http</value>
+    </property>
+    <property>
+        <name>com.uber.data.security.hive.http.path</name>
+        <value>hs2</value>
+    </property>
+</configuration>

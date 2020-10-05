@@ -1,0 +1,98 @@
+first_insert:
+  config:
+    record_size: 70000
+    num_insert_partitions: 1
+    repeat_count: 5
+    num_records_insert: 30000
+  type: InsertNode
+  deps: none
+first_insert_verify:
+  config:
+    record_size: 100
+  type: ValidateInsertNode
+  deps: first_insert
+first_hive_sync:
+  config:
+    queue_name: "adhoc"
+    engine: "mr"
+  type: HiveSyncNode
+  deps: first_insert_verify
+first_hive_query:
+  config:
+    queue_name: "adhoc"
+    engine: "mr"
+  type: HiveQueryNode
+  deps: first_hive_sync
+second_hive_query:
+  config:
+    queue_name: "adhoc"
+    engine: "mr"
+    hive_queries:
+      query1: "select count(*) from testdb.test_table group by `_row_key` having count(*) > 1"
+      result1: 0
+      query2: "select count(*) from testdb.test_table"
+      result2: 30000
+  type: HiveQueryNode
+  deps: first_hive_query
+second_insert:
+  config:
+    record_size: 70000
+    num_insert_partitions: 1
+    repeat_count: 5
+    num_records_insert: 30000
+  type: InsertNode
+  deps: second_hive_query
+second_insert_hive_sync:
+  config:
+    queue_name: "adhoc"
+    engine: "mr"
+  type: HiveSyncNode
+  deps: second_insert
+second_insert_hive_query:
+  config:
+    queue_name: "adhoc"
+    engine: "mr"
+  type: HiveQueryNode
+  deps: second_insert_hive_sync
+second_insert_hive_query_2:
+  config:
+    queue_name: "adhoc"
+    engine: "mr"
+    hive_queries:
+      query1: "select count(*) from testdb.test_table group by `_row_key` having count(*) > 1"
+      result1: 0
+      query2: "select count(*) from testdb.test_table"
+      result2: 60000
+  type: HiveQueryNode
+  deps: second_insert_hive_query
+first_insert_overwrite:
+  config:
+    record_size: 70000
+    num_insert_partitions: 1
+    repeat_count: 5
+    num_records_insert: 1
+  type: InsertOverwriteNode
+  deps: second_insert_hive_query_2
+second_hive_sync:
+  config:
+    queue_name: "adhoc"
+    engine: "mr"
+  type: HiveSyncNode
+  deps: first_insert_overwrite
+overwrite_first_hive_query:
+  config:
+    queue_name: "adhoc"
+    engine: "mr"
+  type: HiveQueryNode
+  deps: second_hive_sync
+overwrite_second_hive_query:
+  config:
+    queue_name: "adhoc"
+    engine: "mr"
+    hive_queries:
+      query1: "select count(*) from testdb.test_table group by `_row_key` having count(*) > 1"
+      result1: 0
+      query2: "select count(*) from testdb.test_table"
+      result2: 1
+  type: HiveQueryNode
+  deps: overwrite_first_hive_query

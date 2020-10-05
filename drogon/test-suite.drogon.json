@@ -1,0 +1,79 @@
+{
+  "project_name": "hudi_test_suite",
+  "project_hdfs_dir": "/user/${UBER_LDAP_UID}/hudi_test_suite/",
+
+  "deployment": {
+    "artifacts": {
+      "file": "packaging/hudi-test-suite-bundle/target/hudi-test-suite-bundle-0.5.1.10.jar",
+      "files": [
+        "drogon/hive-extra.properties",
+        "drogon/${dag_file}",
+        "drogon/test.properties",
+        "docker/demo/config/bench/complex-source.avsc"
+      ]
+    },
+    "flatten_directories": true
+  },
+
+  "launch": {
+    "className": "org.apache.hudi.testsuite.job.HoodieTestSuiteJob",
+    "jars": [
+      "https://repo1.maven.org/maven2/org/apache/spark/spark-avro_2.11/2.4.4/spark-avro_2.11-2.4.4.jar",
+      "https://repo1.maven.org/maven2/com/databricks/spark-avro_2.11/4.0.0/spark-avro_2.11-4.0.0.jar",
+      "https://repo1.maven.org/maven2/org/apache/spark/spark-hive-thriftserver_2.12/3.0.0-preview2/spark-hive-thriftserver_2.12-3.0.0-preview2.jar",
+      "https://repo1.maven.org/maven2/org/apache/hive/hive-common/${hive_version}/hive-common-${hive_version}.jar",
+      "https://repo1.maven.org/maven2/org/apache/hive/hive-exec/${hive_version}/hive-exec-${hive_version}-core.jar",
+      "https://repo1.maven.org/maven2/org/apache/hive/hive-jdbc/${hive_version}/hive-jdbc-${hive_version}.jar",
+      "https://repo1.maven.org/maven2/org/apache/hive/hive-llap-common/${hive_version}/hive-llap-common-${hive_version}.jar",
+      "https://repo1.maven.org/maven2/org/apache/hive/hive-metastore/${hive_version}/hive-metastore-${hive_version}.jar",
+      "https://repo1.maven.org/maven2/org/apache/hive/hive-serde/${hive_version}/hive-serde-${hive_version}.jar",
+      "https://repo1.maven.org/maven2/org/apache/hive/hive-service/${hive_version}/hive-service-${hive_version}.jar",
+      "https://repo1.maven.org/maven2/org/apache/hive/hive-service-rpc/${hive_version}/hive-service-rpc-${hive_version}.jar",
+      "https://repo1.maven.org/maven2/org/apache/hive/shims/hive-shims-0.23/${hive_version}/hive-shims-0.23-${hive_version}.jar",
+      "https://repo1.maven.org/maven2/org/apache/hive/shims/hive-shims-common/${hive_version}/hive-shims-common-${hive_version}.jar",
+      "https://repo1.maven.org/maven2/org/apache/hive/hive-storage-api/${hive_version}/hive-storage-api-${hive_version}.jar",
+      "https://repo1.maven.org/maven2/org/apache/hive/hive-shims/${hive_version}/hive-shims-${hive_version}.jar"
+    ],
+    "args": [
+      "--source-ordering-field", "timestamp",
+      "--target-base-path", "/tmp/${UBER_LDAP_UID}/hudi-test-suite/output",
+      "--input-base-path", "/tmp/${UBER_LDAP_UID}/hudi-test-suite/input",
+      "--target-table", "test_table",
+      "--props", "test.properties",
+      "--schemaprovider-class", "org.apache.hudi.utilities.schema.FilebasedSchemaProvider",
+      "--source-class", "org.apache.hudi.utilities.sources.AvroDFSSource",
+      "--input-file-size", "12582912",
+      "--workload-yaml-path", "${dag_file}",
+      "--table-type", "MERGE_ON_READ",
+      "--workload-generator-classname", "yaml"
+    ],
+    "conf": {
+      "spark.serializer": "org.apache.spark.serializer.KryoSerializer",
+      "spark.yarn.jars.exclusionRegex": "(hive.*)|(spark-hive-thriftserver.*)|(.*hudi.*)",
+      "spark.driver.extraClassPath": "hive-common-${hive_version}.jar:hive-exec-${hive_version}-core.jar:hive-jdbc-${hive_version}.jar:hive-llap-common-${hive_version}.jar:hive-metastore-${hive_version}.jar:hive-serde-${hive_version}.jar:hive-service-${hive_version}.jar:hive-service-rpc-${hive_version}.jar:hive-shims-0.23-${hive_version}.jar:hive-shims-common-${hive_version}.jar:hive-storage-api-${hive_version}.jar:hive-shims-${hive_version}.jar:spark-hive-thriftserver_2.12-3.0.0-preview2.jar:log4j-core-2.6.2.jar:log4j-api-2.6.2.jar",
+      "spark.executor.extraClassPath": "hive-common-${hive_version}.jar:hive-exec-${hive_version}-core.jar:hive-jdbc-${hive_version}.jar:hive-llap-common-${hive_version}.jar:hive-metastore-${hive_version}.jar:hive-serde-${hive_version}.jar:hive-service-${hive_version}.jar:hive-service-rpc-${hive_version}.jar:hive-shims-0.23-${hive_version}.jar:hive-shims-common-${hive_version}.jar:hive-storage-api-${hive_version}.jar:hive-shims-${hive_version}.jar:spark-hive-thriftserver_2.12-3.0.0-preview2.jar:log4j-core-2.6.2.jar:log4j-api-2.6.2.jar",
+      "spark.driver._extraJavaOptions": "-verbose:class",
+      "spark.shuffle.service.enable": "true",
+      "spark.shuffle.compress": "true",
+      "spark.shuffle.spill.compress": "true",
+      "spark.yarn.maxAppAttempts": "1"
+    },
+    "driverMemory": "13g",
+    "executorMemory": "13g",
+    "numExecutors": 20,
+    "queue": "hadoop-platform-adhoc",
+    "sparkEnv": "SPARK_24"
+  },
+
+  "build": {
+    "shell_command": "mvn package -DskipTests -Dcheckstyle.skip",
+    "cd_enabled": false
+  },
+
+  "variables": {
+    "UBER_LDAP_UID": "hudi",
+    "USER": "hudi",
+    "hive_version": "2.3.1",
+    "dag_file": "dag.yaml"
+  }
+}
