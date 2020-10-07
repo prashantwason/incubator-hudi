@@ -95,11 +95,13 @@ public class DeltaGenerator implements Serializable {
     int numPartitions = operation.getNumInsertPartitions();
     long recordsPerPartition = operation.getNumRecordsInsert() / numPartitions;
     int minPayloadSize = operation.getRecordSize();
+
+    // Each spark partition below will generate records for a single partition given by the integer index.
     JavaRDD<GenericRecord> inputBatch = jsc.parallelize(Collections.EMPTY_LIST)
-        .repartition(numPartitions).mapPartitions(p -> {
+        .repartition(numPartitions).mapPartitionsWithIndex((index, p) -> {
           return new LazyRecordGeneratorIterator(new FlexibleSchemaRecordGenerationIterator(recordsPerPartition,
-            minPayloadSize, schemaStr, partitionPathFieldNames, numPartitions));
-        });
+            minPayloadSize, schemaStr, partitionPathFieldNames, (Integer)index));
+        }, true);
     return inputBatch;
   }
 
