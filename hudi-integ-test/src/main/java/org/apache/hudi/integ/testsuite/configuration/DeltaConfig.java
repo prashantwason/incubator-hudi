@@ -119,7 +119,7 @@ public class DeltaConfig implements Serializable {
     }
 
     public int getNumUpsertFiles() {
-      return Integer.valueOf(configsMap.getOrDefault(NUM_FILES_UPSERT, 1).toString());
+      return Integer.valueOf(configsMap.getOrDefault(NUM_FILES_UPSERT, 0).toString());
     }
 
     public double getFractionUpsertPerFile() {

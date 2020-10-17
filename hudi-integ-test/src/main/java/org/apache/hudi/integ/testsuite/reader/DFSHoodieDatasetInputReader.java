@@ -36,6 +36,7 @@ import java.util.stream.StreamSupport;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.IndexedRecord;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hudi.avro.HoodieAvroUtils;
 import org.apache.hudi.common.fs.FSUtils;
@@ -78,8 +79,10 @@ public class DFSHoodieDatasetInputReader extends DFSDeltaInputReader {
   }
 
   protected List<String> getPartitions(Option<Integer> partitionsLimit) throws IOException {
-    List<String> partitionPaths = FSUtils
-        .getAllPartitionPaths(metaClient.getFs(), metaClient.getBasePath(), false);
+    // Using FSUtils.getFS here instead of metaClient.getFS() since we dont want to count these listStatus
+    // calls in metrics as they are not part of normal HUDI operation.
+    FileSystem fs = FSUtils.getFs(metaClient.getBasePath(), metaClient.getHadoopConf());
+    List<String> partitionPaths = FSUtils.getAllPartitionPaths(fs, metaClient.getBasePath(), false);
     // Sort partition so we can pick last N partitions by default
     Collections.sort(partitionPaths);
     if (!partitionPaths.isEmpty()) {
@@ -154,6 +157,7 @@ public class DFSHoodieDatasetInputReader extends DFSDeltaInputReader {
       numRecordsToUpdatePerFile = percentageRecordsPerFile.isPresent() ? (long) (recordsInSingleFile
           * percentageRecordsPerFile.get()) : numRecordsToUpdate.get() / numFilesToUpdate;
     }
+
     // Adjust the number of files to read per partition based on the requested partition & file counts
     Map<String, Integer> adjustedPartitionToFileIdCountMap = getFilesToReadPerPartition(partitionToFileSlice,
         partitionPaths.size(), numFilesToUpdate);
@@ -191,7 +195,7 @@ public class DFSHoodieDatasetInputReader extends DFSDeltaInputReader {
 
   private Map<String, Integer> getFilesToReadPerPartition(JavaPairRDD<String, Iterator<FileSlice>>
       partitionToFileSlice, Integer numPartitions, Integer numFiles) {
-    int numFilesPerPartition = (int) Math.ceil(numFiles / numPartitions);
+    int numFilesPerPartition = (int) Math.ceil((double)numFiles / numPartitions);
     Map<String, Integer> partitionToFileIdCountMap = partitionToFileSlice
         .mapToPair(p -> new Tuple2<>(p._1, iteratorSize(p._2))).collectAsMap();
     long totalExistingFilesCount = partitionToFileIdCountMap.values().stream().reduce((a, b) -> a + b).get();
