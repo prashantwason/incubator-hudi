@@ -69,4 +69,10 @@ public abstract class HoodieFlinkTable<T extends HoodieRecordPayload>
   protected HoodieIndex<T, List<HoodieRecord<T>>, List<HoodieKey>, List<WriteStatus>> getIndex(HoodieWriteConfig config, HoodieEngineContext context) {
     return FlinkHoodieIndex.createIndex((HoodieFlinkEngineContext) context, config);
   }
+
+  @Override
+  protected List<WriteStatus> mergeWriteStatus(List<WriteStatus> writeStatus, List<WriteStatus> writeStatusToMerge) {
+    writeStatus.addAll(writeStatusToMerge);
+    return writeStatus;
+  }
 }

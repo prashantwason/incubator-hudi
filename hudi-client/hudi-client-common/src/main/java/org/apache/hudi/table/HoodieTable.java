@@ -30,6 +30,7 @@ import org.apache.hudi.avro.model.HoodieRestoreMetadata;
 import org.apache.hudi.avro.model.HoodieRollbackMetadata;
 import org.apache.hudi.avro.model.HoodieSavepointMetadata;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
+import org.apache.hudi.client.HoodieWriteOperation;
 import org.apache.hudi.common.config.SerializableConfiguration;
 import org.apache.hudi.common.engine.HoodieEngineContext;
 import org.apache.hudi.common.engine.HoodieLocalEngineContext;
@@ -48,6 +49,7 @@ import org.apache.hudi.common.table.TableSchemaResolver;
 import org.apache.hudi.common.table.log.block.HoodieLogBlock.HoodieLogBlockType;
 import org.apache.hudi.common.table.timeline.HoodieActiveTimeline;
 import org.apache.hudi.common.table.timeline.HoodieInstant;
+import org.apache.hudi.common.table.timeline.HoodieInstant.State;
 import org.apache.hudi.common.table.timeline.HoodieTimeline;
 import org.apache.hudi.common.table.view.FileSystemViewManager;
 import org.apache.hudi.common.table.view.FileSystemViewStorageConfig;
@@ -72,7 +74,9 @@ import org.apache.log4j.Logger;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -237,6 +241,99 @@ public abstract class HoodieTable<T extends HoodieRecordPayload, I, K, O> implem
    * @return HoodieWriteMetadata
    */
   public abstract HoodieWriteMetadata<O> insertOverwriteTable(HoodieEngineContext context, String instantTime, I records);
+
+  /**
+   * Perform one or more write operations into the Hoodie table, at the supplied instantTime.
+   * <p>
+   * The operations are specified as a list and are attempted sequentially. The operations are considered part of a
+   * single write and should not contain overlapping records.
+   *
+   * @param context HoodieEngineContext
+   * @param instantTime Instant Time for the action
+   * @param operations List of  {HoodieWriteOperation}
+   * @return HoodieWriteMetadata
+   */
+  public HoodieWriteMetadata<O> write(HoodieEngineContext context, String instantTime,
+      List<HoodieWriteOperation<I, K>> operations) {
+    O writeStatuses = null;
+    long indexUpdateDurationSec = 0;
+    Map<String, List<String>> partitionToReplaceFileIds = new HashMap<>();
+
+    for (int index = 0; index < operations.size(); ++index) {
+      HoodieWriteOperation<I, K> operation = operations.get(index);
+      HoodieWriteMetadata<O> writeMetadata;
+      switch (operation.operationType()) {
+        case BULK_INSERT:
+          writeMetadata = bulkInsert(context, instantTime, operation.getRecords(), operation.getBulkInsertPartitioner());
+          break;
+        case BULK_INSERT_PREPPED:
+          writeMetadata = bulkInsertPrepped(context, instantTime, operation.getRecords(), operation.getBulkInsertPartitioner());
+          break;
+        case DELETE:
+          writeMetadata = delete(context, instantTime, operation.getDeleteKeys());
+          break;
+        case INSERT:
+          writeMetadata = insert(context, instantTime, operation.getRecords());
+          break;
+        case INSERT_OVERWRITE:
+          writeMetadata = insertOverwrite(context, instantTime, operation.getRecords());
+          break;
+        case INSERT_PREPPED:
+          writeMetadata = insertPrepped(context, instantTime, operation.getRecords());
+          break;
+        case UPSERT:
+          writeMetadata = upsert(context, instantTime, operation.getRecords());
+          break;
+        case UPSERT_PREPPED:
+          writeMetadata = upsertPrepped(context, instantTime, operation.getRecords());
+          break;
+        default:
+          throw new HoodieException("Unsupported write operation: " + operation.operationType());
+      }
+
+      if (writeStatuses == null) {
+        writeStatuses = writeMetadata.getWriteStatuses();
+      } else {
+        writeStatuses = mergeWriteStatus(writeStatuses, writeMetadata.getWriteStatuses());
+      }
+      if (writeMetadata.getIndexUpdateDuration().isPresent()) {
+        indexUpdateDurationSec += writeMetadata.getIndexUpdateDuration().get().getSeconds();
+      }
+      for (Map.Entry<String, List<String>> e : writeMetadata.getPartitionToReplaceFileIds().entrySet()) {
+        if (partitionToReplaceFileIds.containsKey(e.getKey())) {
+          partitionToReplaceFileIds.get(e.getKey()).addAll(e.getValue());
+        } else {
+          partitionToReplaceFileIds.put(e.getKey(), e.getValue());
+        }
+      }
+
+      if (index < (operations.size() - 1)) {
+        // Delete the inflight file so that the next operation can be attempted. The last operations inflight file will
+        // be retained.
+        HoodieInstant inflight = new HoodieInstant(State.INFLIGHT, metaClient.getCommitActionType(), instantTime);
+        try {
+          metaClient.getFs().delete(new Path(metaClient.getMetaPath(), inflight.getFileName()));
+        } catch (IOException e) {
+          throw new HoodieIOException("Could not delete inflight file " + inflight, e);
+        }
+      }
+    }
+
+    HoodieWriteMetadata writeMetadata = new HoodieWriteMetadata();
+    writeMetadata.setIndexUpdateDuration(Duration.ofSeconds(indexUpdateDurationSec));
+    writeMetadata.setWriteStatuses(writeStatuses);
+    writeMetadata.setPartitionToReplaceFileIds(partitionToReplaceFileIds);
+    return writeMetadata;
+  }
+
+  /**
+   * Merge the two write statuses together and return the result.
+   *
+   * @param writeStatus The first write status
+   * @param writeStatus The write status to merge into the first one
+   * @return the first write status after merge or a new write status with both merged.
+   */
+  protected abstract O mergeWriteStatus(O writeStatus, O writeStatusToMerge);
 
   public HoodieWriteConfig getConfig() {
     return config;

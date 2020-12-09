@@ -69,4 +69,10 @@ public abstract class HoodieSparkTable<T extends HoodieRecordPayload>
   protected HoodieIndex<T, JavaRDD<HoodieRecord<T>>, JavaRDD<HoodieKey>, JavaRDD<WriteStatus>> getIndex(HoodieWriteConfig config, HoodieEngineContext context) {
     return SparkHoodieIndex.createIndex(config);
   }
+
+  @Override
+  protected JavaRDD<WriteStatus> mergeWriteStatus(JavaRDD<WriteStatus> writeStatus,
+      JavaRDD<WriteStatus> writeStatusToMerge) {
+    return writeStatus.union(writeStatusToMerge);
+  }
 }

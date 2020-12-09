@@ -19,21 +19,27 @@
 package org.apache.hudi.table.action.commit;
 
 import org.apache.hudi.client.SparkRDDWriteClient;
+import org.apache.hudi.client.HoodieWriteOperation;
 import org.apache.hudi.client.WriteStatus;
 import org.apache.hudi.common.bloom.BloomFilter;
 import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.model.HoodieKey;
 import org.apache.hudi.common.model.HoodieRecord;
+import org.apache.hudi.common.model.HoodieRecordPayload;
 import org.apache.hudi.common.model.HoodieTableType;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.table.timeline.HoodieActiveTimeline;
+import org.apache.hudi.common.testutils.HoodieTestDataGenerator;
 import org.apache.hudi.common.testutils.HoodieTestUtils;
 import org.apache.hudi.common.testutils.RawTripTestPayload;
 import org.apache.hudi.common.testutils.Transformations;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.ParquetUtils;
 import org.apache.hudi.common.util.collection.Pair;
+import org.apache.hudi.config.HoodieCompactionConfig;
 import org.apache.hudi.config.HoodieStorageConfig;
 import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.hadoop.HoodieParquetInputFormat;
 import org.apache.hudi.hadoop.utils.HoodieHiveUtils;
 import org.apache.hudi.io.HoodieCreateHandle;
@@ -455,5 +461,86 @@ public class TestCopyOnWriteActionExecutor extends HoodieClientTestBase {
   @ValueSource(strings = {"global_sort", "partition_sort", "none"})
   public void testBulkInsertRecordsWithGlobalSort(String bulkInsertMode) throws Exception {
     testBulkInsertRecords(bulkInsertMode);
+  }
+
+  @Test
+  public void testWriteOperations() throws Exception {
+    HoodieTestDataGenerator dataGenerator = new HoodieTestDataGenerator();
+
+    // Initial commit
+    HoodieWriteConfig config = HoodieWriteConfig.newBuilder()
+        .withPath(basePath).withSchema(TRIP_EXAMPLE_SCHEMA)
+        .withBulkInsertParallelism(2).withParallelism(2,  2).build();
+    String instantTime = HoodieActiveTimeline.createNewInstantTime();
+    SparkRDDWriteClient writeClient = getHoodieWriteClient(config);
+    writeClient.startCommitWithTime(instantTime);
+    List<HoodieRecord> records = dataGenerator.generateInserts(instantTime, 100);
+    JavaRDD<HoodieRecord> inputRecords = jsc.parallelize(records);
+    List<WriteStatus> returnedStatuses = writeClient.bulkInsert(inputRecords, instantTime).collect();
+    verifyStatusResult(returnedStatuses, generateExpectedPartitionNumRecords(inputRecords));
+
+    try {
+      // Exception raised when autoCommit is enabled
+      writeClient.write(Arrays.asList(), instantTime);
+      assertTrue(false, "Write should not be allowed when autoCommit is enabled");
+    } catch (HoodieException e) {
+      // Expected
+    }
+
+    // Auto commit is now disabled
+    config = HoodieWriteConfig.newBuilder()
+        .withPath(basePath).withSchema(TRIP_EXAMPLE_SCHEMA)
+        .withBulkInsertParallelism(2).withParallelism(2,  2)
+        .withCompactionConfig(HoodieCompactionConfig.newBuilder().compactionSmallFileSize(0).build())
+        .withAutoCommit(false).build();
+
+    instantTime = HoodieActiveTimeline.createNewInstantTime();
+    writeClient = getHoodieWriteClient(config);
+    writeClient.startCommitWithTime(instantTime);
+
+    // Generate the various operations
+    // Deletes
+    final int numDeletes = 5;
+    records = dataGenerator.generateUniqueDeleteRecords(instantTime, numDeletes);
+    HoodieWriteOperation deleteOp = HoodieWriteOperation.delete(jsc.parallelize(records).map(r -> r.getKey()));
+
+    // Updates to previously inserted records
+    final int numUpserts = 7;
+    records = dataGenerator.generateUniqueUpdates(instantTime, numUpserts);
+    HoodieWriteOperation updateOp = HoodieWriteOperation.upsert(convertRecords(records));
+
+    // Insert records
+    final int numInserts = 10;
+    records = dataGenerator.generateInserts(instantTime, numInserts);
+    HoodieWriteOperation insertOp = HoodieWriteOperation.insert(convertRecords(records));
+
+    // bulk Insert records
+    final int numBulkInserts = 20;
+    records = dataGenerator.generateInserts(instantTime, numBulkInserts);
+    HoodieWriteOperation bulkInsertOp = HoodieWriteOperation.bulkInsert(convertRecords(records), Option.empty());
+
+    JavaRDD<WriteStatus> writeStatuses =
+        (JavaRDD<WriteStatus>) writeClient.write(Arrays.asList(deleteOp, updateOp, insertOp, bulkInsertOp),
+            instantTime);
+    writeClient.commit(instantTime, writeStatuses);
+
+    returnedStatuses = writeStatuses.collect();
+
+    // Only one new commit
+    HoodieActiveTimeline timeline = metaClient.reloadActiveTimeline();
+    assertTrue(2 == timeline.getCommitsTimeline().filterCompletedInstants().countInstants());
+    assertTrue(timeline.getCommitsTimeline().filterCompletedInstants().lastInstant().get().getTimestamp().equals(instantTime));
+
+    // Verify counts of the various operations
+    final long actualDeletes = returnedStatuses.stream().mapToLong(ws -> ws.getStat().getNumDeletes()).sum();
+    final long actualInserts = returnedStatuses.stream().mapToLong(ws -> ws.getStat().getNumInserts()).sum();
+    final long actualUpserts = returnedStatuses.stream().mapToLong(ws -> ws.getStat().getNumUpdateWrites()).sum();
+    assertTrue(actualDeletes == numDeletes);
+    assertTrue(actualInserts == (numInserts + numBulkInserts));
+    assertTrue(actualUpserts == numUpserts);
+  }
+
+  private JavaRDD<HoodieRecord<HoodieRecordPayload>> convertRecords(List<HoodieRecord> records) {
+    return jsc.parallelize(records).map(r -> new HoodieRecord<HoodieRecordPayload<HoodieRecordPayload>>(r.getKey(), r.getData()));
   }
 }

@@ -33,6 +33,7 @@ import org.apache.hudi.common.engine.HoodieEngineContext;
 import org.apache.hudi.common.model.HoodieCommitMetadata;
 import org.apache.hudi.common.model.HoodieKey;
 import org.apache.hudi.common.model.HoodieRecordPayload;
+import org.apache.hudi.common.model.HoodieTableType;
 import org.apache.hudi.common.model.HoodieWriteStat;
 import org.apache.hudi.common.model.WriteOperationType;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
@@ -48,6 +49,7 @@ import org.apache.hudi.config.HoodieClusteringConfig;
 import org.apache.hudi.config.HoodieCompactionConfig;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.exception.HoodieCommitException;
+import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieIOException;
 import org.apache.hudi.exception.HoodieRestoreException;
 import org.apache.hudi.exception.HoodieRollbackException;
@@ -378,6 +380,47 @@ public abstract class AbstractHoodieWriteClient<T extends HoodieRecordPayload, I
     setOperationType(writeOperationType);
     syncTableMetadata();
     this.asyncCleanerService = AsyncCleanerService.startAsyncCleaningIfEnabled(this);
+  }
+
+  /**
+   * Performs one or more writes into the Hoodie table, at the supplied instantTime.
+   *
+   * The operations are specified as a list and are attempted sequentially. The operations are considered part of a
+   * single write and should not contain overlapping records. A combined result is returned.
+   *
+   * This API has the following limitations:
+   * 1. inflight instants of only the last operation is preserved.
+   * 2. MOR Tables are only supported if they are using marker-based rollbacks since this API does not preserve
+   *    inflight instants of all but the last operation to support the non-marker rollback.
+   * 3. autoCommit is not supported. Since we perform multiple operations, each individual operation should not try to
+   *    commit.
+   *
+   * NOTE: This API is currently experimental. It does not perform strict checking ot ensure the validity of
+   * records across all the operations (e.g. if the same record is inserted in one operation and deleted in another
+   * operation) which may lead to unexpected results. If the different operations do not contain the same record then
+   * there should not be any issues.
+   *
+   * @param operations The various write operations to perform
+   * @param instantTime Instant time of the commit
+   * @return JavaRDD[WriteStatus] - RDD of WriteStatus to inspect errors and counts
+   */
+  public O write(List<HoodieWriteOperation<I, K>> operations, final String instantTime) {
+    if (config.shouldAutoCommit()) {
+      throw new HoodieException("Cannot perform multiple write operations when auto commit is enabled");
+    }
+
+    HoodieTable<T, I, K, O> table = getTableAndInitCtx(WriteOperationType.UPSERT_PREPPED, instantTime);
+    if (table.getMetaClient().getTableType().equals(HoodieTableType.MERGE_ON_READ)
+        && !config.shouldRollbackUsingMarkers()) {
+      throw new HoodieException("Cannot perform multiple write operations on MOR table when "
+          + "marker-based rollback is disabled");
+    }
+
+    table.validateInsertSchema();
+    preWrite(instantTime, WriteOperationType.INSERT);
+    this.asyncCleanerService = AsyncCleanerService.startAsyncCleaningIfEnabled(this);
+    HoodieWriteMetadata<O> result = table.write(context, instantTime, operations);
+    return postWrite(result, instantTime, table);
   }
 
   /**
@@ -719,7 +762,7 @@ public abstract class AbstractHoodieWriteClient<T extends HoodieRecordPayload, I
    */
   protected abstract void completeCompaction(HoodieCommitMetadata metadata, O writeStatuses,
                                              HoodieTable<T, I, K, O> table, String compactionCommitTime);
-  
+
   /**
    * Rollback failed compactions. Inflight rollbacks for compactions revert the .inflight file to the .requested file
    *
