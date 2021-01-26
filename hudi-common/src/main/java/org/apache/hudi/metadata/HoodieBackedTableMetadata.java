@@ -38,6 +38,7 @@ import org.apache.hudi.common.util.HoodieTimer;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.SpillableMapUtils;
 import org.apache.hudi.common.util.ValidationUtils;
+import org.apache.hudi.common.util.collection.Pair;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieIOException;
 import org.apache.hudi.exception.TableNotFoundException;
@@ -112,13 +113,59 @@ public class HoodieBackedTableMetadata extends BaseTableMetadata {
 
   @Override
   protected Option<HoodieRecord<HoodieMetadataPayload>> getRecordByKeyFromMetadata(String key) {
+    // This function can be called in parallel through multiple threads. For each thread, we determine the thread-local
+    // versions of the baseFile and logRecord readers to use.
+    // - If reuse is enabled, we use the same readers and dont close them
+    // - if reuse is disabled, we open new readers in each thread and close them
+    HoodieFileReader localFileReader = null;
+    HoodieMetadataMergedLogRecordScanner localLogRecordScanner = null;
+    synchronized (this) {
+      if (!metadataConfig.enableReuse()) {
+        // reuse is disabled so always open new readers
+        try {
+          Pair<HoodieFileReader, HoodieMetadataMergedLogRecordScanner> readers = openReaders();
+          localFileReader = readers.getKey();
+          localLogRecordScanner = readers.getValue();
+        } catch (IOException e) {
+          throw new HoodieIOException("Error opening readers", e);
+        }
+      } else if (baseFileReader == null && logRecordScanner == null) {
+        // reuse is enabled but we haven't opened the readers yet
+        try {
+          Pair<HoodieFileReader, HoodieMetadataMergedLogRecordScanner> readers = openReaders();
+          localFileReader = readers.getKey();
+          localLogRecordScanner = readers.getValue();
+          // cache the readers
+          baseFileReader = localFileReader;
+          logRecordScanner = localLogRecordScanner;
+        } catch (IOException e) {
+          throw new HoodieIOException("Error opening readers", e);
+        }
+      } else {
+        // reuse the already open readers
+        ValidationUtils.checkState((baseFileReader != null || logRecordScanner != null), "Readers should already be open");
+        localFileReader = baseFileReader;
+        localLogRecordScanner = logRecordScanner;
+      }
+    }
+
+    try {
+      ValidationUtils.checkState((localFileReader != null || localLogRecordScanner != null), "Readers should have been opened");
+      return getRecordByKeyFromMetadata(key, localFileReader, localLogRecordScanner);
+    } finally {
+      if (!metadataConfig.enableReuse()) {
+        // reuse is disabled so close the local copy
+        close(localFileReader, localLogRecordScanner);
+      }
+    }
+  }
+
+  private Option<HoodieRecord<HoodieMetadataPayload>> getRecordByKeyFromMetadata(String key, HoodieFileReader baseFileReader,
+      HoodieMetadataMergedLogRecordScanner logRecordScanner) {
     try {
       List<Long> timings = new ArrayList<>();
       HoodieTimer timer = new HoodieTimer().startTimer();
-      openFileSliceIfNeeded();
-      timings.add(timer.endTimer());
 
-      timer.startTimer();
       // Retrieve record from base file
       HoodieRecord<HoodieMetadataPayload> hoodieRecord = null;
       if (baseFileReader != null) {
@@ -147,23 +194,21 @@ public class HoodieBackedTableMetadata extends BaseTableMetadata {
         }
       }
       timings.add(timer.endTimer());
-      LOG.info(String.format("Metadata read for key %s took [open, baseFileRead, logMerge] %s ms", key, timings));
+      LOG.info(String.format("Metadata read for key %s took [baseFileRead, logMerge] %s ms", key, timings));
       return Option.ofNullable(hoodieRecord);
     } catch (IOException ioe) {
       throw new HoodieIOException("Error merging records from metadata table for key :" + key, ioe);
-    } finally {
-      closeIfNeeded();
     }
   }
 
   /**
-   * Open readers to the base and log files.
+   * Returns the readers to the base and log files.
+   *
+   * If reuse is allowed then cached readers are returned. Otherwise new readers are opened.
    */
-  private synchronized void openFileSliceIfNeeded() throws IOException {
-    if (metadataConfig.enableReuse() && baseFileReader != null) {
-      // we will reuse what's open.
-      return;
-    }
+  private Pair<HoodieFileReader, HoodieMetadataMergedLogRecordScanner> openReaders() throws IOException {
+    HoodieFileReader baseFileReader = null;
+    long[] timings = {0, 0};
 
     // Metadata is in sync till the latest completed instant on the dataset
     HoodieTimer timer = new HoodieTimer().startTimer();
@@ -175,10 +220,15 @@ public class HoodieBackedTableMetadata extends BaseTableMetadata {
     if (basefile.isPresent()) {
       String basefilePath = basefile.get().getPath();
       baseFileReader = HoodieFileReaderFactory.getFileReader(hadoopConf.get(), new Path(basefilePath));
-      LOG.info("Opened metadata base file from " + basefilePath + " at instant " + basefile.get().getCommitTime());
+      timings[0] = timer.endTimer();
+      LOG.info(String.format("Opened metadata base file from %s at instant %s in %d ms", basefilePath,
+          basefile.get().getCommitTime(), timings[0]));
+    } else {
+      timer.endTimer();
     }
 
     // Open the log record scanner using the log files from the latest file slice
+    timer.startTimer();
     List<String> logFilePaths = latestFileSystemMetadataSlices.get(0).getLogFiles()
         .sorted(HoodieLogFile.getLogFileComparator())
         .map(o -> o.getPath().toString())
@@ -188,20 +238,25 @@ public class HoodieBackedTableMetadata extends BaseTableMetadata {
 
     // Load the schema
     Schema schema = HoodieAvroUtils.addMetadataFields(HoodieMetadataRecord.getClassSchema());
-    logRecordScanner = new HoodieMetadataMergedLogRecordScanner(metaClient.getFs(), metadataBasePath,
-            logFilePaths, schema, latestMetaInstantTimestamp, MAX_MEMORY_SIZE_IN_BYTES, BUFFER_SIZE,
+    HoodieMetadataMergedLogRecordScanner logRecordScanner = new HoodieMetadataMergedLogRecordScanner(metaClient.getFs(),
+            metadataBasePath, logFilePaths, schema, latestMetaInstantTimestamp, MAX_MEMORY_SIZE_IN_BYTES, BUFFER_SIZE,
             spillableMapDirectory, null);
 
-    LOG.info("Opened metadata log files from " + logFilePaths + " at instant " + latestInstantTime
-        + "(dataset instant=" + latestInstantTime + ", metadata instant=" + latestMetaInstantTimestamp + ")");
+    timings[1] = timer.endTimer();
+    LOG.info(String.format("Opened metadata log files from %s at instant (dataset instant=%s, metadata instant=%s) in %d ms",
+        logFilePaths, latestInstantTime, latestMetaInstantTimestamp, timings[1]));
 
-    metrics.ifPresent(metrics -> metrics.updateMetrics(HoodieMetadataMetrics.SCAN_STR, timer.endTimer()));
+    metrics.ifPresent(metrics -> metrics.updateMetrics(HoodieMetadataMetrics.SCAN_STR, timings[0] + timings[1]));
+    return Pair.of(baseFileReader, logRecordScanner);
   }
 
-  private void closeIfNeeded() {
+  private void close(HoodieFileReader localFileReader, HoodieMetadataMergedLogRecordScanner localLogScanner) {
     try {
-      if (!metadataConfig.enableReuse()) {
-        close();
+      if (localFileReader != null) {
+        localFileReader.close();
+      }
+      if (localLogScanner != null) {
+        localLogScanner.close();
       }
     } catch (Exception e) {
       throw new HoodieException("Error closing resources during metadata table merge", e);
@@ -209,20 +264,16 @@ public class HoodieBackedTableMetadata extends BaseTableMetadata {
   }
 
   @Override
-  public void close() throws Exception {
-    if (baseFileReader != null) {
-      baseFileReader.close();
-      baseFileReader = null;
-    }
-    if (logRecordScanner != null) {
-      logRecordScanner.close();
-      logRecordScanner = null;
-    }
+  public synchronized void close() throws Exception {
+    close(baseFileReader, logRecordScanner);
+    baseFileReader = null;
+    logRecordScanner = null;
   }
 
   /**
    * Return an ordered list of instants which have not been synced to the Metadata Table.
    */
+  @Override
   protected List<HoodieInstant> findInstantsToSync() {
     initIfNeeded();
 
