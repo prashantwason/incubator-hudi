@@ -112,6 +112,12 @@ public class HoodieWriteConfig extends DefaultHoodieConfig {
   public static final String DEFAULT_EMBEDDED_TIMELINE_SERVER_ENABLED = "true";
   public static final String EMBEDDED_TIMELINE_SERVER_PORT = "hoodie.embed.timeline.server.port";
   public static final String DEFAULT_EMBEDDED_TIMELINE_SERVER_PORT = "0";
+  public static final String EMBEDDED_TIMELINE_SERVER_THREADS = "hoodie.embed.timeline.server.threads";
+  public static final String DEFAULT_EMBEDDED_TIMELINE_SERVER_THREADS = "-1";
+  public static final String EMBEDDED_TIMELINE_SERVER_COMPRESS_OUTPUT = "hoodie.embed.timeline.server.gzip";
+  public static final String DEFAULT_EMBEDDED_TIMELINE_COMPRESS_OUTPUT = "true";
+  public static final String EMBEDDED_TIMELINE_SERVER_USE_ASYNC = "hoodie.embed.timeline.server.async";
+  public static final String DEFAULT_EMBEDDED_TIMELINE_SERVER_ASYNC = "true";
 
   public static final String FAIL_ON_TIMELINE_ARCHIVING_ENABLED_PROP = "hoodie.fail.on.timeline.archiving";
   public static final String DEFAULT_FAIL_ON_TIMELINE_ARCHIVING_ENABLED = "true";
@@ -310,6 +316,18 @@ public class HoodieWriteConfig extends DefaultHoodieConfig {
 
   public int getEmbeddedTimelineServerPort() {
     return Integer.parseInt(props.getProperty(EMBEDDED_TIMELINE_SERVER_PORT, DEFAULT_EMBEDDED_TIMELINE_SERVER_PORT));
+  }
+
+  public int getEmbeddedTimelineServerThreads() {
+    return Integer.parseInt(props.getProperty(EMBEDDED_TIMELINE_SERVER_THREADS, DEFAULT_EMBEDDED_TIMELINE_SERVER_THREADS));
+  }
+
+  public boolean getEmbeddedTimelineServerCompressOutput() {
+    return Boolean.parseBoolean(props.getProperty(EMBEDDED_TIMELINE_SERVER_COMPRESS_OUTPUT, DEFAULT_EMBEDDED_TIMELINE_COMPRESS_OUTPUT));
+  }
+
+  public boolean getEmbeddedTimelineServerUseAsync() {
+    return Boolean.parseBoolean(props.getProperty(EMBEDDED_TIMELINE_SERVER_USE_ASYNC, DEFAULT_EMBEDDED_TIMELINE_SERVER_ASYNC));
   }
 
   public boolean isFailOnTimelineArchivingEnabled() {
