@@ -20,6 +20,7 @@ package org.apache.hudi.client;
 
 import org.apache.hudi.client.embedded.EmbeddedTimelineServerHelper;
 import org.apache.hudi.client.embedded.EmbeddedTimelineService;
+import org.apache.hudi.common.config.HoodieWrapperFileSystemConfig;
 import org.apache.hudi.common.engine.HoodieEngineContext;
 import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
@@ -72,6 +73,13 @@ public abstract class AbstractHoodieClient implements Serializable, AutoCloseabl
     shouldStopTimelineServer = !timelineServer.isPresent();
     startEmbeddedServerView();
     initWrapperFSMetrics();
+
+    // File system IO buffering configs are propagated via Hadoop Configuration
+    context.setHadoopConfig(HoodieWrapperFileSystemConfig.FILE_IO_BUFFER_ENABLED, Boolean.toString(clientConfig.isFileIOBufferingEnabled()));
+    context.setHadoopConfig(HoodieWrapperFileSystemConfig.MIN_FILE_IO_BUFFER_SIZE,
+        Integer.toString(clientConfig.getFileIOBufferMinSize()));
+    context.setHadoopConfig(HoodieWrapperFileSystemConfig.MIN_DATA_FILE_IO_BUFFER_SIZE,
+        Integer.toString(clientConfig.getDataFileIOBufferMinSize()));
   }
 
   /**
