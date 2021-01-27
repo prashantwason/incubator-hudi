@@ -109,16 +109,17 @@ public class DagScheduler {
         queue.addAll(childNodes);
         childNodes.clear();
         for (Future future : futures) {
-          future.get(1, TimeUnit.HOURS);
+          future.get(6, TimeUnit.HOURS);
         }
+
+        // After each level, report and flush the metrics
+        Metrics.flush();
       } while (queue.size() > 0);
+
       log.info("Finished workloads for round num " + curRound);
       if (curRound < workflowDag.getRounds()) {
         new DelayNode(workflowDag.getIntermittentDelayMins()).execute(executionContext);
       }
-
-      // After each level, report and flush the metrics
-      Metrics.flush();
     } while (curRound++ < workflowDag.getRounds());
     log.info("Finished workloads");
   }
@@ -135,10 +136,12 @@ public class DagScheduler {
     try {
       int repeatCount = node.getConfig().getRepeatCount();
       while (repeatCount > 0) {
+        log.info("executing node: " + node.getName() + " of type: " + node.getClass());
         node.execute(executionContext);
         log.info("Finished executing {}", node.getName());
         repeatCount--;
       }
+      node.printResults(executionContext);
       node.setCompleted(true);
     } catch (Exception e) {
       log.error("Exception executing node", e);

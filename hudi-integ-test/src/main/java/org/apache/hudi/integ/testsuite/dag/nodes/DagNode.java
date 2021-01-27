@@ -95,6 +95,13 @@ public abstract class DagNode<O> implements Comparable<DagNode<O>> {
    */
   public abstract void execute(ExecutionContext context) throws Exception;
 
+  /**
+   * Print the results (if any) from the execution of the {@link DagNode}.
+   *
+   * @param context The context needed for an execution of a node.
+   */
+  public void printResults(ExecutionContext context) { }
+
   public boolean isCompleted() {
     return isCompleted;
   }

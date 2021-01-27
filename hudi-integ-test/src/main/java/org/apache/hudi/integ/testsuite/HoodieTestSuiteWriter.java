@@ -18,15 +18,24 @@
 
 package org.apache.hudi.integ.testsuite;
 
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
 import org.apache.hadoop.conf.Configuration;
 
 import org.apache.hudi.avro.model.HoodieCompactionPlan;
 import org.apache.hudi.client.HoodieReadClient;
+import org.apache.hudi.client.HoodieWriteOperation;
 import org.apache.hudi.client.SparkRDDWriteClient;
 import org.apache.hudi.client.WriteStatus;
 import org.apache.hudi.client.common.HoodieSparkEngineContext;
 import org.apache.hudi.common.model.HoodieRecord;
 import org.apache.hudi.common.model.WriteOperationType;
+import org.apache.hudi.common.model.HoodieRecordPayload;
 import org.apache.hudi.common.table.timeline.HoodieActiveTimeline;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.collection.Pair;
@@ -34,6 +43,7 @@ import org.apache.hudi.config.HoodieCompactionConfig;
 import org.apache.hudi.config.HoodieIndexConfig;
 import org.apache.hudi.config.HoodiePayloadConfig;
 import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.index.HoodieIndex;
 import org.apache.hudi.integ.testsuite.HoodieTestSuiteJob.HoodieTestSuiteConfig;
 import org.apache.hudi.integ.testsuite.dag.nodes.CleanNode;
@@ -41,16 +51,10 @@ import org.apache.hudi.integ.testsuite.dag.nodes.DagNode;
 import org.apache.hudi.integ.testsuite.dag.nodes.RollbackNode;
 import org.apache.hudi.integ.testsuite.dag.nodes.ScheduleCompactNode;
 import org.apache.hudi.integ.testsuite.writer.DeltaWriteStats;
+import org.apache.hudi.table.BulkInsertPartitioner;
 import org.apache.hudi.utilities.schema.SchemaProvider;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
-
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
 
 /**
  * A writer abstraction for the Hudi test suite. This class wraps different implementations of writers used to perform
@@ -138,6 +142,24 @@ public class HoodieTestSuiteWriter {
     }
   }
 
+  public JavaRDD<WriteStatus> upsert(JavaRDD<HoodieRecord> recordRDD, Option<String> instantTime) {
+    if (cfg.useDeltaStreamer) {
+      throw new HoodieException("DeltaStreamer cannot be used with upsert of existing records");
+    } else {
+      lastCheckpoint = Option.of(instantTime.get());
+      return writeClient.upsert(recordRDD, instantTime.get());
+    }
+  }
+
+  public JavaRDD<WriteStatus> upsertPrepped(JavaRDD<HoodieRecord> recordRDD, Option<String> instantTime) {
+    if (cfg.useDeltaStreamer) {
+      throw new HoodieException("DeltaStreamer cannot be used with upsert of existing records");
+    } else {
+      lastCheckpoint = Option.of(instantTime.get());
+      return writeClient.upsertPreppedRecords(recordRDD, instantTime.get());
+    }
+  }
+
   public JavaRDD<WriteStatus> insert(Option<String> instantTime) throws Exception {
     if (cfg.useDeltaStreamer) {
       return deltaStreamerWrapper.insert();
@@ -148,6 +170,24 @@ public class HoodieTestSuiteWriter {
     }
   }
 
+  public JavaRDD<WriteStatus> insert(JavaRDD<HoodieRecord> recordRDD, Option<String> instantTime) {
+    if (cfg.useDeltaStreamer) {
+      throw new HoodieException("DeltaStreamer cannot be used with insert of existing records");
+    } else {
+      lastCheckpoint = Option.of(instantTime.get());
+      return writeClient.insert(recordRDD, instantTime.get());
+    }
+  }
+
+  public JavaRDD<WriteStatus> insertPrepped(JavaRDD<HoodieRecord> recordRDD, Option<String> instantTime) {
+    if (cfg.useDeltaStreamer) {
+      throw new HoodieException("DeltaStreamer cannot be used with insert of existing records");
+    } else {
+      lastCheckpoint = Option.of(instantTime.get());
+      return writeClient.insertPreppedRecords(recordRDD, instantTime.get());
+    }
+  }
+
   public JavaRDD<WriteStatus> bulkInsert(Option<String> instantTime) throws Exception {
     if (cfg.useDeltaStreamer) {
       return deltaStreamerWrapper.bulkInsert();
@@ -155,6 +195,36 @@ public class HoodieTestSuiteWriter {
       Pair<SchemaProvider, Pair<String, JavaRDD<HoodieRecord>>> nextBatch = fetchSource();
       lastCheckpoint = Option.of(nextBatch.getValue().getLeft());
       return writeClient.bulkInsert(nextBatch.getRight().getRight(), instantTime.get());
+    }
+  }
+
+  public JavaRDD<WriteStatus> bulkInsert(JavaRDD<HoodieRecord> recordRDD, Option<String> instantTime,
+      Option<BulkInsertPartitioner> bulkInsertPartitioner) {
+    if (cfg.useDeltaStreamer) {
+      throw new HoodieException("DeltaStreamer cannot be used with bulkInsert of existing records");
+    } else {
+      lastCheckpoint = Option.of(instantTime.get());
+      return writeClient.bulkInsert(recordRDD, instantTime.get(), bulkInsertPartitioner);
+    }
+  }
+
+  public JavaRDD<WriteStatus> bulkInsertPrepped(JavaRDD<HoodieRecord> recordRDD, Option<String> instantTime,
+      Option<BulkInsertPartitioner> bulkInsertPartitioner) {
+    if (cfg.useDeltaStreamer) {
+      throw new HoodieException("DeltaStreamer cannot be used with bulkInsert of existing records");
+    } else {
+      lastCheckpoint = Option.of(instantTime.get());
+      return writeClient.bulkInsertPreppedRecords(recordRDD, instantTime.get(), bulkInsertPartitioner);
+    }
+  }
+
+  public JavaRDD<WriteStatus> write(List<HoodieWriteOperation> operations,
+      Option<String> instantTime) {
+    if (cfg.useDeltaStreamer) {
+      throw new HoodieException("DeltaStreamer cannot be used with write of existing records");
+    } else {
+      lastCheckpoint = Option.of(instantTime.get());
+      return (JavaRDD<WriteStatus>) writeClient.write(operations, instantTime.get());
     }
   }
 

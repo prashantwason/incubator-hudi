@@ -71,6 +71,7 @@ import java.util.concurrent.TimeoutException;
 public class HoodieWrapperFileSystem extends FileSystem {
 
   public static final String HOODIE_SCHEME_PREFIX = "hoodie-";
+  public static final String HOODIE_WRAPPER_FS_CONF = "fs.hudi.wrapper.impl";
 
   protected enum MetricName {
     create, rename, delete, listStatus, mkdirs, getFileStatus, globStatus, listFiles, read, write, open
@@ -178,7 +179,7 @@ public class HoodieWrapperFileSystem extends FileSystem {
   public static Path convertToHoodiePath(Path file, Configuration conf) {
     try {
       String scheme = FSUtils.getFs(file.toString(), conf).getScheme();
-      return convertPathWithScheme(file, getHoodieScheme(scheme));
+      return convertPathWithScheme(file, getHoodieScheme(scheme), null);
     } catch (HoodieIOException e) {
       throw e;
     }
@@ -193,12 +194,18 @@ public class HoodieWrapperFileSystem extends FileSystem {
         "IO Data Buffer size should be greater than 0");
   }
 
-  private static Path convertPathWithScheme(Path oldPath, String newScheme) {
+  private static Path convertPathWithScheme(Path oldPath, String newScheme, String authority) {
     URI oldURI = oldPath.toUri();
     URI newURI;
     try {
-      newURI = new URI(newScheme, oldURI.getUserInfo(), oldURI.getHost(), oldURI.getPort(), oldURI.getPath(),
-          oldURI.getQuery(), oldURI.getFragment());
+      if (authority != null) {
+        newURI = new URI(newScheme, authority, oldURI.getPath(), oldURI.getQuery(), oldURI.getFragment());
+      } else if (oldURI.getAuthority() != null) {
+        newURI = new URI(newScheme, oldURI.getAuthority(), oldURI.getPath(), oldURI.getQuery(), oldURI.getFragment());
+      } else {
+        newURI = new URI(newScheme, oldURI.getUserInfo(), oldURI.getHost(), oldURI.getPort(), oldURI.getPath(),
+            oldURI.getQuery(), oldURI.getFragment());
+      }
       return new Path(newURI);
     } catch (URISyntaxException e) {
       // TODO - Better Exception handling
@@ -227,7 +234,7 @@ public class HoodieWrapperFileSystem extends FileSystem {
     } else {
       this.uri = uri;
     }
-    this.fileSystem = FSUtils.getFs(path.toString(), conf);
+    this.fileSystem = FSUtils.getRawFs(path, conf);
     // Do not need to explicitly initialize the default filesystem, its done already in the above
     // FileSystem.get
     // fileSystem.initialize(FileSystem.getDefaultUri(conf), conf);
@@ -1055,16 +1062,16 @@ public class HoodieWrapperFileSystem extends FileSystem {
   }
 
   public Path convertToHoodiePath(Path oldPath) {
-    return convertPathWithScheme(oldPath, getHoodieScheme(getScheme()));
+    return convertPathWithScheme(oldPath, getHoodieScheme(getScheme()), uri.getAuthority());
   }
 
-  private Path convertToDefaultPath(Path oldPath) {
-    return convertPathWithScheme(oldPath, getScheme());
+  public Path convertToDefaultPath(Path oldPath) {
+    return convertPathWithScheme(oldPath, getScheme(), uri.getAuthority());
   }
 
   private Path convertToLocalPath(Path oldPath) {
     try {
-      return convertPathWithScheme(oldPath, FileSystem.getLocal(getConf()).getScheme());
+      return convertPathWithScheme(oldPath, FileSystem.getLocal(getConf()).getScheme(), null);
     } catch (IOException e) {
       throw new HoodieIOException(e.getMessage(), e);
     }

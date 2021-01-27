@@ -55,19 +55,23 @@ public class MarkerFiles implements Serializable {
   private final transient FileSystem fs;
   private final transient Path markerDirPath;
   private final String basePath;
+  private final HoodieTableMetaClient metaClient;
 
-  public MarkerFiles(FileSystem fs, String basePath, String markerFolderPath, String instantTime) {
+  public MarkerFiles(FileSystem fs, String basePath, String markerFolderPath, String instantTime,
+                     HoodieTableMetaClient metaClient) {
     this.instantTime = instantTime;
     this.fs = fs;
     this.markerDirPath = new Path(markerFolderPath);
     this.basePath = basePath;
+    this.metaClient = metaClient;
   }
 
   public MarkerFiles(HoodieTable table, String instantTime) {
     this(table.getMetaClient().getFs(),
         table.getMetaClient().getBasePath(),
         table.getMetaClient().getMarkerFolderPath(instantTime),
-        instantTime);
+        instantTime,
+        table.getMetaClient());
   }
 
   public void quietDeleteMarkerDir(HoodieEngineContext context, int parallelism) {
@@ -138,7 +142,7 @@ public class MarkerFiles implements Serializable {
       context.setJobStatus(this.getClass().getSimpleName(), "Obtaining marker files for all created, merged paths");
       dataFiles.addAll(context.flatMap(subDirectories, directory -> {
         Path path = new Path(directory);
-        FileSystem fileSystem = path.getFileSystem(serializedConf.get());
+        FileSystem fileSystem = metaClient.getFs();
         RemoteIterator<LocatedFileStatus> itr = fileSystem.listFiles(path, true);
         List<String> result = new ArrayList<>();
         while (itr.hasNext()) {

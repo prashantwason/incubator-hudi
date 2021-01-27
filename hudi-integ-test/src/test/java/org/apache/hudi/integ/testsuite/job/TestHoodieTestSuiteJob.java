@@ -69,7 +69,6 @@ public class TestHoodieTestSuiteJob extends UtilitiesTestBase {
   private static final String MOR_DAG_FILE_NAME = "unit-test-mor-dag.yaml";
   private static final String MOR_DAG_SOURCE_PATH = "/hudi-integ-test/src/test/resources/" + MOR_DAG_FILE_NAME;
 
-
   public static Stream<Arguments> configParams() {
     Object[][] data =
         new Object[][] {{false, "COPY_ON_WRITE"}};
@@ -146,11 +145,13 @@ public class TestHoodieTestSuiteJob extends UtilitiesTestBase {
     UtilitiesTestBase.cleanupClass();
   }
 
+  @Override
   @BeforeEach
   public void setup() throws Exception {
     super.setup();
   }
 
+  @Override
   @AfterEach
   public void teardown() throws Exception {
     super.teardown();

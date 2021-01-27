@@ -28,7 +28,6 @@ import org.apache.hadoop.fs.PathFilter;
 import org.apache.hadoop.fs.RemoteIterator;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
-import org.apache.hudi.common.config.SerializableConfiguration;
 import org.apache.hudi.common.engine.HoodieEngineContext;
 import org.apache.hudi.common.model.HoodieFileFormat;
 import org.apache.hudi.common.model.HoodieLogFile;
@@ -37,6 +36,7 @@ import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.timeline.HoodieInstant;
 import org.apache.hudi.common.table.view.FileSystemViewStorageConfig;
 import org.apache.hudi.common.util.Option;
+import org.apache.hudi.common.util.ReflectionUtils;
 import org.apache.hudi.common.util.collection.Pair;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieIOException;
@@ -80,6 +80,7 @@ public class FSUtils {
   public static Configuration prepareHadoopConf(Configuration conf) {
     conf.set("fs.hdfs.impl", org.apache.hadoop.hdfs.DistributedFileSystem.class.getName());
     conf.set("fs.file.impl", org.apache.hadoop.fs.LocalFileSystem.class.getName());
+    conf.set("fs.viewfs.impl", org.apache.hadoop.fs.viewfs.ViewFileSystem.class.getName());
 
     // look for all properties, prefixed to be picked up
     for (Entry<String, String> prop : System.getenv().entrySet()) {
@@ -91,17 +92,60 @@ public class FSUtils {
     return conf;
   }
 
+  /**
+   * Returns an implementation of {@code FileSystem}.
+   *
+   * If the {@code Configuration} specifies a HUDI-specific wrapper file system, it is returned instead.
+   * @param path
+   * @param conf
+   * @param guard The {@code ConsistencyGuard} to use.
+   * @return
+   */
   public static FileSystem getFs(String path, Configuration conf) {
+    String wrapperFilesystemClass = FSUtils.getFileSystemWrapperClassName(conf);
+    if (wrapperFilesystemClass != null) {
+      FileSystem fs = (FileSystem)ReflectionUtils.loadClass(wrapperFilesystemClass,
+          new Class<?>[] {FileSystem.class, ConsistencyGuard.class}, getRawFs(path, conf), new NoOpConsistencyGuard());
+
+      LOG.info(String.format("Hadoop Configuration: fs.defaultFS: [%s], Config:[%s], FileSystem: [%s]",
+          conf.getRaw("fs.defaultFS"), conf.toString(), fs.toString()));
+      return fs;
+    }
+
+    return getRawFs(path, conf);
+  }
+
+  /**
+   * Returns an implementation of {@code FileSystem}.
+   *
+   * @param path
+   * @param conf
+   * @return
+   */
+  public static FileSystem getRawFs(Path path, Configuration originalConf) {
     FileSystem fs;
+    Configuration conf = new Configuration(originalConf);
     prepareHadoopConf(conf);
+
     try {
-      fs = new Path(path).getFileSystem(conf);
+      fs = path.getFileSystem(conf);
     } catch (IOException e) {
       throw new HoodieIOException("Failed to get instance of " + FileSystem.class.getName(), e);
     }
-    LOG.info(String.format("Hadoop Configuration: fs.defaultFS: [%s], Config:[%s], FileSystem: [%s]",
+    LOG.info(String.format("Hadoop Configuration (raw): fs.defaultFS: [%s], Config:[%s], FileSystem: [%s]",
         conf.getRaw("fs.defaultFS"), conf.toString(), fs.toString()));
     return fs;
+  }
+
+  /**
+   * Returns an implementation of {@code FileSystem}.
+   *
+   * @param path
+   * @param conf
+   * @return
+   */
+  public static FileSystem getRawFs(String path, Configuration conf) {
+    return getRawFs(new Path(path), conf);
   }
 
   public static FileSystem getFs(String path, Configuration conf, boolean localByDefault) {
@@ -582,28 +626,22 @@ public class FSUtils {
             .equals("com.google.cloud.hadoop.fs.gcs.GoogleHadoopFSInputStream");
   }
 
+  public static String getFileSystemWrapperClassName(Configuration conf) {
+    String filesystemClass = conf.get(HoodieWrapperFileSystem.HOODIE_WRAPPER_FS_CONF);
+    if (filesystemClass == null) {
+      // default implementation is HoodieWrapperFileSystem
+      filesystemClass = HoodieWrapperFileSystem.class.getName();
+    }
+
+    return filesystemClass;
+  }
+
   public static Configuration registerFileSystem(Path file, Configuration conf) {
     Configuration returnConf = new Configuration(conf);
     String scheme = FSUtils.getFs(file.toString(), conf).getScheme();
     returnConf.set("fs." + HoodieWrapperFileSystem.getHoodieScheme(scheme) + ".impl",
-        HoodieWrapperFileSystem.class.getName());
+        getFileSystemWrapperClassName(conf));
     return returnConf;
-  }
-
-  /**
-   * Get the FS implementation for this table.
-   * @param path  Path String
-   * @param hadoopConf  Serializable Hadoop Configuration
-   * @param consistencyGuardConfig Consistency Guard Config
-   * @return HoodieWrapperFileSystem
-   */
-  public static HoodieWrapperFileSystem getFs(String path, SerializableConfiguration hadoopConf,
-      ConsistencyGuardConfig consistencyGuardConfig) {
-    FileSystem fileSystem = FSUtils.getFs(path, hadoopConf.newCopy());
-    return new HoodieWrapperFileSystem(fileSystem,
-        consistencyGuardConfig.isConsistencyCheckEnabled()
-            ? new FailSafeConsistencyGuard(fileSystem, consistencyGuardConfig)
-            : new NoOpConsistencyGuard());
   }
 
   /**

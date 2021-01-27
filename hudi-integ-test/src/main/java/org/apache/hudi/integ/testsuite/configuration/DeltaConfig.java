@@ -88,6 +88,10 @@ public class DeltaConfig implements Serializable {
     private static String REINIT_CONTEXT = "reinitialize_context";
     private static String START_PARTITION = "start_partition";
     private static String DELETE_INPUT_DATA = "delete_input_data";
+    private static String INSTANT_TIME = "instant_time";
+    private static String USE_PREPPED_API = "use_prepped_api";
+    private static String USE_BULK_INSERT = "use_bulk_insert";
+    private static String USE_MULTI_WRITE = "use_multi_write";
 
     private Map<String, Object> configsMap;
 
@@ -157,6 +161,22 @@ public class DeltaConfig implements Serializable {
 
     public boolean isDeleteInputData() {
       return Boolean.valueOf(configsMap.getOrDefault(DELETE_INPUT_DATA, false).toString());
+    }
+
+    public Boolean usePreppedApi() {
+      return Boolean.valueOf(configsMap.getOrDefault(USE_PREPPED_API, false).toString());
+    }
+
+    public Boolean useBulkInsert() {
+      return Boolean.valueOf(configsMap.getOrDefault(USE_BULK_INSERT, false).toString());
+    }
+
+    public Boolean useMultiWrite() {
+      return Boolean.valueOf(configsMap.getOrDefault(USE_MULTI_WRITE, false).toString());
+    }
+
+    public String getInstantTime() {
+      return (String)configsMap.get(INSTANT_TIME);
     }
 
     public Map<String, Object> getOtherConfigs() {
@@ -285,6 +305,26 @@ public class DeltaConfig implements Serializable {
 
       public Builder withHiveProperties(List<String> hiveProperties) {
         this.configsMap.put(HIVE_PROPERTIES, hiveProperties);
+        return this;
+      }
+
+      public Builder withInstantTime(String instantTime) {
+        this.configsMap.put(INSTANT_TIME, instantTime);
+        return this;
+      }
+
+      public Builder withUsePreppedAPi(boolean enable) {
+        this.configsMap.put(USE_PREPPED_API, enable);
+        return this;
+      }
+
+      public Builder withUseBulkInsert(boolean enable) {
+        this.configsMap.put(USE_BULK_INSERT, enable);
+        return this;
+      }
+
+      public Builder withUseMultiWrite(boolean enable) {
+        this.configsMap.put(USE_MULTI_WRITE, enable);
         return this;
       }
 

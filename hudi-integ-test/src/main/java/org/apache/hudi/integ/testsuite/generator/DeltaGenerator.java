@@ -161,12 +161,12 @@ public class DeltaGenerator implements Serializable {
         if (config.getNumUpsertPartitions() < 0) {
           // randomly generate updates for a given number of records without regard to partitions and files
           deltaInputReader = new DFSAvroDeltaInputReader(sparkSession, schemaStr,
-              ((DFSDeltaConfig) deltaOutputConfig).getDeltaBasePath(), Option.empty(), Option.empty());
+              deltaOutputConfig.getDeltaBasePath(), Option.empty(), Option.empty());
           adjustedRDD = deltaInputReader.read(config.getNumRecordsUpsert());
           adjustedRDD = adjustRDDToGenerateExactNumUpdates(adjustedRDD, jsc, config.getNumRecordsUpsert());
         } else {
           deltaInputReader =
-              new DFSHoodieDatasetInputReader(jsc, ((DFSDeltaConfig) deltaOutputConfig).getDatasetOutputPath(),
+              new DFSHoodieDatasetInputReader(jsc, deltaOutputConfig.getDatasetOutputPath(),
                   schemaStr);
           if (config.getFractionUpsertPerFile() > 0) {
             adjustedRDD = deltaInputReader.read(config.getNumUpsertPartitions(), config.getNumUpsertFiles(),
