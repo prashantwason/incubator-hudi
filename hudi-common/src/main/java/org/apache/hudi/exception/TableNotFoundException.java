@@ -48,9 +48,11 @@ public class TableNotFoundException extends HoodieException {
       if (!status.isDirectory()) {
         throw new TableNotFoundException(metaPathDir.toString());
       }
-    } catch (FileNotFoundException | IllegalArgumentException e) {
-      // if the base path is file:///, then we have a IllegalArgumentException
+    } catch (FileNotFoundException e) {
       throw new TableNotFoundException(metaPathDir.toString());
+    } catch (IllegalArgumentException e) {
+      // if the base path has incorrect scheme (e.g. file:///), then we have a IllegalArgumentException
+      throw new HoodieException("Could not access filesystem at " + metaPathDir.toString(), e);
     } catch (IOException e) {
       throw new HoodieIOException("Could not check if " + basePathDir + " is a valid table", e);
     }
