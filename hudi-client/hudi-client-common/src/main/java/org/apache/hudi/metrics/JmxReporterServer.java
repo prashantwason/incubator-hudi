@@ -23,7 +23,7 @@ import org.apache.hudi.common.util.ValidationUtils;
 import org.apache.hudi.exception.HoodieException;
 
 import com.codahale.metrics.MetricRegistry;
-import com.codahale.metrics.jmx.JmxReporter;
+import com.codahale.metrics.JmxReporter;
 
 import javax.management.MBeanServer;
 import javax.management.remote.JMXConnectorServer;

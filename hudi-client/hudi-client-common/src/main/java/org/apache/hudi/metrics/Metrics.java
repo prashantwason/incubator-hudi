@@ -23,6 +23,7 @@ import org.apache.hudi.common.util.Option;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.exception.HoodieException;
 
+import com.codahale.metrics.Counter;
 import com.codahale.metrics.MetricRegistry;
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
@@ -125,8 +126,9 @@ public class Metrics {
   public static void registerGauge(String metricName, final long value) {
     try {
       MetricRegistry registry = Metrics.getInstance().getRegistry();
-      HoodieGauge guage = (HoodieGauge) registry.gauge(metricName, () -> new HoodieGauge<>(value));
-      guage.setValue(value);
+      Counter counter = new Counter();
+      counter.inc(value);
+      registry.register(metricName, counter);
     } catch (Exception e) {
       // Here we catch all exception, so the major upsert pipeline will not be affected if the
       // metrics system has some issues.
