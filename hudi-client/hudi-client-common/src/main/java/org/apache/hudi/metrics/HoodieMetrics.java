@@ -129,7 +129,7 @@ public class HoodieMetrics {
   }
 
   public void updateCommitMetrics(long commitEpochTimeInMs, long durationInMs, HoodieCommitMetadata metadata,
-      String actionType) {
+                                  String actionType) {
     if (config.isMetricsOn()) {
       long totalPartitionsWritten = metadata.fetchTotalPartitionsWritten();
       long totalFilesInsert = metadata.fetchTotalFilesInsert();
@@ -196,7 +196,7 @@ public class HoodieMetrics {
     }
   }
 
-  String getMetricsName(String action, String metric) {
+  public String getMetricsName(String action, String metric) {
     return config == null ? null : String.format("%s.%s.%s", tableName, action, metric);
   }
 

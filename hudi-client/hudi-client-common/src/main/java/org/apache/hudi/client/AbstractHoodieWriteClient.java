@@ -56,6 +56,7 @@ import org.apache.hudi.exception.HoodieRollbackException;
 import org.apache.hudi.exception.HoodieSavepointException;
 import org.apache.hudi.index.HoodieIndex;
 import org.apache.hudi.metrics.HoodieMetrics;
+import org.apache.hudi.metrics.Metrics;
 import org.apache.hudi.table.BulkInsertPartitioner;
 import org.apache.hudi.table.HoodieTable;
 import org.apache.hudi.table.HoodieTimelineArchiveLog;
@@ -136,6 +137,12 @@ public abstract class AbstractHoodieWriteClient<T extends HoodieRecordPayload, I
     this.metrics = new HoodieMetrics(config, config.getTableName());
     this.rollbackPending = rollbackPending;
     this.index = createIndex(writeConfig);
+    if (config.isMetricsOn()) {
+      // report userName and hudi version
+      String version = getClass().getPackage().getImplementationVersion();
+      Metrics.registerGauge(metrics.getMetricsName("userName", System.getProperty("user.name")), 1);
+      Metrics.registerGauge(metrics.getMetricsName("version", version == null ? "0.7.0" : version), 1);
+    }
   }
 
   protected abstract HoodieIndex<T, I, K, O> createIndex(HoodieWriteConfig writeConfig);
