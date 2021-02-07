@@ -42,7 +42,7 @@ public class TestPushGateWayReporter {
     when(config.getPushGatewayReportPeriodSeconds()).thenReturn(10);
     new HoodieMetrics(config, "raw_table");
     registerGauge("pushGateWayReporter_metric", 123L);
-    assertEquals(123L, Metrics.getInstance().getRegistry().getCounters()
-        .get("pushGateWayReporter_metric").getCount());
+    assertEquals("123", Metrics.getInstance().getRegistry().getGauges()
+        .get("pushGateWayReporter_metric").getValue().toString());
   }
 }

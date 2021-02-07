@@ -47,6 +47,6 @@ public class TestHoodieConsoleMetrics {
   @Test
   public void testRegisterGauge() {
     registerGauge("metric1", 123L);
-    assertEquals(123L, Metrics.getInstance().getRegistry().getCounters().get("metric1").getCount());
+    assertEquals("123", Metrics.getInstance().getRegistry().getGauges().get("metric1").getValue().toString());
   }
 }
