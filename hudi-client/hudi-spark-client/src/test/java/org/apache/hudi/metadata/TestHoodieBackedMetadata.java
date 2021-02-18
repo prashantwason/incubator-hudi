@@ -122,16 +122,43 @@ public class TestHoodieBackedMetadata extends HoodieClientTestHarness {
     // Metadata table is not created if disabled by config
     try (SparkRDDWriteClient client = new SparkRDDWriteClient(engineContext, getWriteConfig(true, false))) {
       client.startCommitWithTime("001");
+      client.insert(jsc.emptyRDD(), "001");
       assertFalse(fs.exists(new Path(metadataTableBasePath)), "Metadata table should not be created");
       assertThrows(TableNotFoundException.class, () -> new HoodieTableMetaClient(hadoopConf, metadataTableBasePath));
     }
 
     // Metadata table created when enabled by config & sync is called
     try (SparkRDDWriteClient client = new SparkRDDWriteClient(engineContext, getWriteConfig(true, true), true)) {
-      client.startCommitWithTime("001");
+      client.startCommitWithTime("002");
+      client.insert(jsc.emptyRDD(), "002");
       client.syncTableMetadata();
       assertTrue(fs.exists(new Path(metadataTableBasePath)));
       validateMetadata(client);
+    }
+
+    // Delete the 001  and 002 instants and introduce a 003. This should trigger a rebootstrap of the metadata
+    // table as un-synched instants have been "archived".
+    // Metadata Table should not have 001 and 002 delta-commits as it was re-bootstrapped
+    final String metadataTableMetaPath = metadataTableBasePath + Path.SEPARATOR + HoodieTableMetaClient.METAFOLDER_NAME;
+    assertTrue(fs.exists(new Path(metadataTableMetaPath, HoodieTimeline.makeDeltaFileName("001"))));
+    assertTrue(fs.exists(new Path(metadataTableMetaPath, HoodieTimeline.makeDeltaFileName("002"))));
+    Arrays.stream(fs.globStatus(new Path(metaClient.getMetaPath(), "{001,002}.*"))).forEach(s -> {
+      try {
+        fs.delete(s.getPath(), false);
+      } catch (IOException e) {
+      }
+    });
+
+    try (SparkRDDWriteClient client = new SparkRDDWriteClient(engineContext, getWriteConfig(true, true), true)) {
+      client.startCommitWithTime("003");
+      client.insert(jsc.emptyRDD(), "003");
+      client.syncTableMetadata();
+      assertTrue(fs.exists(new Path(metadataTableBasePath)));
+      validateMetadata(client);
+
+      // Metadata Table should not have 001 and 002 delta-commits as it was re-bootstrapped
+      assertFalse(fs.exists(new Path(metadataTableMetaPath, HoodieTimeline.makeDeltaFileName("001"))));
+      assertFalse(fs.exists(new Path(metadataTableMetaPath, HoodieTimeline.makeDeltaFileName("002"))));
     }
   }
 
