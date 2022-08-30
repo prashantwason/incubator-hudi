@@ -999,6 +999,7 @@ public abstract class HoodieBackedTableMetadataWriter implements HoodieTableMeta
   private void runPendingTableServicesOperations(BaseHoodieWriteClient writeClient) {
     // finish off any pending log compaction or compactions operations if any from previous attempt.
     writeClient.runAnyPendingCompactions();
+    writeClient.runAnyPendingLogCompactions();
   }
 
   /**
@@ -1012,6 +1013,17 @@ public abstract class HoodieBackedTableMetadataWriter implements HoodieTableMeta
    * deltacommit.
    */
   private void compactIfNecessary(BaseHoodieWriteClient writeClient, String latestDeltacommitTime) {
+
+    if (metadataWriteConfig.isLogCompactionEnabled()) {
+      // Schedule and execute log compaction with suffixes based on the same instant time. This ensures that any future
+      // delta commits synced over will not have an instant time lesser than the last completed instant on the
+      // metadata table.
+      final String logCompactionInstantTime = HoodieTableMetadataUtil.createLogCompactionTimestamp(latestDeltacommitTime);
+      if (writeClient.scheduleLogCompactionAtInstant(logCompactionInstantTime, Option.empty())) {
+        writeClient.logCompact(logCompactionInstantTime);
+      }
+    }
+
     // Trigger compaction with suffixes based on the same instant time. This ensures that any future
     // delta commits synced over will not have an instant time lesser than the last completed instant on the
     // metadata table.

@@ -111,6 +111,9 @@ public class HoodieTableMetadataUtil {
   // Suffix to use for compaction
   private static final String COMPACTION_TIMESTAMP_SUFFIX = "001";
 
+  // Suffix to use for log compaction, This has to be less than COMPACTION_TIMESTAMP_SUFFIX
+  private static final String LOG_COMPACTION_TIMESTAMP_SUFFIX = "0015";
+
   // Suffix to use for clean
   private static final String CLEAN_TIMESTAMP_SUFFIX = "002";
 
@@ -1516,5 +1519,12 @@ public class HoodieTableMetadataUtil {
    */
   public static String createIndexInitTimestamp(String timestamp, int offset) {
     return String.format("%s%03d", timestamp, PARTITION_INITIALIZATION_TIME_SUFFIX + offset);
+  }
+
+  /**
+   * Create the timestamp for a compaction operation on the metadata table.
+   */
+  public static String createLogCompactionTimestamp(String timestamp) {
+    return timestamp + LOG_COMPACTION_TIMESTAMP_SUFFIX;
   }
 }

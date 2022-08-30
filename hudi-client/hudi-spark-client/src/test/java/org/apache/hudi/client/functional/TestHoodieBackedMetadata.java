@@ -2741,6 +2741,7 @@ public class TestHoodieBackedMetadata extends TestHoodieMetadataBase {
       }
     });
 
+    // TODO: include validation for record_index partition here.
     LOG.info("Validation time=" + timer.endTimer());
   }
 

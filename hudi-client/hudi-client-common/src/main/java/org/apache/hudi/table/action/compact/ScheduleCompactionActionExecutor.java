@@ -178,6 +178,10 @@ public class ScheduleCompactionActionExecutor<T, I, K, O> extends BaseActionExec
     boolean compactable;
     // get deltaCommitsSinceLastCompaction and lastCompactionTs
     Option<Pair<Integer, String>> latestDeltaCommitInfoOption = getLatestDeltaCommitInfo();
+    if (WriteOperationType.LOG_COMPACT.equals(operationType)) {
+      LOG.info("Need log compaction checks for log compaction are performed by the plan generator. So, always allow from here.");
+      return true;
+    }
     if (!latestDeltaCommitInfoOption.isPresent()) {
       return false;
     }

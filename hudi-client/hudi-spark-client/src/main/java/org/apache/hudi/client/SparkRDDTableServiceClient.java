@@ -157,7 +157,7 @@ public class SparkRDDTableServiceClient<T> extends BaseHoodieTableServiceClient<
     }
     WriteMarkersFactory.get(config.getMarkersType(), table, logCompactionCommitTime)
         .quietDeleteMarkerDir(context, config.getMarkersDeleteParallelism());
-    if (compactionTimer != null) {
+    if (logCompactionTimer != null) {
       long durationInMs = metrics.getDurationInMs(compactionTimer.stop());
       HoodieActiveTimeline.parseDateFromInstantTimeSafely(logCompactionCommitTime).ifPresent(parsedInstant ->
           metrics.updateCommitMetrics(parsedInstant.getTime(), durationInMs, metadata, HoodieActiveTimeline.LOG_COMPACTION_ACTION)
