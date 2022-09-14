@@ -92,6 +92,7 @@ public abstract class BaseHoodieCompactionPlanGenerator<T extends HoodieRecordPa
     engineContext.setJobStatus(this.getClass().getSimpleName(), "Looking for files to compact: " + writeConfig.getTableName());
 
     SyncableFileSystemView fileSystemView = (SyncableFileSystemView) this.hoodieTable.getSliceView();
+    // Exclude file groups under compaction.
     Set<HoodieFileGroupId> fgIdsInPendingCompactionAndClustering = fileSystemView.getPendingCompactionOperations()
         .map(instantTimeOpPair -> instantTimeOpPair.getValue().getFileGroupId())
         .collect(Collectors.toSet());
@@ -99,6 +100,7 @@ public abstract class BaseHoodieCompactionPlanGenerator<T extends HoodieRecordPa
     // Exclude files in pending clustering from compaction.
     fgIdsInPendingCompactionAndClustering.addAll(fileSystemView.getFileGroupsInPendingClustering().map(Pair::getLeft).collect(Collectors.toSet()));
 
+    // Exclude files in pending logcompaction.
     if (filterLogCompactionOperations()) {
       fgIdsInPendingCompactionAndClustering.addAll(fileSystemView.getPendingLogCompactionOperations()
           .map(instantTimeOpPair -> instantTimeOpPair.getValue().getFileGroupId())

@@ -111,8 +111,6 @@ public class HoodieTableMetadataUtil {
   // Suffix to use for compaction
   private static final String COMPACTION_TIMESTAMP_SUFFIX = "001";
 
-  // Suffix to use for log compaction, This has to be less than COMPACTION_TIMESTAMP_SUFFIX
-  private static final String LOG_COMPACTION_TIMESTAMP_SUFFIX = "0015";
 
   // Suffix to use for clean
   private static final String CLEAN_TIMESTAMP_SUFFIX = "002";
@@ -121,6 +119,9 @@ public class HoodieTableMetadataUtil {
   // when the `indexUptoInstantTime` already exists in the metadata table,
   // to avoid collision.
   public static final String METADATA_INDEXER_TIME_SUFFIX = "004";
+
+  // Suffix to use for log compaction
+  private static final String LOG_COMPACTION_TIMESTAMP_SUFFIX = "005";
 
   // This suffix and all after that are used for initialization of the various partitions. The unused suffixes lower than this value
   // are reserved for future operations on the MDT.

@@ -1014,27 +1014,34 @@ public abstract class HoodieBackedTableMetadataWriter implements HoodieTableMeta
    */
   private void compactIfNecessary(BaseHoodieWriteClient writeClient, String latestDeltacommitTime) {
 
-    if (metadataWriteConfig.isLogCompactionEnabled()) {
-      // Schedule and execute log compaction with suffixes based on the same instant time. This ensures that any future
-      // delta commits synced over will not have an instant time lesser than the last completed instant on the
-      // metadata table.
-      final String logCompactionInstantTime = HoodieTableMetadataUtil.createLogCompactionTimestamp(latestDeltacommitTime);
-      if (writeClient.scheduleLogCompactionAtInstant(logCompactionInstantTime, Option.empty())) {
-        writeClient.logCompact(logCompactionInstantTime);
-      }
+    // Check if there are any pending compaction or log compaction instants in the timeline.
+    // If pending compact/logcompaction operations are found abort scheduling new compaction/logcompaction operations.
+    Option<HoodieInstant> pendingLogCompactionInstant =
+        metadataMetaClient.getActiveTimeline().filterPendingLogCompactionTimeline().firstInstant();
+    Option<HoodieInstant> pendingCompactionInstant =
+        metadataMetaClient.getActiveTimeline().filterPendingCompactionTimeline().firstInstant();
+    if (pendingLogCompactionInstant.isPresent() || pendingCompactionInstant.isPresent()) {
+      LOG.info(String.format("Not scheduling compaction or logcompaction, since a pending compaction instant %s or logcompaction %s instant is present",
+          pendingCompactionInstant, pendingLogCompactionInstant));
+      return;
     }
 
     // Trigger compaction with suffixes based on the same instant time. This ensures that any future
     // delta commits synced over will not have an instant time lesser than the last completed instant on the
     // metadata table.
     final String compactionInstantTime = HoodieTableMetadataUtil.createCompactionTimestamp(latestDeltacommitTime);
-    // we need to avoid checking compaction w/ same instant again.
-    // let's say we trigger compaction after C5 in MDT and so compaction completes with C4001. but C5 crashed before completing in MDT.
-    // and again w/ C6, we will re-attempt compaction at which point latest delta commit is C4 in MDT.
-    // and so we try compaction w/ instant C4001. So, we can avoid compaction if we already have compaction w/ same instant time.
-    if (!metadataMetaClient.getActiveTimeline().filterCompletedInstants().containsInstant(compactionInstantTime)
-            && writeClient.scheduleCompactionAtInstant(compactionInstantTime, Option.empty())) {
+    if (writeClient.scheduleCompactionAtInstant(compactionInstantTime, Option.empty())) {
+      LOG.info("Compaction is scheduled for timestamp " + compactionInstantTime);
       writeClient.compact(compactionInstantTime);
+    } else if (metadataWriteConfig.isLogCompactionEnabled()) {
+      // Schedule and execute log compaction with suffixes based on the same instant time. This ensures that any future
+      // delta commits synced over will not have an instant time lesser than the last completed instant on the
+      // metadata table.
+      final String logCompactionInstantTime = HoodieTableMetadataUtil.createLogCompactionTimestamp(latestDeltacommitTime);
+      if (writeClient.scheduleLogCompactionAtInstant(logCompactionInstantTime, Option.empty())) {
+        LOG.info("Log compaction is scheduled for timestamp " + logCompactionInstantTime);
+        writeClient.logCompact(logCompactionInstantTime);
+      }
     }
   }
 
