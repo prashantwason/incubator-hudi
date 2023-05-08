@@ -355,6 +355,15 @@ object DataSourceReadOptions {
   /** @deprecated Use {@link INCR_PATH_GLOB} and its methods instead */
   @Deprecated
   val DEFAULT_INCR_PATH_GLOB_OPT_VAL = INCR_PATH_GLOB.defaultValue()
+
+  /**
+   * When true, the check to verify if the files exists in the source will be skipped
+   * at the planning phase. If this flag is enabled without understanding, then it can
+   * cost higher execution time failure cost.
+   * Enable only when sure of files availability.
+   */
+  val SPARK_SKIP_FILE_EXISTS_CHECK = "spark.uber.sql.skip.fileExistsCheck"
+  val DEFAULT_SPARK_SKIP_FILE_EXISTS_CHECK = "true"
 }
 
 /**

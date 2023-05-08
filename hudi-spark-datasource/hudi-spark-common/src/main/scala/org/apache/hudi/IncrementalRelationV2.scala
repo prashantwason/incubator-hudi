@@ -270,7 +270,8 @@ class IncrementalRelationV2(val sqlContext: SQLContext,
             if (regularFileIdToFullPath.nonEmpty) {
               try {
                 val commitTimesToReturn = commitsToReturn.map(_.requestedTime)
-                df = df.union(sqlContext.read.options(sOpts)
+                df = df.union(sqlContext.read
+                  .options(sOpts + (DataSourceReadOptions.SPARK_SKIP_FILE_EXISTS_CHECK -> DataSourceReadOptions.DEFAULT_SPARK_SKIP_FILE_EXISTS_CHECK))
                   .schema(prunedSchema).format(formatClassName)
                   // Setting time to the END_INSTANT_TIME, to avoid pathFilter filter out files incorrectly.
                   .option(DataSourceReadOptions.TIME_TRAVEL_AS_OF_INSTANT.key(), endInstantTime)
