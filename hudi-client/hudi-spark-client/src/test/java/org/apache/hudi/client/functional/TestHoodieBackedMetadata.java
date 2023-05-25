@@ -2411,6 +2411,116 @@ public class TestHoodieBackedMetadata extends TestHoodieMetadataBase {
     }
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  public void testRollbackPendingCommitWithRecordIndex(boolean performUpsert) throws Exception {
+    init(HoodieTableType.COPY_ON_WRITE);
+    // Enable Record index and set index type to record index.
+    Properties props = new Properties();
+    props.setProperty(HoodieMetadataConfig.RECORD_INDEX_CREATE_PROP.key(), "true");
+    props.setProperty(HoodieIndexConfig.INDEX_TYPE.key(), "RECORD_INDEX");
+    HoodieWriteConfig cfg = getWriteConfigBuilder(true, true, false)
+        .withProps(props).build();
+    // Initialize write client.
+    SparkRDDWriteClient client = getHoodieWriteClient(cfg);
+
+    // Insert first batch
+    String commitTime = HoodieActiveTimeline.createNewInstantTime();
+    List<HoodieRecord> records = dataGen.generateInserts(commitTime, 100);
+    client.startCommitWithTime(commitTime);
+    List<WriteStatus> writeStatuses = client.insert(jsc.parallelize(records, 1), commitTime).collect();
+    assertNoWriteErrors(writeStatuses);
+
+    // create pending commits scenario by disabling auto commit
+    HoodieWriteConfig autoCommitDisabled = getWriteConfigBuilder(false, true, false)
+        .withProps(props).build();
+    // initialize second client, that will stop short of producing the commit.
+    SparkRDDWriteClient client2 = getHoodieWriteClient(autoCommitDisabled);
+    // Insert second batch
+    commitTime = HoodieActiveTimeline.createNewInstantTime();
+    records = dataGen.generateInserts(commitTime, 100);
+    client.startCommitWithTime(commitTime);
+    writeStatuses = client2.insert(jsc.parallelize(records, 1), commitTime).collect();
+    assertNoWriteErrors(writeStatuses);
+
+    // delete the metadata table to check, whether rollback of pending commit succeeds and
+    // metadata table is rebootstrapped.
+    assertTrue(fs.delete(new Path(HoodieTableMetadata.getMetadataTableBasePath(basePath)), true));
+
+    // Insert/upsert third batch of records
+    commitTime = HoodieActiveTimeline.createNewInstantTime();
+    if (performUpsert) {
+      records = dataGen.generateUpdates(commitTime, 100);
+      client.startCommitWithTime(commitTime);
+      writeStatuses = client.upsert(jsc.parallelize(records, 1), commitTime).collect();
+    } else {
+      records = dataGen.generateInserts(commitTime, 100);
+      client.startCommitWithTime(commitTime);
+      writeStatuses = client.insert(jsc.parallelize(records, 1), commitTime).collect();
+    }
+    assertNoWriteErrors(writeStatuses);
+    assertTrue(fs.exists(new Path(basePath + Path.SEPARATOR + HoodieTableMetaClient.METAFOLDER_NAME)));
+    metaClient = HoodieTableMetaClient.reload(metaClient);
+    assertFalse(metaClient.getActiveTimeline().filterCompletedInstants().filterCompletedInstants().findInstantsAfterOrEquals(commitTime, 1).empty());
+  }
+
+  /**
+   * Hoodie.properties indicates metadata is enabled, however metadata folder is missing.
+   *
+   * @throws Exception
+   */
+  @Test
+  public void testBootstrapWithTableNotFound() throws Exception {
+    init(HoodieTableType.COPY_ON_WRITE);
+    HoodieSparkEngineContext engineContext = new HoodieSparkEngineContext(jsc);
+
+    // create initial commit
+    HoodieWriteConfig writeConfig = getWriteConfigBuilder(true, true, true).build();
+    try (SparkRDDWriteClient client = new SparkRDDWriteClient(engineContext, writeConfig)) {
+      // Write
+      String newCommitTime = HoodieActiveTimeline.createNewInstantTime();
+      List<HoodieRecord> records = dataGen.generateInserts(newCommitTime, 1);
+      client.startCommitWithTime(newCommitTime);
+      List<WriteStatus> writeStatuses = client.insert(jsc.parallelize(records, 1), newCommitTime).collect();
+      assertNoWriteErrors(writeStatuses);
+      validateMetadata(client);
+    }
+
+    // Metadata table should exist
+    final Path metadataTablePath = new Path(HoodieTableMetadata.getMetadataTableBasePath(writeConfig.getBasePath()));
+    assertTrue(fs.exists(metadataTablePath));
+
+    // delete the metadata folder.
+    fs.delete(metadataTablePath, true);
+    assertFalse(fs.exists(metadataTablePath));
+
+    writeConfig = getWriteConfigBuilder(true, true, true).build();
+    try (SparkRDDWriteClient client = new SparkRDDWriteClient(engineContext, writeConfig)) {
+      // Write
+      String newCommitTime = HoodieActiveTimeline.createNewInstantTime();
+      List<HoodieRecord> records = dataGen.generateInserts(newCommitTime, 1);
+      client.startCommitWithTime(newCommitTime);
+      List<WriteStatus> writeStatuses = client.insert(jsc.parallelize(records, 1), newCommitTime).collect();
+      assertNoWriteErrors(writeStatuses);
+    }
+
+    // Metadata table is recreated, during bootstrapping of metadata table.
+    assertTrue(fs.exists(metadataTablePath));
+  }
+
+  /**
+   * Test bootstrap when the dataset is empty
+   */
+  @Test
+  public void testbootstrapWithEmptyCommit() throws Exception {
+    init(HoodieTableType.COPY_ON_WRITE);
+
+    testTable.doWriteOperation(HoodieActiveTimeline.createNewInstantTime(), INSERT, Collections.EMPTY_LIST, 0);
+    initWriteConfigAndMetatableWriter(writeConfig, true);
+    syncTableMetadata(writeConfig);
+    validateMetadata(testTable);
+  }
+
   @Test
   public void testDeletePartitions() throws Exception {
     init(HoodieTableType.COPY_ON_WRITE);
