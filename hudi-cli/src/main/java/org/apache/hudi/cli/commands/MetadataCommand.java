@@ -37,6 +37,7 @@ import org.apache.hudi.metadata.HoodieBackedTableMetadata;
 import org.apache.hudi.metadata.HoodieTableMetadata;
 import org.apache.hudi.metadata.HoodieTableMetadataUtil;
 import org.apache.hudi.metadata.HoodieTableMetadataWriter;
+import org.apache.hudi.metadata.MetadataPartitionType;
 import org.apache.hudi.metadata.SparkHoodieBackedTableMetadataWriter;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.slf4j.Logger;
@@ -136,8 +137,24 @@ public class MetadataCommand {
   @ShellMethod(key = "metadata delete", value = "Remove the Metadata Table")
   public String delete(@ShellOption(value = "--backup", help = "Backup the metadata table before delete", defaultValue = "true", arity = 1) final boolean backup) throws Exception {
     HoodieTableMetaClient dataMetaClient = HoodieCLI.getTableMetaClient();
-    HoodieTableMetadataUtil.deleteMetadataTable(dataMetaClient, new HoodieSparkEngineContext(jsc), backup);
-    return "Metadata Table has been deleted from " + getMetadataTableBasePath(HoodieCLI.basePath);
+    String backupPath = HoodieTableMetadataUtil.deleteMetadataTable(dataMetaClient, new HoodieSparkEngineContext(jsc), backup);
+    if (backup) {
+      return "Metadata Table has been deleted and backed up to " + backupPath;
+    } else {
+      return "Metadata Table has been deleted from " + getMetadataTableBasePath(HoodieCLI.basePath);
+    }
+  }
+
+  @ShellMethod(key = "metadata delete-record-index", value = "Delete the record index from Metadata Table")
+  public String deleteRecordIndex(@ShellOption(value = "--backup", help = "Backup the record index before delete", defaultValue = "true", arity = 1) final boolean backup) throws Exception {
+    HoodieTableMetaClient dataMetaClient = HoodieCLI.getTableMetaClient();
+    String backupPath = HoodieTableMetadataUtil.deleteMetadataTablePartition(dataMetaClient, new HoodieSparkEngineContext(jsc),
+        MetadataPartitionType.RECORD_INDEX, backup);
+    if (backup) {
+      return "Record Index has been deleted from the Metadata Table and backed up to " + backupPath;
+    } else {
+      return "Record Index has been deleted from the Metadata Table";
+    }
   }
 
   @ShellMethod(key = "metadata init", value = "Update the metadata table from commits since the creation")
