@@ -405,7 +405,7 @@ public class HoodieMetadataPayload implements HoodieRecordPayload<HoodieMetadata
         return new HoodieMetadataPayload(key, combineColumnStatsMetadata(previousRecord));
       case METADATA_TYPE_RECORD_INDEX:
         // TODO: does not work with updates
-        if (previousRecord.recordIndexMetadata.getInstantTime() != recordIndexMetadata.getInstantTime()) {
+        if (!previousRecord.recordIndexMetadata.getInstantTime().equals(recordIndexMetadata.getInstantTime())) {
           throw new HoodieMetadataException(String.format("InstantTime for %s should not change from %s to %s", previousRecord.key,
               previousRecord, this));
         }
