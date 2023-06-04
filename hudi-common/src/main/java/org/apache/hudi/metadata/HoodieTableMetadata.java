@@ -202,6 +202,7 @@ public interface HoodieTableMetadata extends Serializable, AutoCloseable {
 
   /**
    * Returns the location of record keys which are found in the record index.
+   * Records that are not found are ignored and wont be part of map object that is returned.
    */
   Map<String, HoodieRecordGlobalLocation> readRecordIndex(List<String> recordKeys);
 

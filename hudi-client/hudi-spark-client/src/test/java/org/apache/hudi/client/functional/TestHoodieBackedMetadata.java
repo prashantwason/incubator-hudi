@@ -2451,6 +2451,7 @@ public class TestHoodieBackedMetadata extends TestHoodieMetadataBase {
     commitTime = HoodieActiveTimeline.createNewInstantTime();
     if (performUpsert) {
       records = dataGen.generateUpdates(commitTime, 100);
+      records.addAll(dataGen.generateInserts(commitTime, 20));
       client.startCommitWithTime(commitTime);
       writeStatuses = client.upsert(jsc.parallelize(records, 1), commitTime).collect();
     } else {
