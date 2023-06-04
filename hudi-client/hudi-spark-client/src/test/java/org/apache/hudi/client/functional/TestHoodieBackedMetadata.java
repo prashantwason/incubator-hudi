@@ -82,6 +82,7 @@ import org.apache.hudi.config.HoodieCompactionConfig;
 import org.apache.hudi.config.HoodieIndexConfig;
 import org.apache.hudi.config.HoodieLockConfig;
 import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieMetadataException;
 import org.apache.hudi.index.HoodieIndex;
 import org.apache.hudi.io.storage.HoodieAvroHFileReader;
@@ -2712,6 +2713,55 @@ public class TestHoodieBackedMetadata extends TestHoodieMetadataBase {
     assertEquals(HoodieTableMetadataUtil.getFileGroupPrefix("some-file-id-0"), "some-file-id");
     assertEquals(HoodieTableMetadataUtil.getFileGroupPrefix("some-file-id"), "some-file-id");
     assertEquals(HoodieTableMetadataUtil.getFileGroupPrefix("some-file-id-2"), "some-file-id-2");
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  public void testDuplicatesDuringRecordIndexBootstrap(boolean allowDuplicates) throws Exception {
+    init(HoodieTableType.COPY_ON_WRITE, true);
+    HoodieSparkEngineContext engineContext = new HoodieSparkEngineContext(jsc);
+    List<String> commitTimestamps = new ArrayList<>();
+    HoodieWriteConfig customConfig = getWriteConfigBuilder(true, true, false)
+        .build();
+
+    List<HoodieRecord> recordsFirstBatch = new ArrayList<>();
+    String firstCommitTime = HoodieActiveTimeline.createNewInstantTime();
+    try (SparkRDDWriteClient client = new SparkRDDWriteClient(engineContext, customConfig)) {
+      // Create a commit, with record index disabled
+      List<HoodieRecord> insertRecords = dataGen.generateInserts(firstCommitTime, 100);
+      recordsFirstBatch.addAll(insertRecords);
+      // To test duplicates during bootstrap, insert duplicates in the first batch.
+      recordsFirstBatch.addAll(insertRecords);
+      client.startCommitWithTime(firstCommitTime);
+      List<WriteStatus> writeStatuses = client.insert(jsc.parallelize(recordsFirstBatch, 1), firstCommitTime).collect();
+      assertNoWriteErrors(writeStatuses);
+      commitTimestamps.add(firstCommitTime);
+    }
+    assertEquals(false, fs.exists(new Path(metaClient.getMetaPath(), "metadata/record_index")));
+
+    // bootstrap record index
+    customConfig = getWriteConfigBuilder(false, true, false)
+        .withStorageConfig(HoodieStorageConfig.newBuilder().hfileWriterToAllowDuplicates(allowDuplicates).build())
+        .withMetadataConfig(HoodieMetadataConfig.newBuilder()
+            .enable(true)
+            .enableMetrics(false)
+            .ignoreSpuriousDeletes(false)
+            .withCreateRecordIndex(true)
+            .build())
+        .build();
+
+    try (SparkRDDWriteClient client = new SparkRDDWriteClient(engineContext, customConfig)) {
+      // Create a commit, with record index enabled
+      String secondCommitTime = HoodieActiveTimeline.createNewInstantTime();
+      List<HoodieRecord> recordsSecondBatch = dataGen.generateInserts(secondCommitTime, 100);
+      client.startCommitWithTime(secondCommitTime);
+      JavaRDD<WriteStatus> writeStatuses;
+      if (!allowDuplicates) {
+        assertThrows(HoodieException.class, () -> client.insert(jsc.parallelize(recordsSecondBatch, 1), secondCommitTime));
+      } else {
+        client.insert(jsc.parallelize(recordsSecondBatch, 1), secondCommitTime);
+      }
+    }
   }
 
   private void doPreBootstrapOperations(HoodieTestTable testTable) throws Exception {
