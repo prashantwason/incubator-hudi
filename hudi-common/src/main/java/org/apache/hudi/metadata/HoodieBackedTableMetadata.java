@@ -644,4 +644,12 @@ public class HoodieBackedTableMetadata extends BaseTableMetadata {
     // because the metadata timeline may have changed.
     closePartitionReaders();
   }
+
+  @Override
+  public int getNumShards(MetadataPartitionType partition) {
+    partitionFileSliceMap.computeIfAbsent(partition.getPartitionPath(),
+        k -> HoodieTableMetadataUtil.getPartitionLatestMergedFileSlices(metadataMetaClient,
+            metadataFileSystemView, partition.getPartitionPath()));
+    return partitionFileSliceMap.get(partition.getPartitionPath()).size();
+  }
 }

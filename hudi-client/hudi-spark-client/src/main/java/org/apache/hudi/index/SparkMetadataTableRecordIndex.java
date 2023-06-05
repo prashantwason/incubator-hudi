@@ -30,7 +30,6 @@ import org.apache.hudi.common.model.HoodieRecordGlobalLocation;
 import org.apache.hudi.common.model.HoodieRecordPayload;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.timeline.HoodieTimeline;
-import org.apache.hudi.common.table.view.HoodieTableFileSystemView;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.ValidationUtils;
 import org.apache.hudi.common.util.collection.ImmutablePair;
@@ -77,8 +76,7 @@ public class SparkMetadataTableRecordIndex extends HoodieIndex<Object, Object> {
     int fileGroupSize;
     try {
       ValidationUtils.checkState(hoodieTable.getMetaClient().getTableConfig().isMetadataPartitionEnabled(MetadataPartitionType.RECORD_INDEX));
-      fileGroupSize = HoodieTableMetadataUtil.getPartitionLatestMergedFileSlices(hoodieTable.getMetaClient(), (HoodieTableFileSystemView) hoodieTable.getFileSystemView(),
-          MetadataPartitionType.RECORD_INDEX.getPartitionPath()).size();
+      fileGroupSize = hoodieTable.getMetadataTable().getNumShards(MetadataPartitionType.RECORD_INDEX);
       ValidationUtils.checkState(fileGroupSize > 0, "Record index should have at least one file group");
     } catch (TableNotFoundException | IllegalStateException e) {
       // This means that record index has not been initialized.

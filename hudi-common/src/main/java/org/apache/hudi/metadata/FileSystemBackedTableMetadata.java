@@ -211,4 +211,9 @@ public class FileSystemBackedTableMetadata implements HoodieTableMetadata {
   public Map<String, HoodieRecordGlobalLocation> readRecordIndex(List<String> recordKeys) {
     throw new HoodieMetadataException("Unsupported operation: readRecordIndex!");
   }
+
+  @Override
+  public int getNumShards(MetadataPartitionType partition) {
+    throw new UnsupportedOperationException("Unsupported operation: getNumShards");
+  }
 }

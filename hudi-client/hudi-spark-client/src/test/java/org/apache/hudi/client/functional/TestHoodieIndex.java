@@ -368,7 +368,7 @@ public class TestHoodieIndex extends TestHoodieMetadataBase {
     writeClient.commit(newCommitTime, jsc.parallelize(writeStatuses));
 
     List<String> fileIds = writeStatuses.stream().map(WriteStatus::getFileId).collect(Collectors.toList());
-
+    metaClient = HoodieTableMetaClient.reload(metaClient);
     HoodieTable hoodieTable = HoodieSparkTable.create(config, context, metaClient);
 
     // Now tagLocation for these records, hbaseIndex should tag them

@@ -232,4 +232,9 @@ public interface HoodieTableMetadata extends Serializable, AutoCloseable {
    * Clear the states of the table metadata.
    */
   void reset();
+
+  /**
+   * Returns the number of shards in a metadata table partition.
+   */
+  int getNumShards(MetadataPartitionType partition);
 }
