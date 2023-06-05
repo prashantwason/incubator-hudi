@@ -913,7 +913,9 @@ public abstract class HoodieBackedTableMetadataWriter implements HoodieTableMeta
 
       // Updates for record index are created by parsing the WriteStatus which is a hudi-client object. Hence, we cannot yet move this code
       // to the HoodieTableMetadataUtil class in hudi-common.
-      partitionToRecordMap.put(MetadataPartitionType.RECORD_INDEX, getRecordIndexUpdates(writeStatus));
+      if (writeStatus != null && !writeStatus.isEmpty()) {
+        partitionToRecordMap.put(MetadataPartitionType.RECORD_INDEX, getRecordIndexUpdates(writeStatus));
+      }
       return partitionToRecordMap;
     });
     closeInternal();
