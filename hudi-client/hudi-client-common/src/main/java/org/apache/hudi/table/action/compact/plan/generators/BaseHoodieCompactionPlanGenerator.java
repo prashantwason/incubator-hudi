@@ -82,6 +82,7 @@ public abstract class BaseHoodieCompactionPlanGenerator<T extends HoodieRecordPa
 
     // filter the partition paths if needed to reduce list status
     partitionPaths = filterPartitionPathsByStrategy(writeConfig, partitionPaths);
+    LOG.info("Filtered partition paths are " + partitionPaths);
 
     if (partitionPaths.isEmpty()) {
       // In case no partitions could be picked, return no compaction plan
@@ -108,6 +109,7 @@ public abstract class BaseHoodieCompactionPlanGenerator<T extends HoodieRecordPa
         .getActiveTimeline().getTimelineOfActions(CollectionUtils.createSet(HoodieTimeline.COMMIT_ACTION,
             HoodieTimeline.ROLLBACK_ACTION, HoodieTimeline.DELTA_COMMIT_ACTION))
         .filterCompletedInstants().lastInstant().get().getTimestamp();
+    LOG.info("Last completed instant time " + lastCompletedInstantTime);
 
     List<HoodieCompactionOperation> operations = engineContext.flatMap(partitionPaths, partitionPath -> fileSystemView
         .getLatestFileSlices(partitionPath)

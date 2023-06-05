@@ -96,7 +96,8 @@ public class HoodieLogCompactionPlanGenerator<T extends HoodieRecordPayload, I, 
         .build();
     scanner.scan(true);
     int totalBlocks = scanner.getCurrentInstantLogBlocks().size();
-    LOG.info("Total blocks seen are " + totalBlocks);
+    LOG.info("Total blocks seen are " + totalBlocks + ", log blocks threshold is "
+        + writeConfig.getLogCompactionBlocksThreshold());
 
     // If total blocks in the file slice is > blocks threshold value(default value is 5).
     // Log compaction can be scheduled.
