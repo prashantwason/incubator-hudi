@@ -428,21 +428,30 @@ public abstract class HoodieBackedTableMetadataWriter implements HoodieTableMeta
       LOG.info("Initializing MDT partition " + partitionType + " at instant " + commitTimeForPartition);
 
       Pair<Integer, HoodieData<HoodieRecord>> fileGroupCountAndRecordsPair;
-      switch (partitionType) {
-        case FILES:
-          fileGroupCountAndRecordsPair = initializeFilesPartition(initializationTime, partitionInfoList);
-          break;
-        case BLOOM_FILTERS:
-          fileGroupCountAndRecordsPair = initializeBloomFiltersPartition(initializationTime, partitionToFilesMap);
-          break;
-        case COLUMN_STATS:
-          fileGroupCountAndRecordsPair = initializeColumnStatsPartition(partitionToFilesMap);
-          break;
-        case RECORD_INDEX:
-          fileGroupCountAndRecordsPair = initializeRecordIndexPartition();
-          break;
-        default:
-          throw new HoodieMetadataException("Unsupported MDT partition type: " + partitionType);
+      try {
+        switch (partitionType) {
+          case FILES:
+            fileGroupCountAndRecordsPair = initializeFilesPartition(initializationTime, partitionInfoList);
+            break;
+          case BLOOM_FILTERS:
+            fileGroupCountAndRecordsPair = initializeBloomFiltersPartition(initializationTime, partitionToFilesMap);
+            break;
+          case COLUMN_STATS:
+            fileGroupCountAndRecordsPair = initializeColumnStatsPartition(partitionToFilesMap);
+            break;
+          case RECORD_INDEX:
+            fileGroupCountAndRecordsPair = initializeRecordIndexPartition();
+            break;
+          default:
+            throw new HoodieMetadataException("Unsupported MDT partition type: " + partitionType);
+        }
+      } catch (Exception e) {
+        String metricKey = partitionType.getPartitionPath() + "_" + HoodieMetadataMetrics.BOOTSTRAP_ERR_STR;
+        metrics.ifPresent(m -> m.setMetric(metricKey, 1));
+        LOG.error("Bootstrap on " + partitionType.getPartitionPath() + " partition failed for "
+            + metadataMetaClient.getBasePath(), e);
+        throw new HoodieMetadataException(partitionType.getPartitionPath()
+            + " bootstrap failed for " + metadataMetaClient.getBasePath(), e);
       }
 
       // Generate the file groups
