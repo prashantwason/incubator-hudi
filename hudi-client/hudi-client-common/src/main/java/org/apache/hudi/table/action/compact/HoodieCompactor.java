@@ -32,6 +32,7 @@ import org.apache.hudi.common.model.WriteOperationType;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.TableSchemaResolver;
 import org.apache.hudi.common.table.log.HoodieMergedLogRecordScanner;
+import org.apache.hudi.common.table.log.InstantRange;
 import org.apache.hudi.common.table.timeline.HoodieTimeline;
 import org.apache.hudi.common.util.CollectionUtils;
 import org.apache.hudi.common.util.Option;
@@ -41,6 +42,8 @@ import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.internal.schema.InternalSchema;
 import org.apache.hudi.internal.schema.utils.SerDeHelper;
 import org.apache.hudi.io.IOUtils;
+import org.apache.hudi.metadata.HoodieMetadataLogRecordReader;
+import org.apache.hudi.metadata.HoodieTableMetadata;
 import org.apache.hudi.table.HoodieCompactionHandler;
 import org.apache.hudi.table.HoodieTable;
 import org.apache.hudi.table.action.compact.strategy.CompactionStrategy;
@@ -57,6 +60,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.StreamSupport;
 
 import static java.util.stream.Collectors.toList;
@@ -180,6 +184,13 @@ public abstract class HoodieCompactor<T, I, K, O> implements Serializable {
     long maxMemoryPerCompaction = IOUtils.getMaxMemoryPerCompaction(taskContextSupplier, config);
     LOG.info("MaxMemoryPerCompaction => " + maxMemoryPerCompaction);
 
+    Option<InstantRange> instantRange = Option.empty();
+    Set<String> validInstantTimestampForCompaction = config.getValidInstantTimestampForCompaction();
+    if (validInstantTimestampForCompaction.size() > 0
+        && HoodieTableMetadata.isMetadataTable(config.getBasePath())) {
+      instantRange = Option.of(new HoodieMetadataLogRecordReader.ExplicitMatchRange(validInstantTimestampForCompaction));
+    }
+
     List<String> logFiles = operation.getDeltaFileNames().stream().map(
         p -> new Path(FSUtils.getPartitionPath(metaClient.getBasePath(), operation.getPartitionPath()), p).toString())
         .collect(toList());
@@ -189,6 +200,7 @@ public abstract class HoodieCompactor<T, I, K, O> implements Serializable {
         .withLogFilePaths(logFiles)
         .withReaderSchema(readerSchema)
         .withLatestInstantTime(executionHelper.instantTimeToUseForScanning(instantTime, maxInstantTime))
+        .withInstantRange(instantRange)
         .withInternalSchema(internalSchemaOption.orElse(InternalSchema.getEmptyInternalSchema()))
         .withMaxMemorySizeInBytes(maxMemoryPerCompaction)
         .withReadBlocksLazily(config.getCompactionLazyBlockReadEnabled())

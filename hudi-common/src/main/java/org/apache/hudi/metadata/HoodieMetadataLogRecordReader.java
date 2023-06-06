@@ -222,7 +222,7 @@ public class HoodieMetadataLogRecordReader implements Closeable {
   /**
    * Class to assist in checking if an instant is part of a set of instants.
    */
-  private static class ExplicitMatchRange extends InstantRange {
+  public static class ExplicitMatchRange extends InstantRange {
     Set<String> instants;
 
     public ExplicitMatchRange(Set<String> instants) {

@@ -92,11 +92,13 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -566,6 +568,13 @@ public class HoodieWriteConfig extends HoodieConfig {
           + "'partial-update' use-cases (like `MERGE INTO` Spark SQL statement for ex) where only "
           + "a projection of the incoming dataset might be used to update the records in the existing table, "
           + "prompting us to override the writer's schema");
+
+  public static final ConfigProperty<String> VALID_INSTANT_TIMESTAMPS_FOR_COMPACTION = ConfigProperty
+      .key("_hoodie.compaction.valid.instant.timestamps")
+      .defaultValue("")
+      .sinceVersion("0.14.0")
+      .withDocumentation("A list of log block instant times that should only be considered "
+          + "when running compaction or logCompaction. This is currently only used in MDT.");
 
   /**
    * HUDI-858 : There are users who had been directly using RDD APIs and have relied on a behavior in 0.4.x to allow
@@ -1398,6 +1407,14 @@ public class HoodieWriteConfig extends HoodieConfig {
 
   public boolean populateMetaFields() {
     return getBooleanOrDefault(HoodieTableConfig.POPULATE_META_FIELDS);
+  }
+
+  public Set<String> getValidInstantTimestampForCompaction() {
+    String instants = getString(VALID_INSTANT_TIMESTAMPS_FOR_COMPACTION);
+    if (StringUtils.isNullOrEmpty(instants)) {
+      return Collections.emptySet();
+    }
+    return Arrays.stream(instants.split(",")).collect(Collectors.toSet());
   }
 
   /**
@@ -2896,6 +2913,13 @@ public class HoodieWriteConfig extends HoodieConfig {
 
     public Builder withPopulateMetaFields(boolean populateMetaFields) {
       writeConfig.setValue(HoodieTableConfig.POPULATE_META_FIELDS, Boolean.toString(populateMetaFields));
+      return this;
+    }
+
+    public Builder withValidInstantTimestampsForCompaction(Set<String> validInstantTimestamps) {
+      String validInstantTimestampsForCompaction = validInstantTimestamps.stream()
+          .collect(Collectors.joining(","));
+      writeConfig.setValue(VALID_INSTANT_TIMESTAMPS_FOR_COMPACTION, validInstantTimestampsForCompaction);
       return this;
     }
 

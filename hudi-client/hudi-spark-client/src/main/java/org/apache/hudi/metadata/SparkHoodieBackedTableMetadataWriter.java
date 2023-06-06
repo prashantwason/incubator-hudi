@@ -181,6 +181,8 @@ public class SparkHoodieBackedTableMetadataWriter extends HoodieBackedTableMetad
 
       // reload timeline
       metadataMetaClient.reloadActiveTimeline();
+      // Update write config with valid instant timestamps.
+      updateWriteConfigWithValidInstantTimestamps();
     }
 
     // Update total size of the metadata and count of base/log files

@@ -165,10 +165,29 @@ public abstract class HoodieBackedTableMetadataWriter implements HoodieTableMeta
         this.metadata = new HoodieBackedTableMetadata(engineContext, dataWriteConfig.getMetadataConfig(),
                 dataWriteConfig.getBasePath(), dataWriteConfig.getSpillableMapBasePath());
         this.metadataMetaClient = metadata.getMetadataMetaClient();
+        if (this.metadataMetaClient != null) {
+          updateWriteConfigWithValidInstantTimestamps();
+        }
       } catch (Exception e) {
         throw new HoodieException("Could not open MDT for reads", e);
       }
     }
+  }
+
+  /**
+   * For metadata table, even though there are completed commits present,
+   * the validity of these commits is dictated by main table timeline.
+   * This method compares both main table and metadata table timelines
+   * and creates a valid instants timestamps which table services like
+   * compaction and log compaction uses to run operations on the metadata
+   * table.
+   */
+  protected void updateWriteConfigWithValidInstantTimestamps() {
+    Set<String> validInstantTimestampsSet = HoodieTableMetadataUtil.getValidInstantTimestamps(dataMetaClient, metadataMetaClient);
+    LOG.info("Valid instant timestamps " + validInstantTimestampsSet);
+
+    this.metadataWriteConfig = HoodieWriteConfig.newBuilder().withProps(this.metadataWriteConfig.getProps())
+        .withValidInstantTimestampsForCompaction(validInstantTimestampsSet).build();
   }
 
   /**
@@ -976,10 +995,12 @@ public abstract class HoodieBackedTableMetadataWriter implements HoodieTableMeta
       cleanIfNecessary(writeClient, latestDeltacommitTime);
 
       // Do timeline validation before scheduling compaction/logcompaction operations.
-      if (validateTimelineBeforeSchedulingCompaction(inFlightInstantTimestamp, latestDeltacommitTime)) {
-        compactIfNecessary(writeClient, latestDeltacommitTime);
+      if (!validateTimelineBeforeSchedulingCompaction(inFlightInstantTimestamp, latestDeltacommitTime)) {
+        return;
       }
-
+      LOG.info("No inflight commits present in either of the timelines. "
+          + "Proceeding to run rest of the table services.");
+      compactIfNecessary(writeClient, latestDeltacommitTime);
       writeClient.archive();
       LOG.info("All the table services operations on MDT completed successfully");
     } catch (Exception e) {
@@ -1077,17 +1098,49 @@ public abstract class HoodieBackedTableMetadataWriter implements HoodieTableMeta
     // any instants before that is already synced with metadata table.
     // c. Do consider out of order commits. For eg, c4 from DT could complete before c3. and we can't trigger compaction in MDT with c4 as base instant time, until every
     // instant before c4 is synced with metadata table.
-    List<HoodieInstant> pendingInstants = dataMetaClient.reloadActiveTimeline().filterInflightsAndRequested()
-        .findInstantsBeforeOrEquals(latestDeltaCommitTimeInMetadataTable).getInstants();
 
-    if (!pendingInstants.isEmpty()) {
-      checkNumDeltaCommits(metadataMetaClient, dataWriteConfig.getMetadataConfig().getMaxNumDeltacommitsWhenPending());
+    // There should not be any incomplete instants on MDT
+    HoodieActiveTimeline metadataTimeline = metadataMetaClient.reloadActiveTimeline();
+    List<HoodieInstant> pendingInstantsOnMetadataTable = metadataTimeline.filterInflightsAndRequested()
+        .getInstants();
+    if (!pendingInstantsOnMetadataTable.isEmpty()) {
       LOG.info(String.format(
-          "Cannot compact metadata table as there are %d inflight instants in data table before latest deltacommit in metadata table: %s. Inflight instants in data table: %s",
-          pendingInstants.size(), latestDeltaCommitTimeInMetadataTable, Arrays.toString(pendingInstants.toArray())));
+          "Cannot compact MDT as there are %d inflight instants: %s",
+          pendingInstantsOnMetadataTable.size(), Arrays.toString(pendingInstantsOnMetadataTable.toArray())));
+      metrics.ifPresent(m -> m.incrementMetric(HoodieMetadataMetrics.SKIP_TABLE_SERVICES, 1));
       return false;
     }
 
+    // There should not be any incomplete instants on dataset
+    HoodieActiveTimeline datasetTimeline = dataMetaClient.reloadActiveTimeline();
+    List<HoodieInstant> pendingInstantsOnDataset = datasetTimeline.filterInflightsAndRequested().getInstantsAsStream()
+        .filter(i -> !inFlightInstantTimestamp.isPresent() || !i.getTimestamp().equals(inFlightInstantTimestamp.get()))
+        .collect(Collectors.toList());
+    if (!pendingInstantsOnDataset.isEmpty()) {
+      LOG.info(String.format(
+          "Cannot compact MDT as there are %d inflight instants on dataset before latest deltacommit %s: %s",
+          pendingInstantsOnDataset.size(), latestDeltaCommitTimeInMetadataTable,
+          Arrays.toString(pendingInstantsOnDataset.toArray())));
+      metrics.ifPresent(m -> m.incrementMetric(HoodieMetadataMetrics.SKIP_TABLE_SERVICES, 1));
+      return false;
+    }
+
+    // Check if the inflight commit is greater than all the completed commits.
+    Option<HoodieInstant> lastCompletedInstant = dataMetaClient.getActiveTimeline().filterCompletedInstants().lastInstant();
+    if (!lastCompletedInstant.isPresent()) {
+      LOG.info("Last completed commit is not present.");
+      metrics.ifPresent(m -> m.incrementMetric(HoodieMetadataMetrics.SKIP_TABLE_SERVICES, 1));
+      return false;
+    }
+    if (HoodieTimeline.compareTimestamps(lastCompletedInstant.get().getTimestamp(),
+        HoodieTimeline.GREATER_THAN, inFlightInstantTimestamp.get())) {
+      // Completed commits validation failed.
+      LOG.info(String.format(
+          "Cannot compact MDT as there is %s that is greater than inflight instant: %s",
+          lastCompletedInstant.get(), inFlightInstantTimestamp.get()));
+      metrics.ifPresent(m -> m.incrementMetric(HoodieMetadataMetrics.SKIP_TABLE_SERVICES, 1));
+      return false;
+    }
     return true;
   }
 

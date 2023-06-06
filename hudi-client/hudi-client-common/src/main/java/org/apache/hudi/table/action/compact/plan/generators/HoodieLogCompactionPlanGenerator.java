@@ -28,8 +28,12 @@ import org.apache.hudi.common.model.HoodieLogFile;
 import org.apache.hudi.common.model.HoodieRecordPayload;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.log.HoodieUnMergedLogRecordScanner;
+import org.apache.hudi.common.table.log.InstantRange;
 import org.apache.hudi.common.util.CompactionUtils;
+import org.apache.hudi.common.util.Option;
 import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.metadata.HoodieMetadataLogRecordReader;
+import org.apache.hudi.metadata.HoodieTableMetadata;
 import org.apache.hudi.table.HoodieTable;
 import org.apache.hudi.table.action.compact.LogCompactionExecutionHelper;
 
@@ -82,6 +86,12 @@ public class HoodieLogCompactionPlanGenerator<T extends HoodieRecordPayload, I, 
     LOG.info("Checking if fileId " + fileSlice.getFileId() + " and partition "
         + fileSlice.getPartitionPath() + " eligible for log compaction.");
     HoodieTableMetaClient metaClient = hoodieTable.getMetaClient();
+    Option<InstantRange> instantRange = Option.empty();
+    Set<String> validInstantTimestampForCompaction = writeConfig.getValidInstantTimestampForCompaction();
+    if (validInstantTimestampForCompaction.size() > 0
+        && HoodieTableMetadata.isMetadataTable(writeConfig.getBasePath())) {
+      instantRange = Option.of(new HoodieMetadataLogRecordReader.ExplicitMatchRange((validInstantTimestampForCompaction)));
+    }
     HoodieUnMergedLogRecordScanner scanner = HoodieUnMergedLogRecordScanner.newBuilder()
         .withFileSystem(metaClient.getFs())
         .withBasePath(hoodieTable.getMetaClient().getBasePath())
@@ -90,6 +100,7 @@ public class HoodieLogCompactionPlanGenerator<T extends HoodieRecordPayload, I, 
             .map(file -> file.getPath().toString())
             .collect(Collectors.toList()))
         .withLatestInstantTime(maxInstantTime)
+        .withInstantRange(instantRange)
         .withBufferSize(writeConfig.getMaxDFSStreamBufferSize())
         .withOptimizedLogBlocksScan(true)
         .withRecordMerger(writeConfig.getRecordMerger())

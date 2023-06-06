@@ -351,7 +351,10 @@ public class SparkRDDWriteClient<T> extends
         throw new HoodieException((".................2222222222"));
       }
     } catch (Exception e) {
-      throw new HoodieException("Failed to instantiate Metadata table ", e);
+      LOG.error("Exception in running table services on metadata table", e);
+      if (config.isMetricsOn()) {
+        metrics.publishMetrics("metadata.table_services.operation", "failure", 1);
+      }
     }
   }
 
