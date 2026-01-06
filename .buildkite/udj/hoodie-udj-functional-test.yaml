@@ -1,0 +1,18 @@
+version: 1.0
+
+uown: 4b269850-cc6c-42b2-8ec9-6e5867f54005
+
+command: ".buildkite/udj/full_build_and_test.sh"
+
+docker:
+  base-image: 127.0.0.1:5055/uber-usi/hudi:bkt1-produ-1713985556-12d2c
+  shell: true
+
+artifact_paths:
+  - build.log
+  - functional_test_log.txt
+  - modules_top_tests.txt
+  - modules_top_tests.csv
+  - all-surefire-reports.txt
+
+timeout_in_minutes: 180

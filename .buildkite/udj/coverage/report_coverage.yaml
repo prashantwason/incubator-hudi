@@ -1,0 +1,36 @@
+version: 1.0
+
+uown: 4b269850-cc6c-42b2-8ec9-6e5867f54005
+
+command: sonarqube/run.sh
+
+docker:
+  base-image: 127.0.0.1:5055/uber-usi/hudi:bkt1-produ-1730351128-9ec00
+  shell: true
+
+env:
+  BUILDKITE_SETUP_CERBERUS: true
+
+artifact_paths:
+  - build.log
+  - build_ids.log
+  - packaging/hudi-codecoverage/target/site/jacoco-aggregate/jacoco.xml
+  - packaging/hudi-codecoverage/target/site/jacoco-aggregate/coverage_base.xml
+  - build/comment/phabricator-comment-code-coverage/newline_coverage.md
+
+vault_secrets:
+  - path: /buildkite/sonarqube/SONARQUBE_PRODUCTION_AUTOMATION_TOKEN
+  - path: /buildkite/sonarqube/SONARQUBE_STAGING_AUTOMATION_TOKEN
+  - path: /buildkite/artifactory/ARTIFACTORY_AUTH
+    alias: ARTIFACTORY_AUTH
+    subkey: userpass
+  - alias: "SVC_JIRA_CLIENT_ID"
+    path: "buildkite/sonarqube/usso_auth.svc-sonarqube"
+  
+timeout_in_minutes: 720
+
+usso_services:
+  - t3.uberinternal.com:JIRA_ACCESS_TOKEN
+  - duplica.uberinternal.com:DUPLICA_TOKEN
+
+

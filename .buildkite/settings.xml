@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.1.0 http://maven.apache.org/xsd/settings-1.1.0.xsd"
+          xmlns="http://maven.apache.org/SETTINGS/1.1.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <servers>
+        <server>
+            <id>central</id>
+            <username>${env.ARTIFACTORY_USERNAME}</username>
+            <password>${env.ARTIFACTORY_PASSWORD}</password>
+        </server>
+        <server>
+            <id>snapshots</id>
+            <username>${env.ARTIFACTORY_USERNAME}</username>
+            <password>${env.ARTIFACTORY_PASSWORD}</password>
+        </server>
+    </servers>
+
+    <mirrors>
+        <mirror>
+            <mirrorOf>external:*</mirrorOf>
+            <name>repo</name>
+            <url>http://artifactory.uber.internal:4587/artifactory/repo/</url>
+            <id>repo</id>
+        </mirror>
+    </mirrors>
+
+    <profiles>
+        <profile>
+            <repositories>
+                <repository>
+                    <snapshots>
+                        <enabled>false</enabled>
+                    </snapshots>
+                    <id>central</id>
+                    <name>Uber Release</name>
+                    <url>http://artifactory.uber.internal:4587/artifactory/libs-release/</url>
+                </repository>
+
+                <repository>
+                    <releases>
+                        <enabled>false</enabled>
+                    </releases>
+                    <id>snapshots</id>
+                    <name>Uber Snapshot</name>
+                    <url>http://artifactory.uber.internal:4587/artifactory/libs-snapshot/</url>
+                </repository>
+            </repositories>
+
+            <pluginRepositories>
+                <pluginRepository>
+                    <snapshots>
+                        <enabled>false</enabled>
+                    </snapshots>
+                    <id>central</id>
+                    <name>Uber Plugins Release</name>
+                    <url>http://artifactory.uber.internal:4587/artifactory/plugins-release/</url>
+                </pluginRepository>
+
+                <pluginRepository>
+                    <releases>
+                        <enabled>false</enabled>
+                    </releases>
+                    <id>snapshots</id>
+                    <name>Uber Plugins Snapshot</name>
+                    <url>http://artifactory.uber.internal:4587/artifactory/plugins-snapshot/</url>
+                </pluginRepository>
+            </pluginRepositories>
+
+            <id>artifactory</id>
+        </profile>
+    </profiles>
+
+    <activeProfiles>
+        <activeProfile>artifactory</activeProfile>
+    </activeProfiles>
+
+</settings>
