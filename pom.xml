@@ -516,7 +516,9 @@
               <log4j.configurationFile>${surefire-log4j.file}</log4j.configurationFile>
               <lance.skip.tests>${lance.skip.tests}</lance.skip.tests>
             </systemPropertyVariables>
-            <useSystemClassLoader>false</useSystemClassLoader>
+            <!-- Use manifest JAR to avoid "Argument list too long" error on CI systems with long paths -->
+            <useSystemClassLoader>true</useSystemClassLoader>
+            <useManifestOnlyJar>true</useManifestOnlyJar>
             <forkedProcessExitTimeoutInSeconds>30</forkedProcessExitTimeoutInSeconds>
           </configuration>
           <dependencies>
@@ -534,7 +536,9 @@
           <configuration>
             <skip>${skipITs}</skip>
             <argLine>@{argLine}</argLine>
-            <useSystemClassLoader>false</useSystemClassLoader>
+            <!-- Use manifest JAR to avoid "Argument list too long" error on CI systems with long paths -->
+            <useSystemClassLoader>true</useSystemClassLoader>
+            <useManifestOnlyJar>true</useManifestOnlyJar>
             <systemPropertyVariables>
               <log4j.configurationFile>${surefire-log4j.file}</log4j.configurationFile>
             </systemPropertyVariables>
@@ -2283,7 +2287,8 @@
             <version>${maven-surefire-plugin.version}</version>
             <configuration combine.self="override">
               <skip>${skipUTs}</skip>
-              <useSystemClassLoader>false</useSystemClassLoader>
+              <useSystemClassLoader>true</useSystemClassLoader>
+              <useManifestOnlyJar>true</useManifestOnlyJar>
             </configuration>
           </plugin>
           <plugin>
@@ -2298,7 +2303,8 @@
                 <dynamodb-local.endpoint>${dynamodb-local.endpoint}</dynamodb-local.endpoint>
                 <log4j.configurationFile>${surefire-log4j.file}</log4j.configurationFile>
               </systemPropertyVariables>
-              <useSystemClassLoader>false</useSystemClassLoader>
+              <useSystemClassLoader>true</useSystemClassLoader>
+              <useManifestOnlyJar>true</useManifestOnlyJar>
             </configuration>
             <executions>
               <execution>
