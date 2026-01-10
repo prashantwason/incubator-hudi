@@ -219,6 +219,13 @@
       <scope>compile</scope>
     </dependency>
 
+    <!-- Override old validation-api (1.1.0) with Bean Validation 2.0 for hibernate-validator 6.x compatibility -->
+    <dependency>
+      <groupId>javax.validation</groupId>
+      <artifactId>validation-api</artifactId>
+      <version>2.0.1.Final</version>
+    </dependency>
+
     <!-- hive -->
     <dependency>
       <groupId>${hive.groupid}</groupId>
