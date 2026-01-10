@@ -57,6 +57,7 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -78,6 +79,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 /**
  * Tests against {@link ProtoKafkaSource}.
  */
+@Disabled("[UBER] Docker is not available in Uber CI")
 public class TestProtoKafkaSource extends BaseTestKafkaSource {
   private static final JsonFormat.Printer PRINTER = JsonFormat.printer().omittingInsignificantWhitespace();
   private static final Random RANDOM = new Random();

@@ -206,6 +206,7 @@ import static org.junit.jupiter.params.provider.Arguments.arguments;
 /**
  * Basic tests against {@link HoodieDeltaStreamer}, by issuing bulk_inserts, upserts, inserts. Check counts at the end.
  */
+@Disabled("[UBER] Docker is not available in Uber CI")
 public class TestHoodieDeltaStreamer extends HoodieDeltaStreamerTestBase {
 
   private static final Logger LOG = LoggerFactory.getLogger(TestHoodieDeltaStreamer.class);

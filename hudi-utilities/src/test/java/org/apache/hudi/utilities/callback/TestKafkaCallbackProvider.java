@@ -34,6 +34,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -44,6 +45,7 @@ import static org.apache.hudi.common.testutils.HoodieTestTable.makeNewCommitTime
 import static org.apache.hudi.common.testutils.HoodieTestUtils.generateFakeHoodieWriteStat;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
+@Disabled("[UBER] Docker is not available in Uber CI")
 public class TestKafkaCallbackProvider extends UtilitiesTestBase {
   private final String testTopicName = "hoodie_test_" + UUID.randomUUID();
 

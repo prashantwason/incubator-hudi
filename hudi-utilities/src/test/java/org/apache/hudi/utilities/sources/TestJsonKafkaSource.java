@@ -55,6 +55,7 @@ import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -94,6 +95,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Tests against {@link JsonKafkaSource}.
  */
+@Disabled("[UBER] Docker is not available in Uber CI")
 public class TestJsonKafkaSource extends BaseTestKafkaSource {
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
   private static final HoodieTestDataGenerator DATA_GENERATOR = new HoodieTestDataGenerator(1L);

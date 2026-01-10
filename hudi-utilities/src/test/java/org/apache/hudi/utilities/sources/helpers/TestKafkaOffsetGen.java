@@ -47,6 +47,7 @@ import org.apache.spark.streaming.kafka010.OffsetRange;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -86,6 +87,7 @@ import static org.mockito.Mockito.when;
 /**
  * Tests against {@link KafkaOffsetGen}.
  */
+@Disabled("[UBER] Docker is not available in Uber CI")
 public class TestKafkaOffsetGen {
 
   private final String testTopicName = "hoodie_test_" + UUID.randomUUID();

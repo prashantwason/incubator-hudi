@@ -34,6 +34,7 @@ import org.apache.hudi.utilities.sources.TestDataSource;
 import org.apache.hudi.utilities.streamer.TableExecutionContext;
 import org.apache.hudi.utilities.testutils.UtilitiesTestBase;
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,6 +50,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@Disabled("[UBER] Docker is not available in Uber CI")
 public class TestHoodieMultiTableDeltaStreamer extends HoodieDeltaStreamerTestBase {
 
   private static final Logger LOG = LoggerFactory.getLogger(TestHoodieMultiTableDeltaStreamer.class);

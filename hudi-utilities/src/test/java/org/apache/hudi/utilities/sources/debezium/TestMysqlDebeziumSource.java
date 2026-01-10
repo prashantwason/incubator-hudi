@@ -26,6 +26,7 @@ import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.InvocationTargetException;
@@ -35,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@Disabled("[UBER] Docker is not available in Uber CI")
 public class TestMysqlDebeziumSource extends TestAbstractDebeziumSource {
 
   private static final String MYSQL_GITHUB_SCHEMA = "{\"connect.name\": \"mysql.ghschema.gharchive.Envelope\",\n"

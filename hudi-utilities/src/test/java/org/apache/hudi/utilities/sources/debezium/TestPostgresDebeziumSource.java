@@ -25,9 +25,11 @@ import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
+import org.junit.jupiter.api.Disabled;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@Disabled("[UBER] Docker is not available in Uber CI")
 public class TestPostgresDebeziumSource extends TestAbstractDebeziumSource {
 
   private static final String POSTGRES_GITHUB_SCHEMA = "{\"connect.name\": \"postgres.ghschema.gharchive.Envelope\",\n"
