@@ -28,7 +28,7 @@ import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.{JobID, TaskAttemptID, TaskID, TaskType}
 import org.apache.hadoop.mapreduce.lib.input.FileSplit
 import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl
-import org.apache.orc.{OrcConf, OrcFile, TypeDescription}
+import org.apache.orc.{OrcConf, OrcFile, Reader, TypeDescription}
 import org.apache.orc.mapred.OrcStruct
 import org.apache.orc.mapreduce.OrcInputFormat
 import org.apache.spark.TaskContext
@@ -66,19 +66,20 @@ abstract class SparkOrcReaderBase(enableVectorizedReader: Boolean,
 
     val fs = filePath.getFileSystem(conf)
     val readerOptions = OrcFile.readerOptions(conf).filesystem(fs)
-    val orcSchema =
-      Utils.tryWithResource(OrcFile.createReader(filePath, readerOptions))(_.getSchema)
+    val orcReader: Reader = OrcFile.createReader(filePath, readerOptions)
+    val orcSchema = orcReader.getSchema
     val resultedColPruneInfo = OrcUtils.requestedColumnIds(
-      isCaseSensitive, dataSchema, requiredSchema, orcSchema, conf)
+      isCaseSensitive, dataSchema, requiredSchema, orcReader, conf)
 
     if (resultedColPruneInfo.isEmpty) {
+      orcReader.close()
       Iterator.empty
     } else {
       // ORC predicate pushdown
       if (orcFilterPushDown && filters.nonEmpty) {
-        val fileSchema = OrcUtils.toCatalystSchema(orcSchema)
-        OrcFilters.createFilter(fileSchema, filters).foreach { f =>
-          OrcInputFormat.setSearchArgument(conf, f, fileSchema.fieldNames)
+        // Use dataSchema as the file schema for filter pushdown since it should match the ORC schema
+        OrcFilters.createFilter(dataSchema, filters).foreach { f =>
+          OrcInputFormat.setSearchArgument(conf, f, dataSchema.fieldNames)
         }
       }
 
@@ -122,7 +123,7 @@ abstract class SparkOrcReaderBase(enableVectorizedReader: Boolean,
 
         val fullSchema = structTypeToAttributes(requiredSchema) ++ structTypeToAttributes(partitionSchema)
         val unsafeProjection = GenerateUnsafeProjection.generate(fullSchema, fullSchema)
-        val deserializer = new OrcDeserializer(requiredSchema, requestedColIds)
+        val deserializer = new OrcDeserializer(dataSchema, requiredSchema, requestedColIds)
 
         if (partitionSchema.length == 0) {
           iter.map(value => unsafeProjection(deserializer.deserialize(value)))

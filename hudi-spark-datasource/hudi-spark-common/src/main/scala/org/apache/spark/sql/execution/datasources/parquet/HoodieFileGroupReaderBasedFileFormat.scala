@@ -54,7 +54,7 @@ import org.apache.spark.sql.execution.vectorized.{OffHeapColumnVector, OnHeapCol
 import org.apache.spark.sql.hudi.MultipleColumnarFileFormatReader
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnarBatchUtils}
 import org.apache.spark.util.SerializableConfiguration
 
@@ -131,7 +131,7 @@ class HoodieFileGroupReaderBasedFileFormat(tablePath: String,
     val conf = sparkSession.sessionState.conf
     val parquetBatchSupported = ParquetUtils.isBatchReadSupportedForSchema(conf, schema) && supportBatchWithTableSchema
     val orcBatchSupported = conf.orcVectorizedReaderEnabled &&
-      schema.forall(s => OrcUtils.supportColumnarReads(
+      schema.forall(s => supportOrcColumnarReads(
         s.dataType, sparkSession.sessionState.conf.orcVectorizedReaderNestedColumnEnabled))
     // TODO: Implement columnar batch reading https://github.com/apache/hudi/issues/17736
     val lanceBatchSupported = false
@@ -425,6 +425,24 @@ class HoodieFileGroupReaderBasedFileFormat(tablePath: String,
 
   private def getFixedPartitionValues(allPartitionValues: InternalRow, partitionSchema: StructType, fixedPartitionIndexes: Set[Int]): InternalRow = {
     InternalRow.fromSeq(allPartitionValues.toSeq(partitionSchema).zipWithIndex.filter(p => fixedPartitionIndexes.contains(p._2)).map(p => p._1))
+  }
+
+  /**
+   * Check if ORC vectorized reader supports the given data type.
+   * This is a compatibility shim for Spark versions that don't expose OrcUtils.supportColumnarReads.
+   */
+  private def supportOrcColumnarReads(dataType: DataType, nestedColumnEnabled: Boolean): Boolean = {
+    dataType match {
+      case _: AtomicType => true
+      case st: StructType if nestedColumnEnabled =>
+        st.forall(f => supportOrcColumnarReads(f.dataType, nestedColumnEnabled))
+      case at: ArrayType if nestedColumnEnabled =>
+        supportOrcColumnarReads(at.elementType, nestedColumnEnabled)
+      case mt: MapType if nestedColumnEnabled =>
+        supportOrcColumnarReads(mt.keyType, nestedColumnEnabled) &&
+          supportOrcColumnarReads(mt.valueType, nestedColumnEnabled)
+      case _ => false
+    }
   }
 
   override def inferSchema(sparkSession: SparkSession, options: Map[String, String], files: Seq[FileStatus]): Option[StructType] = {

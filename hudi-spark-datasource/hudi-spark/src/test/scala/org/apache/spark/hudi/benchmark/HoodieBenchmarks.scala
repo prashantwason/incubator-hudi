@@ -16,7 +16,8 @@
  */
 package org.apache.spark.hudi.benchmark
 
-import org.apache.hadoop.shaded.com.google.common.reflect.ClassPath
+// scalastyle:off illegal.imports import.ordering
+import com.google.common.reflect.ClassPath
 
 import java.io.File
 import java.lang.reflect.Modifier
@@ -25,6 +26,7 @@ import java.util.Locale
 
 import scala.collection.JavaConverters._
 import scala.util.Try
+// scalastyle:on illegal.imports import.ordering
 
 /**
  * Reference from spark.

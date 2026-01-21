@@ -45,7 +45,7 @@ class Spark33ResolveHudiAlterTableCommand(sparkSession: SparkSession) extends Ru
           HudiAlterTableCommand(t.v1Table, add.changes, ColumnChangeID.ADD)
         case renameColumn@RenameColumn(ResolvedHoodieV2TablePlan(t), _, _) if renameColumn.resolved =>
           HudiAlterTableCommand(t.v1Table, renameColumn.changes, ColumnChangeID.UPDATE)
-        case alter@AlterColumn(ResolvedHoodieV2TablePlan(t), _, _, _, _, _) if alter.resolved =>
+        case alter@AlterColumn(ResolvedHoodieV2TablePlan(t), _, _, _, _, _, _) if alter.resolved =>
           HudiAlterTableCommand(t.v1Table, alter.changes, ColumnChangeID.UPDATE)
         case replace@ReplaceColumns(ResolvedHoodieV2TablePlan(t), _) if replace.resolved =>
           HudiAlterTableCommand(t.v1Table, replace.changes, ColumnChangeID.REPLACE)

@@ -579,7 +579,7 @@ case class HoodiePostAnalysisRule(sparkSession: SparkSession) extends Rule[Logic
         if !isView && sparkAdapter.isHoodieTable(oldName, sparkSession) =>
           AlterHoodieTableRenameCommand(oldName, newName, isView)
       // Rewrite the AlterTableChangeColumnCommand to AlterHoodieTableChangeColumnCommand
-      case AlterTableChangeColumnCommand(tableName, columnName, newColumn)
+      case AlterTableChangeColumnCommand(tableName, columnName, newColumn, _)
         if sparkAdapter.isHoodieTable(tableName, sparkSession) =>
           AlterHoodieTableChangeColumnCommand(tableName, columnName, newColumn)
       // SPARK-34238: the definition of ShowPartitionsCommand has been changed in Spark3.2.
