@@ -352,6 +352,9 @@ create_surefire_report() {
 # Based on PLAN_ID, set the modules to execute and the commands to run.
 set_commands() {
   local test_profile=$1
+  # Initialize flags for test execution mode
+  use_surefire_goal_only=""
+  skip_surefire=""
   case $PLAN_ID in
     0)
       build_command_to_run="mvn compile test-compile install -Pwarn-log $ACTIVE_PROFILES -DskipTests -DskipITs -Drat.skip=true -Dcheckstyle.skip=true -Dscalastyle.skip -B | tee build.log"
@@ -416,7 +419,11 @@ set_commands() {
       modules_to_execute="hudi-spark-datasource/hudi-spark-common"
       ;;
     20)
+      # PLAN_ID 20: Run only Surefire (Java/JUnit) tests for hudi-spark module
+      # ScalaTest is skipped by using surefire:test goal directly instead of test phase
+      # This avoids CI timeout by splitting hudi-spark tests into two separate jobs
       modules_to_execute="hudi-spark-datasource/hudi-spark"
+      use_surefire_goal_only="true"
       ;;
     21)
       modules_to_execute="hudi-utilities"
@@ -442,6 +449,13 @@ set_commands() {
     28)
       modules_to_execute="hudi-client/hudi-flink-client"
       ;;
+    29)
+      # PLAN_ID 29: Run only ScalaTest (Scala) tests for hudi-spark module
+      # Surefire is skipped using -Dsurefire.skip=true
+      # This is the companion job to PLAN_ID 20 which runs Surefire-only
+      modules_to_execute="hudi-spark-datasource/hudi-spark"
+      skip_surefire="true"
+      ;;
   esac
 
   if [ "$PLAN_ID" -gt 0 ]; then
@@ -451,7 +465,18 @@ set_commands() {
       log_file="functional_test_log.txt"
     fi
     build_command_to_run="mvn compile test-compile install -Pwarn-log $ACTIVE_PROFILES -DskipTests -DskipITs -Drat.skip=true -Dcheckstyle.skip=true -Dscalastyle.skip -pl $modules_to_execute -am -B > build.log 2>&1 &"
-    test_command_to_run="mvn test -P$test_profile $ACTIVE_PROFILES -DreuseForks=false -DtrimStackTrace=false -Drat.skip=true -Dcheckstyle.skip=true -Dscalastyle.skip -pl $modules_to_execute $class_specific_command -fae -B > $log_file 2>&1 &"
+
+    # Construct test command based on flags
+    if [ "$use_surefire_goal_only" == "true" ]; then
+      # Run only Surefire tests by invoking surefire:test goal directly (skips ScalaTest)
+      test_command_to_run="mvn surefire:test -P$test_profile $ACTIVE_PROFILES -DreuseForks=false -DtrimStackTrace=false -Drat.skip=true -Dcheckstyle.skip=true -Dscalastyle.skip -pl $modules_to_execute $class_specific_command -fae -B > $log_file 2>&1 &"
+    elif [ "$skip_surefire" == "true" ]; then
+      # Run only ScalaTest by skipping Surefire plugin
+      test_command_to_run="mvn test -P$test_profile $ACTIVE_PROFILES -Dsurefire.skip=true -DreuseForks=false -DtrimStackTrace=false -Drat.skip=true -Dcheckstyle.skip=true -Dscalastyle.skip -pl $modules_to_execute $class_specific_command -fae -B > $log_file 2>&1 &"
+    else
+      # Default: run both Surefire and ScalaTest
+      test_command_to_run="mvn test -P$test_profile $ACTIVE_PROFILES -DreuseForks=false -DtrimStackTrace=false -Drat.skip=true -Dcheckstyle.skip=true -Dscalastyle.skip -pl $modules_to_execute $class_specific_command -fae -B > $log_file 2>&1 &"
+    fi
   fi
 }
 
