@@ -40,6 +40,7 @@ import org.apache.hudi.common.util.TablePathUtils;
 import org.apache.hudi.common.util.ValidationUtils;
 import org.apache.hudi.config.HoodieCompactionConfig;
 import org.apache.hudi.config.HoodiePayloadConfig;
+import org.apache.hudi.config.HoodieUberConfigStore;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.data.HoodieJavaRDD;
 import org.apache.hudi.exception.HoodieDuplicateKeyException;
@@ -167,7 +168,7 @@ public class DataSourceUtils {
       builder = builder.withSchema(schemaStr);
     }
 
-    return builder.forTable(tblName)
+    HoodieWriteConfig config = builder.forTable(tblName)
         .withCompactionConfig(HoodieCompactionConfig.newBuilder()
             .withInlineCompaction(inlineCompact).build())
         .withPayloadConfig(HoodiePayloadConfig.newBuilder()
@@ -179,6 +180,9 @@ public class DataSourceUtils {
             .build())
         // override above with Hoodie configs specified as options.
         .withProps(parameters).build();
+
+    // Apply config store settings (enforced configs and fallback defaults)
+    return HoodieUberConfigStore.applyConfigStore(new org.apache.hadoop.conf.Configuration(), config);
   }
 
   public static SparkRDDWriteClient createHoodieClient(JavaSparkContext jssc, String schemaStr, String basePath,

@@ -36,6 +36,7 @@ import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.ReflectionUtils;
 import org.apache.hudi.common.util.StringUtils;
 import org.apache.hudi.common.util.VisibleForTesting;
+import org.apache.hudi.config.HoodieUberConfigStore;
 import org.apache.hudi.config.HoodieWriteConfig;
 
 import static org.apache.hudi.config.HoodieWriteConfig.APPLICATION_ID;
@@ -112,7 +113,8 @@ public abstract class BaseHoodieClient implements Serializable, AutoCloseable {
     this.storage = HoodieStorageUtils.getStorage(clientConfig.getBasePath(), storageConf);
     this.context = context;
     this.basePath = clientConfig.getBasePath();
-    this.config = clientConfig;
+    this.config = HoodieUberConfigStore.applyConfigStore(
+        storageConf.unwrapAs(org.apache.hadoop.conf.Configuration.class), clientConfig);
     this.config.setValue(APPLICATION_ID, context.getApplicationId());
     this.timelineServer = timelineServer;
     shouldStopTimelineServer = !timelineServer.isPresent();
@@ -164,6 +166,13 @@ public abstract class BaseHoodieClient implements Serializable, AutoCloseable {
         }
       } else {
         log.debug("Timeline Server already running. Not restarting the service");
+        // Update write configs with remote_server_configs, so that executors can find timeline server on the driver.
+        // For StreamSync workloads timeline server is created before the writeClient,
+        // due to that remote_server_configs that are overridden after creating timeline server can be overridden again by the config store.
+        // By calling update method here we are trying to reset them again.
+        if (timelineServer.get() instanceof EmbeddedTimelineService) {
+          EmbeddedTimelineServerHelper.updateWriteConfigWithTimelineServer(timelineServer.get(), this.config);
+        }
       }
     } else {
       log.info("Embedded Timeline Server is disabled. Not starting timeline service");

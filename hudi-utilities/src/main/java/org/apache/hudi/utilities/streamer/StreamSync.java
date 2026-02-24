@@ -73,6 +73,7 @@ import org.apache.hudi.config.HoodieCompactionConfig;
 import org.apache.hudi.config.HoodieErrorTableConfig;
 import org.apache.hudi.config.HoodieIndexConfig;
 import org.apache.hudi.config.HoodiePayloadConfig;
+import org.apache.hudi.config.HoodieUberConfigStore;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.config.metrics.HoodieMetricsConfig;
 import org.apache.hudi.data.HoodieJavaRDD;
@@ -1221,6 +1222,10 @@ public class StreamSync implements Serializable, Closeable {
         String.format("%s should be set to %s", COMBINE_BEFORE_INSERT.key(), cfg.filterDupes));
     ValidationUtils.checkArgument(config.shouldCombineBeforeUpsert(),
         String.format("%s should be set to %s", COMBINE_BEFORE_UPSERT.key(), combineBeforeUpsert));
+    
+    // Apply config store settings (enforced configs and fallback defaults)
+    config = HoodieUberConfigStore.applyConfigStore(hoodieSparkContext.hadoopConfiguration(), config);
+
     return Pair.of(config, returnSchema);
   }
 

@@ -91,6 +91,7 @@ object HoodieProcedures {
       ,(CopyToTempViewProcedure.NAME, CopyToTempViewProcedure.builder)
       ,(ShowCommitExtraMetadataProcedure.NAME, ShowCommitExtraMetadataProcedure.builder)
       ,(ShowTablePropertiesProcedure.NAME, ShowTablePropertiesProcedure.builder)
+      ,(ShowConfigStoreProcedure.NAME, ShowConfigStoreProcedure.builder)
       ,(HelpProcedure.NAME, HelpProcedure.builder)
       ,(ArchiveCommitsProcedure.NAME, ArchiveCommitsProcedure.builder)
       ,(RunTTLProcedure.NAME, RunTTLProcedure.builder)

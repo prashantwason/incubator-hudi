@@ -36,6 +36,7 @@ import org.apache.hudi.config.HoodieCleanConfig;
 import org.apache.hudi.config.HoodieClusteringConfig;
 import org.apache.hudi.config.HoodieCompactionConfig;
 import org.apache.hudi.config.HoodieLockConfig;
+import org.apache.hudi.config.HoodieUberConfigStore;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.configuration.FlinkOptions;
 import org.apache.hudi.configuration.HadoopConfigurations;
@@ -269,6 +270,8 @@ public class FlinkWriteClients {
       FileSystemViewStorageConfig viewStorageConfig = ViewStorageProperties.loadFromProperties(conf.get(FlinkOptions.PATH), conf);
       writeConfig.setViewStorageConfig(viewStorageConfig);
     }
-    return writeConfig;
+
+    // Apply config store settings (enforced configs and fallback defaults)
+    return HoodieUberConfigStore.applyConfigStore(new org.apache.hadoop.conf.Configuration(), writeConfig);
   }
 }
