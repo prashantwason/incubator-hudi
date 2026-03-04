@@ -109,7 +109,6 @@ import org.apache.hudi.testutils.MetadataMergeWriteStatus;
 import org.apache.hudi.testutils.TestHoodieMetadataBase;
 
 import lombok.extern.slf4j.Slf4j;
-import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.IndexedRecord;
 import org.junit.jupiter.api.AfterEach;
@@ -892,7 +891,7 @@ public class TestJavaHoodieBackedMetadata extends TestHoodieMetadataBase {
   private void verifyMetadataRawRecords(HoodieTable table, List<HoodieLogFile> logFiles, boolean enableMetaFields) throws IOException {
     for (HoodieLogFile logFile : logFiles) {
       List<StoragePathInfo> pathInfoList = storage.listDirectEntries(logFile.getPath());
-      Schema writerSchema = TableSchemaResolver.readSchemaFromLogFile(storage,
+      HoodieSchema writerSchema = TableSchemaResolver.readSchemaFromLogFile(storage,
           logFile.getPath());
       if (writerSchema == null) {
         // not a data block
@@ -900,7 +899,7 @@ public class TestJavaHoodieBackedMetadata extends TestHoodieMetadataBase {
       }
 
       try (HoodieLogFormat.Reader logFileReader = HoodieLogFormat.newReader(storage,
-          new HoodieLogFile(pathInfoList.get(0).getPath()), HoodieSchema.fromAvroSchema(writerSchema))) {
+          new HoodieLogFile(pathInfoList.get(0).getPath()), writerSchema)) {
         while (logFileReader.hasNext()) {
           HoodieLogBlock logBlock = logFileReader.next();
           if (logBlock instanceof HoodieDataBlock) {
@@ -956,7 +955,6 @@ public class TestJavaHoodieBackedMetadata extends TestHoodieMetadataBase {
         .withRequestedSchema(schema)
         .withDataSchema(schema)
         .withProps(new TypedProperties())
-        .withEnableOptimizedLogBlockScan(writeConfig.getMetadataConfig().isOptimizedLogBlocksScanEnabled())
         .build();
 
     try (ClosableIterator<HoodieRecord<IndexedRecord>> iter = fileGroupReader.getClosableHoodieRecordIterator()) {
@@ -2506,11 +2504,11 @@ public class TestJavaHoodieBackedMetadata extends TestHoodieMetadataBase {
 
       // 1 partition should be cleaned
       assertEquals(cleanMetadata.getPartitionMetadata().size(), 1);
-      // 1 file cleaned but was already deleted so will be a failed delete
+      // 1 file cleaned but was already deleted so will be counted as success (file not found = nothing to delete = success)
       assertEquals(
-          cleanMetadata.getPartitionMetadata().get(partition).getSuccessDeleteFiles().size(), 0);
+          cleanMetadata.getPartitionMetadata().get(partition).getSuccessDeleteFiles().size(), 1);
       assertEquals(
-          cleanMetadata.getPartitionMetadata().get(partition).getFailedDeleteFiles().size(), 1);
+          cleanMetadata.getPartitionMetadata().get(partition).getFailedDeleteFiles().size(), 0);
       assertEquals(
           cleanMetadata.getPartitionMetadata().get(partition).getDeletePathPatterns().size(), 1);
 
@@ -2875,7 +2873,7 @@ public class TestJavaHoodieBackedMetadata extends TestHoodieMetadataBase {
   private void verifyMetadataColumnStatsRecords(List<HoodieLogFile> logFiles) throws IOException {
     for (HoodieLogFile logFile : logFiles) {
       List<StoragePathInfo> pathInfoList = storage.listDirectEntries(logFile.getPath());
-      Schema writerSchema = TableSchemaResolver.readSchemaFromLogFile(storage,
+      HoodieSchema writerSchema = TableSchemaResolver.readSchemaFromLogFile(storage,
           logFile.getPath());
       if (writerSchema == null) {
         // not a data block
@@ -2883,7 +2881,7 @@ public class TestJavaHoodieBackedMetadata extends TestHoodieMetadataBase {
       }
 
       try (HoodieLogFormat.Reader logFileReader = HoodieLogFormat.newReader(storage,
-          new HoodieLogFile(pathInfoList.get(0).getPath()), HoodieSchema.fromAvroSchema(writerSchema))) {
+          new HoodieLogFile(pathInfoList.get(0).getPath()), writerSchema)) {
         while (logFileReader.hasNext()) {
           HoodieLogBlock logBlock = logFileReader.next();
           if (logBlock instanceof HoodieDataBlock) {

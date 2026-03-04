@@ -115,6 +115,12 @@ public class MergeOnReadInputFormat
   protected boolean emitDelete;
 
   /**
+   * Table name
+   */
+  @Getter
+  private String tableName;
+
+  /**
    * Flag saying whether the input format has been closed.
    */
   @Getter
@@ -168,6 +174,7 @@ public class MergeOnReadInputFormat
     this.metaClient = StreamerUtil.metaClientForReader(this.conf, hadoopConf);
     this.writeConfig = FlinkWriteClients.getHoodieClientConfig(this.conf);
     this.iterator = initIterator(split);
+    this.tableName = metaClient.getTableConfig().getTableName();
     mayShiftInputSplit(split);
   }
 
@@ -190,9 +197,9 @@ public class MergeOnReadInputFormat
             + "flink partition Index: " + split.getSplitNumber()
             + "merge type: " + split.getMergeType());
     final HoodieSchema tableSchema = HoodieSchemaCache.intern(
-        HoodieSchema.parse(tableState.getAvroSchema()));
+        HoodieSchema.parse(tableState.getTableSchema()));
     final HoodieSchema requiredSchema = HoodieSchemaCache.intern(
-        HoodieSchema.parse(tableState.getRequiredAvroSchema()));
+        HoodieSchema.parse(tableState.getRequiredSchema()));
     return getSplitRowIterator(split, tableSchema, requiredSchema, mergeType, emitDelete);
   }
 

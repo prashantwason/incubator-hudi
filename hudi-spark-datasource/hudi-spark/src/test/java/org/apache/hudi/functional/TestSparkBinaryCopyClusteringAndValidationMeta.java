@@ -260,8 +260,8 @@ public class TestSparkBinaryCopyClusteringAndValidationMeta extends HoodieClient
     Assertions.assertFalse(strategy.supportBinaryStreamCopy(groups, new HashMap<>()));
   }
 
-  private String makeTestFile(String fileName, HoodieSchema hoodieSchema, MessageType messageType, BloomFilter filter) throws IOException {
-    HoodieAvroWriteSupport writeSupport = new HoodieAvroWriteSupport(messageType, hoodieSchema.getAvroSchema(), Option.of(filter), new Properties());
+  private String makeTestFile(String fileName, HoodieSchema schema, MessageType messageType, BloomFilter filter) throws IOException {
+    HoodieAvroWriteSupport writeSupport = new HoodieAvroWriteSupport(messageType, schema, Option.of(filter), new Properties());
     StoragePath filePath = new StoragePath(tempDir.resolve(fileName).toAbsolutePath().toString());
     HoodieConfig hoodieConfig = new HoodieConfig();
     hoodieConfig.setValue("hoodie.base.path", basePath);

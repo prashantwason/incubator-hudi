@@ -23,6 +23,8 @@ import org.apache.hudi.avro.HoodieAvroUtils;
 import org.apache.hudi.common.bloom.BloomFilter;
 import org.apache.hudi.common.engine.TaskContextSupplier;
 import org.apache.hudi.common.model.HoodieKey;
+import org.apache.hudi.common.schema.HoodieSchema;
+import org.apache.hudi.common.schema.HoodieSchemaField;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.exception.HoodieDuplicateKeyException;
 import org.apache.hudi.hadoop.fs.HadoopFSUtils;
@@ -38,11 +40,12 @@ import org.apache.hudi.storage.StorageConfiguration;
 import org.apache.hudi.storage.StoragePath;
 import org.apache.hudi.storage.hadoop.HadoopStorageConfiguration;
 
-import org.apache.avro.Schema;
 import org.apache.avro.generic.IndexedRecord;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -61,6 +64,7 @@ import static org.apache.hudi.common.util.StringUtils.getUTF8Bytes;
  */
 public class HoodieAvroHFileWriter
     implements HoodieAvroFileWriter {
+  private static final Logger LOG = LoggerFactory.getLogger(HoodieAvroHFileWriter.class);
   private static final AtomicLong RECORD_INDEX_COUNT = new AtomicLong(1);
   private final Path file;
   private final HoodieHFileConfig hfileConfig;
@@ -70,13 +74,13 @@ public class HoodieAvroHFileWriter
   private final String instantTime;
   private final TaskContextSupplier taskContextSupplier;
   private final boolean populateMetaFields;
-  private final Option<Schema.Field> keyFieldSchema;
+  private final Option<HoodieSchemaField> keyFieldSchema;
   private HFileWriter writer;
   private String minRecordKey;
   private String maxRecordKey;
   private String prevRecordKey;
 
-  public HoodieAvroHFileWriter(String instantTime, StoragePath file, HoodieHFileConfig hfileConfig, Schema schema,
+  public HoodieAvroHFileWriter(String instantTime, StoragePath file, HoodieHFileConfig hfileConfig, HoodieSchema schema,
                                TaskContextSupplier taskContextSupplier, boolean populateMetaFields) throws IOException {
     Configuration conf = HadoopFSUtils.registerFileSystem(file, (Configuration) hfileConfig.getStorageConf().unwrap());
     this.file = HoodieWrapperFileSystem.convertToHoodiePath(file, conf);
@@ -84,7 +88,7 @@ public class HoodieAvroHFileWriter
     this.isWrapperFileSystem = fs instanceof HoodieWrapperFileSystem;
     this.wrapperFs = this.isWrapperFileSystem ? Option.of((HoodieWrapperFileSystem) fs) : Option.empty();
     this.hfileConfig = hfileConfig;
-    this.keyFieldSchema = Option.ofNullable(schema.getField(hfileConfig.getKeyFieldName()));
+    this.keyFieldSchema = schema.getField(hfileConfig.getKeyFieldName());
 
     // TODO - compute this compression ratio dynamically by looking at the bytes written to the
     // stream and the actual file size reported by HDFS
@@ -126,9 +130,12 @@ public class HoodieAvroHFileWriter
 
   @Override
   public void writeAvro(String recordKey, IndexedRecord record) throws IOException {
-    if (prevRecordKey.equals(recordKey)) {
-      throw new HoodieDuplicateKeyException("Duplicate recordKey " + recordKey + " found while writing to HFile."
-          + "Record payload: " + record);
+    if (!this.hfileConfig.isAllowDuplicatesOnHfileWrites()) {
+      // When allowDuplicatesOnHfileWrites is true, allow duplicates to be written to hFile.
+      if (prevRecordKey.equals(recordKey)) {
+        LOG.info("Duplicate recordKey " + recordKey + " found while writing to HFile. Record payload " + record);
+        throw new HoodieDuplicateKeyException("Duplicate recordKey " + recordKey + " found while writing to HFile.");
+      }
     }
     byte[] value = null;
     boolean isRecordSerialized = false;

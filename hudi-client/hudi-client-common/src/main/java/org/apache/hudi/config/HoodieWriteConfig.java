@@ -779,6 +779,18 @@ public class HoodieWriteConfig extends HoodieConfig {
       .withDocumentation("When table is upgraded from pre 0.12 to 0.12, we check for \"default\" partition and fail if found one. "
           + "Users are expected to rewrite the data in those partitions. Enabling this config will bypass this validation");
 
+  /**
+   * Config that determines whether to block writes when Spark speculative execution is enabled.
+   */
+  public static final ConfigProperty<Boolean> BLOCK_WRITES_ON_SPECULATIVE_EXECUTION = ConfigProperty
+      .key("hoodie.block.writes.on.speculative.execution")
+      .defaultValue(true)
+      .sinceVersion("0.14.0")
+      .withDocumentation("When enabled (default), throws an exception if Spark speculative execution is enabled "
+          + "during the client creation. This prevents potential data corruption "
+          + "due to duplicate writes by speculative executors. Set to false only if you understand the risks "
+          + "of running with Spark speculative execution enabled.");
+
   public static final ConfigProperty<String> EARLY_CONFLICT_DETECTION_STRATEGY_CLASS_NAME = ConfigProperty
       .key(CONCURRENCY_PREFIX + "early.conflict.detection.strategy")
       .noDefaultValue()
@@ -919,6 +931,13 @@ public class HoodieWriteConfig extends HoodieConfig {
       .withDocumentation("When using a custom Hoodie Merge Handle Implementation controlled by the config " + MERGE_HANDLE_CLASS_NAME.key()
           + " or when using a custom Hoodie Concat Handle Implementation controlled by the config " + CONCAT_HANDLE_CLASS_NAME.key()
               + ", enabling this config results in fallback to the default implementations if instantiation of the custom implementation fails");
+
+  public static final ConfigProperty<Boolean> IGNORE_FAILED = ConfigProperty
+      .key("hoodie.write.ignore.failed")
+      .defaultValue(true)
+      .sinceVersion("")
+      .withDocumentation("Flag to indicate whether to ignore any non exception error (e.g. write status error)."
+          + "By default true for backward compatibility.");
 
   /**
    * Config key with boolean value that indicates whether record being written during MERGE INTO Spark SQL
@@ -1707,10 +1726,6 @@ public class HoodieWriteConfig extends HoodieConfig {
     return getInt(HoodieCompactionConfig.LOG_COMPACTION_BLOCKS_THRESHOLD);
   }
 
-  public boolean enableOptimizedLogBlocksScan() {
-    return getBoolean(HoodieReaderConfig.ENABLE_OPTIMIZED_LOG_BLOCKS_SCAN);
-  }
-
   public HoodieCleaningPolicy getCleanerPolicy() {
     return HoodieCleaningPolicy.valueOf(getString(CLEANER_POLICY));
   }
@@ -1727,6 +1742,10 @@ public class HoodieWriteConfig extends HoodieConfig {
     return getInt(HoodieCleanConfig.CLEANER_HOURS_RETAINED);
   }
 
+  public boolean isCleanOptimizationWithLocalEngineEnabled() {
+    return getBoolean(HoodieCleanConfig.CLEAN_OPTIMIZE_USING_LOCAL_ENGINE_CONTEXT);
+  }
+
   public int getMaxCommitsToKeep() {
     return getInt(HoodieArchivalConfig.MAX_COMMITS_TO_KEEP);
   }
@@ -1737,6 +1756,14 @@ public class HoodieWriteConfig extends HoodieConfig {
 
   public int getTimelineCompactionBatchSize() {
     return getInt(HoodieArchivalConfig.TIMELINE_COMPACTION_BATCH_SIZE);
+  }
+
+  public long getTimelineCompactionTargetFileMaxBytes() {
+    return getLong(HoodieArchivalConfig.TIMELINE_COMPACTION_TARGET_FILE_MAX_BYTES);
+  }
+
+  public int getTimelineManifestRetainedVersions() {
+    return getInt(HoodieArchivalConfig.TIMELINE_MANIFEST_RETAINED_VERSIONS);
   }
 
   public int getParquetSmallFileLimit() {
@@ -1809,6 +1836,14 @@ public class HoodieWriteConfig extends HoodieConfig {
 
   public boolean incrementalCleanerModeEnabled() {
     return getBoolean(HoodieCleanConfig.CLEANER_INCREMENTAL_MODE_ENABLE);
+  }
+
+  public String getCleanerPartitionFilterRegex() {
+    return getString(HoodieCleanConfig.CLEAN_PARTITION_FILTER_REGEX);
+  }
+
+  public String getCleanerPartitionFilterSelected() {
+    return getString(HoodieCleanConfig.CLEAN_PARTITION_FILTER_SELECTED);
   }
 
   public boolean inlineCompactionEnabled() {
@@ -2346,6 +2381,10 @@ public class HoodieWriteConfig extends HoodieConfig {
     return getLong(HoodieStorageConfig.HFILE_MAX_FILE_SIZE);
   }
 
+  public boolean allowDuplicatesWithHfileWrites() {
+    return getBoolean(HoodieStorageConfig.HFILE_WRITER_TO_ALLOW_DUPLICATES);
+  }
+
   public int getHFileBlockSize() {
     return getInt(HoodieStorageConfig.HFILE_BLOCK_SIZE);
   }
@@ -2720,6 +2759,10 @@ public class HoodieWriteConfig extends HoodieConfig {
     return getBoolean(SKIP_DEFAULT_PARTITION_VALIDATION);
   }
 
+  public boolean shouldBlockWritesOnSpeculativeExecution() {
+    return getBoolean(BLOCK_WRITES_ON_SPECULATIVE_EXECUTION);
+  }
+
   /**
    * Are any table services configured to run inline for both scheduling and execution?
    *
@@ -2910,6 +2953,13 @@ public class HoodieWriteConfig extends HoodieConfig {
     } else {
       return false;
     }
+  }
+
+  /**
+   * Whether to ignore the write failed.
+   */
+  public boolean getIgnoreWriteFailed() {
+    return getBooleanOrDefault(IGNORE_FAILED);
   }
 
   public static class Builder {
@@ -3423,6 +3473,11 @@ public class HoodieWriteConfig extends HoodieConfig {
       return this;
     }
 
+    public Builder withBlockWritesOnSpeculativeExecution(boolean blockWritesOnSpeculativeExecution) {
+      writeConfig.setValue(BLOCK_WRITES_ON_SPECULATIVE_EXECUTION, String.valueOf(blockWritesOnSpeculativeExecution));
+      return this;
+    }
+
     public Builder withEarlyConflictDetectionEnable(boolean enable) {
       writeConfig.setValue(EARLY_CONFLICT_DETECTION_ENABLE, String.valueOf(enable));
       return this;
@@ -3490,6 +3545,11 @@ public class HoodieWriteConfig extends HoodieConfig {
 
     public Builder withFileGroupReaderMergeHandleClassName(String className) {
       writeConfig.setValue(COMPACT_MERGE_HANDLE_CLASS_NAME, className);
+      return this;
+    }
+
+    public Builder withWriteIgnoreFailed(boolean ignoreFailedWriteData) {
+      writeConfig.setValue(IGNORE_FAILED, String.valueOf(ignoreFailedWriteData));
       return this;
     }
 

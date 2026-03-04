@@ -25,7 +25,7 @@ import org.apache.hudi.client.utils.SparkInternalSchemaConverter
 import org.apache.hudi.common.config.{HoodieMemoryConfig, TypedProperties}
 import org.apache.hudi.common.fs.FSUtils
 import org.apache.hudi.common.model.HoodieFileFormat
-import org.apache.hudi.common.schema.{HoodieSchema, HoodieSchemaUtils}
+import org.apache.hudi.common.schema.HoodieSchemaUtils
 import org.apache.hudi.common.table.{HoodieTableConfig, HoodieTableMetaClient, ParquetTableSchemaResolver}
 import org.apache.hudi.common.table.read.HoodieFileGroupReader
 import org.apache.hudi.common.util.{Option => HOption}
@@ -41,7 +41,7 @@ import org.apache.hudi.storage.hadoop.HadoopStorageConfiguration
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.hadoop.mapreduce.Job
-import org.apache.parquet.schema.{AvroSchemaRepair, MessageType}
+import org.apache.parquet.schema.{HoodieSchemaRepair, MessageType}
 import org.apache.spark.api.java.JavaSparkContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.HoodieCatalystExpressionUtils.generateUnsafeProjection
@@ -92,11 +92,11 @@ class HoodieFileGroupReaderBasedFileFormat(tablePath: String,
 
   private lazy val tableSchemaAsMessageType: HOption[MessageType] = {
     HOption.ofNullable(
-      ParquetTableSchemaResolver.convertAvroSchemaToParquet(schema.getAvroSchema, new Configuration())
+      ParquetTableSchemaResolver.convertAvroSchemaToParquet(schema, new Configuration())
     )
   }
 
-  private lazy val hasTimestampMillisFieldInTableSchema = AvroSchemaRepair.hasTimestampMillisField(schema.getAvroSchema)
+  private lazy val hasTimestampMillisFieldInTableSchema = HoodieSchemaRepair.hasTimestampMillisField(schema)
   private lazy val supportBatchWithTableSchema = HoodieSparkUtils.gteqSpark3_5 || !hasTimestampMillisFieldInTableSchema
   override def shortName(): String = "HudiFileGroup"
 
@@ -104,7 +104,7 @@ class HoodieFileGroupReaderBasedFileFormat(tablePath: String,
 
   def getRequiredFilters: Seq[Filter] = requiredFilters
 
-  private val sanitizedTableName = AvroSchemaUtils.getAvroRecordQualifiedName(tableName)
+  private val sanitizedTableName = HoodieSchemaUtils.getRecordQualifiedName(tableName)
 
   /**
    * Flag saying whether vectorized reading is supported.
@@ -188,7 +188,17 @@ class HoodieFileGroupReaderBasedFileFormat(tablePath: String,
 
   override def isSplitable(sparkSession: SparkSession,
                            options: Map[String, String],
-                           path: Path): Boolean = false
+                           path: Path): Boolean = {
+    // NOTE: When we have and only the base file that needs to be read with normal reading mode,
+    // we can consider the current format to be equivalent to `org.apache.spark.sql.execution.datasources.parquet.ParquetFormat`.
+    // Naturally, we can maintain the same `isSplitable` logic as the upper-level format.
+    // This will enable us to take advantage of spark's file splitting capability.
+    // For overly large single files, we can use multiple concurrent tasks to read them, thereby reducing the overall job reading time consumption
+    val superSplitable = super.isSplitable(sparkSession, options, path)
+    val splitable = !isMOR && !isIncremental && !isBootstrap && superSplitable
+    logInfo(s"isSplitable: $splitable, super.isSplitable: $superSplitable, isMOR: $isMOR, isIncremental: $isIncremental, isBootstrap: $isBootstrap")
+    splitable
+  }
 
   override def buildReaderWithPartitionValues(spark: SparkSession,
                                               dataStructType: StructType,
@@ -303,15 +313,16 @@ class HoodieFileGroupReaderBasedFileFormat(tablePath: String,
                                   dataSchema: StructType,
                                   enableVectorizedRead: Boolean): SparkColumnarFileReader = {
     if (isMultipleBaseFileFormatsEnabled) {
-      new MultipleColumnarFileFormatReader(
-        sparkAdapter.createParquetFileReader(enableVectorizedRead, spark.sessionState.conf, options, configuration),
-        sparkAdapter.createOrcFileReader(enableVectorizedRead, spark.sessionState.conf, options, configuration, dataSchema))
+      val parquetReader = sparkAdapter.createParquetFileReader(enableVectorizedRead, spark.sessionState.conf, options, configuration)
+      val orcReader = sparkAdapter.createOrcFileReader(enableVectorizedRead, spark.sessionState.conf, options, configuration, dataSchema)
+      val lanceReader = sparkAdapter.createLanceFileReader(enableVectorizedRead, spark.sessionState.conf, options, configuration).orNull
+      new MultipleColumnarFileFormatReader(parquetReader, orcReader, lanceReader)
     } else if (hoodieFileFormat == HoodieFileFormat.PARQUET) {
       sparkAdapter.createParquetFileReader(enableVectorizedRead, spark.sessionState.conf, options, configuration)
     } else if (hoodieFileFormat == HoodieFileFormat.ORC) {
       sparkAdapter.createOrcFileReader(enableVectorizedRead, spark.sessionState.conf, options, configuration, dataSchema)
     } else if (hoodieFileFormat == HoodieFileFormat.LANCE) {
-      sparkAdapter.createLanceFileReader(enableVectorizedRead, spark.sessionState.conf, options, configuration)
+      sparkAdapter.createLanceFileReader(enableVectorizedRead, spark.sessionState.conf, options, configuration).orNull
     } else {
       throw new HoodieNotSupportedException("Unsupported file format: " + hoodieFileFormat)
     }

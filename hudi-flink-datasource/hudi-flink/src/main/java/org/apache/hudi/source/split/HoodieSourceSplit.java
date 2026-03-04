@@ -18,10 +18,13 @@
 
 package org.apache.hudi.source.split;
 
+import org.apache.hudi.common.table.log.InstantRange;
 import org.apache.hudi.common.util.Option;
 
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.ToString;
 import org.apache.flink.api.connector.source.SourceSplit;
 
 import javax.annotation.Nullable;
@@ -34,8 +37,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Hoodie SourceSplit implementation for source V2. It has the same semantic to the {@link org.apache.hudi.table.format.mor.MergeOnReadInputSplit}.
  */
 @Getter
+@EqualsAndHashCode
+@ToString
 public class HoodieSourceSplit implements SourceSplit, Serializable {
-  public static AtomicInteger SPLIT_COUNTER = new AtomicInteger(0);
+  public static AtomicInteger SPLIT_ID_GEN = new AtomicInteger(-1);
   private static final long serialVersionUID = 1L;
   private static final long NUM_NO_CONSUMPTION = 0L;
 
@@ -47,8 +52,14 @@ public class HoodieSourceSplit implements SourceSplit, Serializable {
   private final Option<List<String>> logPaths;
   // the base table path
   private final String tablePath;
+  // partition path
+  private final String partitionPath;
   // source merge type
   private final String mergeType;
+  // latest commit time
+  private final String latestCommit;
+  // instant range
+  private final Option<InstantRange> instantRange;
   // file id of file splice
   @Setter
   protected String fileId;
@@ -59,23 +70,27 @@ public class HoodieSourceSplit implements SourceSplit, Serializable {
 
   // for failure recovering
   private int fileOffset;
-  private long recordOffset;
 
   public HoodieSourceSplit(
       int splitNum,
       @Nullable String basePath,
       Option<List<String>> logPaths,
       String tablePath,
+      String partitionPath,
       String mergeType,
-      String fileId) {
+      String latestCommit,
+      String fileId,
+      Option<InstantRange> instantRange) {
     this.splitNum = splitNum;
     this.basePath = Option.ofNullable(basePath);
     this.logPaths = logPaths;
     this.tablePath = tablePath;
+    this.partitionPath = partitionPath;
     this.mergeType = mergeType;
+    this.latestCommit = latestCommit;
     this.fileId = fileId;
     this.fileOffset = 0;
-    this.recordOffset = 0L;
+    this.instantRange = instantRange;
   }
 
   @Override
@@ -93,17 +108,7 @@ public class HoodieSourceSplit implements SourceSplit, Serializable {
 
   public void updatePosition(int newFileOffset, long newRecordOffset) {
     fileOffset = newFileOffset;
-    recordOffset = newRecordOffset;
+    consumed = newRecordOffset;
   }
 
-  @Override
-  public String toString() {
-    return "HoodieSourceSplit{"
-        + "splitNum=" + splitNum
-        + ", basePath=" + basePath
-        + ", logPaths=" + logPaths
-        + ", tablePath='" + tablePath + '\''
-        + ", mergeType='" + mergeType + '\''
-        + '}';
-  }
 }

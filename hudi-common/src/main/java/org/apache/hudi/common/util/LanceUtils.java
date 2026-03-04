@@ -36,7 +36,6 @@ import org.apache.hudi.stats.HoodieColumnRangeMetadata;
 import org.apache.hudi.storage.HoodieStorage;
 import org.apache.hudi.storage.StoragePath;
 
-import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 
 import java.io.ByteArrayOutputStream;
@@ -77,34 +76,37 @@ public class LanceUtils extends FileFormatUtils {
                                                            Option<BaseKeyGenerator> keyGeneratorOpt,
                                                            Option<String> partitionPath) {
     try {
+      HoodieSchema keySchema = getKeyIteratorSchema(storage, filePath, keyGeneratorOpt, partitionPath);
       HoodieFileReader reader = HoodieIOFactory.getIOFactory(storage)
           .getReaderFactory(HoodieRecord.HoodieRecordType.SPARK)
           .getFileReader(new HoodieReaderConfig(), filePath, HoodieFileFormat.LANCE);
-      ClosableIterator<String> keyIterator = reader.getRecordKeyIterator();
-      return new ClosableIterator<HoodieKey>() {
-        @Override
-        public void close() {
-          keyIterator.close();
-        }
+      ClosableIterator<HoodieRecord> recordIterator = reader.getRecordIterator(keySchema);
 
-        @Override
-        public boolean hasNext() {
-          return keyIterator.hasNext();
-        }
-
-        @Override
-        public HoodieKey next() {
-          String key = keyIterator.next();
-          return new HoodieKey(key, partitionPath.orElse(null));
-        }
-      };
+      return new CloseableMappingIterator<>(
+          recordIterator,
+          record -> {
+            String recordKey;
+            if (keyGeneratorOpt.isPresent()) {
+              // With keyGenerator, extracts user-defined key fields by name
+              recordKey = record.getRecordKey(keySchema, keyGeneratorOpt);
+            } else {
+              // Without keyGenerator, read record key field by name
+              recordKey = record.getRecordKey(keySchema, HoodieRecord.RECORD_KEY_METADATA_FIELD);
+            }
+            // Extract partition path from record if not provided as parameter
+            String partitionPathValue = partitionPath.orElseGet(() ->
+                (String) record.getColumnValueAsJava(keySchema, HoodieRecord.PARTITION_PATH_METADATA_FIELD,
+                    CollectionUtils.emptyProps()));
+            return new HoodieKey(recordKey, partitionPathValue);
+          }
+      );
     } catch (IOException e) {
       throw new HoodieIOException("Failed to read from Lance file" + filePath, e);
     }
   }
 
   @Override
-  public Schema readAvroSchema(HoodieStorage storage, StoragePath filePath) {
+  public HoodieSchema readSchema(HoodieStorage storage, StoragePath filePath) {
     try (HoodieFileReader fileReader =
                  HoodieIOFactory.getIOFactory(storage)
                          .getReaderFactory(HoodieRecord.HoodieRecordType.SPARK)
@@ -112,7 +114,7 @@ public class LanceUtils extends FileFormatUtils {
                                  ConfigUtils.DEFAULT_HUDI_CONFIG_FOR_READER,
                                  filePath,
                                  HoodieFileFormat.LANCE)) {
-      return fileReader.getSchema().getAvroSchema();
+      return fileReader.getSchema();
     } catch (IOException e) {
       throw new HoodieIOException("Failed to read schema from Lance file", e);
     }
@@ -129,7 +131,7 @@ public class LanceUtils extends FileFormatUtils {
   }
 
   @Override
-  public List<GenericRecord> readAvroRecords(HoodieStorage storage, StoragePath filePath, Schema schema) {
+  public List<GenericRecord> readAvroRecords(HoodieStorage storage, StoragePath filePath, HoodieSchema schema) {
     throw new UnsupportedOperationException("readAvroRecords with schema is not yet supported for Lance format");
   }
 
@@ -195,8 +197,8 @@ public class LanceUtils extends FileFormatUtils {
   public Pair<ByteArrayOutputStream, Object> serializeRecordsToLogBlock(HoodieStorage storage,
                                                                         Iterator<HoodieRecord> records,
                                                                         HoodieRecord.HoodieRecordType recordType,
-                                                                        Schema writerSchema,
-                                                                        Schema readerSchema,
+                                                                        HoodieSchema writerSchema,
+                                                                        HoodieSchema readerSchema,
                                                                         String keyFieldName,
                                                                         Map<String, String> paramsMap) throws IOException {
     throw new UnsupportedOperationException("serializeRecordsToLogBlock with iterator is not yet supported for Lance format");

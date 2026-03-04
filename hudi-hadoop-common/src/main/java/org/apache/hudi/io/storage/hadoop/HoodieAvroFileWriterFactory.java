@@ -38,7 +38,6 @@ import org.apache.hudi.io.storage.HoodieOrcConfig;
 import org.apache.hudi.storage.HoodieStorage;
 import org.apache.hudi.storage.StoragePath;
 
-import org.apache.avro.Schema;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.orc.CompressionKind;
@@ -49,6 +48,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Properties;
 
+import static org.apache.hudi.common.config.HoodieStorageConfig.HFILE_WRITER_TO_ALLOW_DUPLICATES;
 import static org.apache.parquet.avro.HoodieAvroParquetSchemaConverter.getAvroSchemaConverter;
 
 public class HoodieAvroFileWriterFactory extends HoodieFileWriterFactory {
@@ -62,7 +62,7 @@ public class HoodieAvroFileWriterFactory extends HoodieFileWriterFactory {
       String instantTime, StoragePath path, HoodieConfig config, HoodieSchema schema,
       TaskContextSupplier taskContextSupplier) throws IOException {
     boolean populateMetaFields = config.getBooleanOrDefault(HoodieTableConfig.POPULATE_META_FIELDS);
-    HoodieAvroWriteSupport writeSupport = getHoodieAvroWriteSupport(schema.getAvroSchema(), config, enableBloomFilter(populateMetaFields, config));
+    HoodieAvroWriteSupport writeSupport = getHoodieAvroWriteSupport(schema, config, enableBloomFilter(populateMetaFields, config));
 
     String compressionCodecName = config.getStringOrDefault(HoodieStorageConfig.PARQUET_COMPRESSION_CODEC_NAME);
     // Support PARQUET_COMPRESSION_CODEC_NAME is ""
@@ -81,7 +81,7 @@ public class HoodieAvroFileWriterFactory extends HoodieFileWriterFactory {
 
   protected HoodieFileWriter newParquetFileWriter(
       OutputStream outputStream, HoodieConfig config, HoodieSchema schema) throws IOException {
-    HoodieAvroWriteSupport writeSupport = getHoodieAvroWriteSupport(schema.getAvroSchema(), config, false);
+    HoodieAvroWriteSupport writeSupport = getHoodieAvroWriteSupport(schema, config, false);
     HoodieParquetConfig<HoodieAvroWriteSupport> parquetConfig = new HoodieParquetConfig<>(writeSupport,
         CompressionCodecName.fromConf(config.getString(HoodieStorageConfig.PARQUET_COMPRESSION_CODEC_NAME)),
         config.getInt(HoodieStorageConfig.PARQUET_BLOCK_SIZE),
@@ -102,8 +102,10 @@ public class HoodieAvroFileWriterFactory extends HoodieFileWriterFactory {
             config.getString(HoodieStorageConfig.HFILE_COMPRESSION_ALGORITHM_NAME)),
         config.getInt(HoodieStorageConfig.HFILE_BLOCK_SIZE),
         config.getLong(HoodieStorageConfig.HFILE_MAX_FILE_SIZE),
-        HoodieAvroHFileReaderImplBase.KEY_FIELD_NAME, filter);
-    return new HoodieAvroHFileWriter(instantTime, path, hfileConfig, schema.getAvroSchema(), taskContextSupplier, config.getBoolean(HoodieTableConfig.POPULATE_META_FIELDS));
+        HoodieAvroHFileReaderImplBase.KEY_FIELD_NAME,
+        filter,
+        config.getBoolean(HFILE_WRITER_TO_ALLOW_DUPLICATES));
+    return new HoodieAvroHFileWriter(instantTime, path, hfileConfig, schema, taskContextSupplier, config.getBoolean(HoodieTableConfig.POPULATE_META_FIELDS));
   }
 
   protected HoodieFileWriter newOrcFileWriter(
@@ -115,15 +117,15 @@ public class HoodieAvroFileWriterFactory extends HoodieFileWriterFactory {
         config.getInt(HoodieStorageConfig.ORC_STRIPE_SIZE),
         config.getInt(HoodieStorageConfig.ORC_BLOCK_SIZE),
         config.getLong(HoodieStorageConfig.ORC_FILE_MAX_SIZE), filter);
-    return new HoodieAvroOrcWriter(instantTime, path, orcConfig, schema.getAvroSchema(), taskContextSupplier);
+    return new HoodieAvroOrcWriter(instantTime, path, orcConfig, schema, taskContextSupplier);
   }
 
-  private HoodieAvroWriteSupport getHoodieAvroWriteSupport(Schema schema,
+  private HoodieAvroWriteSupport getHoodieAvroWriteSupport(HoodieSchema schema,
                                                            HoodieConfig config, boolean enableBloomFilter) {
     Option<BloomFilter> filter = enableBloomFilter ? Option.of(createBloomFilter(config)) : Option.empty();
     return (HoodieAvroWriteSupport) ReflectionUtils.loadClass(
         config.getStringOrDefault(HoodieStorageConfig.HOODIE_AVRO_WRITE_SUPPORT_CLASS),
-        new Class<?>[] {MessageType.class, Schema.class, Option.class, Properties.class},
+        new Class<?>[] {MessageType.class, HoodieSchema.class, Option.class, Properties.class},
         getAvroSchemaConverter(storage.getConf().unwrapAs(Configuration.class)).convert(schema), schema, filter, config.getProps());
   }
 }
