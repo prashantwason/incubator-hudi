@@ -1266,6 +1266,35 @@ public class FlinkOptions extends HoodieConfig {
           .withDescription("Kafka topic name for storing topic metadata along with offsets");
 
   // ------------------------------------------------------------------------
+  //  Stream write commit hook options
+  // ------------------------------------------------------------------------
+
+  /**
+   * Class name of {@code org.apache.hudi.sink.extensions.StreamWriteCommitHook} implementation.
+   *
+   * <p>If configured and successfully loaded, legacy Athena/Kafka offset logic will be skipped in favor of the hook.
+   */
+  @AdvancedConfig
+  public static final ConfigOption<String> STREAM_WRITE_COMMIT_HOOK_CLASS = ConfigOptions
+      .key("hoodie.stream.write.commit.hook.class")
+      .stringType()
+      .noDefaultValue()
+      .withDescription("Fully qualified class name of StreamWriteCommitHook implementation to load reflectively.");
+
+  /**
+   * Hook implementation config carrier.
+   *
+   * <p>This is intentionally opaque to hoodie-oss; the hook implementation owns the parsing and semantics.
+   */
+  @AdvancedConfig
+  public static final ConfigOption<String> STREAM_WRITE_COMMIT_HOOK_CONFIG = ConfigOptions
+      .key("hoodie.stream.write.commit.hook.config")
+      .stringType()
+      .noDefaultValue()
+      .withDescription("Opaque hook config string passed via Flink Configuration. "
+          + "Implementations may parse this (e.g., JSON) for their private configs.");
+
+  // ------------------------------------------------------------------------
   //  Hive Sync Options
   // ------------------------------------------------------------------------
 

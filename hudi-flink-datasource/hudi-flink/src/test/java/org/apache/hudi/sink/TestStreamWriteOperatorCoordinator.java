@@ -42,6 +42,8 @@ import org.apache.hudi.metadata.HoodieTableMetadata;
 import org.apache.hudi.sink.muttley.AthenaIngestionGateway;
 import org.apache.hudi.sink.event.Correspondent;
 import org.apache.hudi.sink.event.WriteMetadataEvent;
+import org.apache.hudi.sink.extensions.StreamWriteCommitHook;
+import org.apache.hudi.sink.extensions.TestStreamWriteCommitHook;
 import org.apache.hudi.sink.utils.CoordinationResponseSerDe;
 import org.apache.hudi.sink.utils.EventBuffers;
 import org.apache.hudi.sink.utils.MockCoordinatorExecutor;
@@ -75,12 +77,24 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
+import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
+import org.mockito.MockedConstruction;
+
 import static org.apache.hudi.common.testutils.HoodieTestUtils.INSTANT_GENERATOR;
 import static org.apache.hudi.index.HoodieIndex.IndexType.GLOBAL_RECORD_LEVEL_INDEX;
+import static org.apache.hudi.util.StreamerUtil.FLINK_CHECKPOINT_ID;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.when;
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
@@ -669,6 +683,66 @@ public class TestStreamWriteOperatorCoordinator {
     assertTrue(inflightInstants.containsKey(2L));
     assertEquals(instant1, inflightInstants.get(1L));
     assertEquals(instant2, inflightInstants.get(2L));
+  }
+
+  /**
+   * Verifies the commit hook lifecycle when a hook class is configured: init once at start,
+   * then per commit getCommitExtraMetadata (pre-commit) and postCommit (post-commit) in order.
+   * Runs two commits and asserts the hook methods are called in the expected order.
+   */
+  @Test
+  public void testCommitHookLifecycleWithMockConstruction() throws Exception {
+    reset();
+    Configuration conf = TestConfigurations.getDefaultConf(tempFile.getAbsolutePath());
+    conf.setString(FlinkOptions.STREAM_WRITE_COMMIT_HOOK_CLASS, TestStreamWriteCommitHook.NoOpHook.class.getName());
+
+    try (MockedConstruction<TestStreamWriteCommitHook.NoOpHook> construction =
+        mockConstruction(TestStreamWriteCommitHook.NoOpHook.class, (mock, context) -> {
+          when(mock.getCommitExtraMetadata(anyLong())).thenReturn(Collections.emptyMap());
+        })) {
+
+      OperatorCoordinator.Context context = new MockOperatorCoordinatorContext(new OperatorID(), 2);
+      StreamWriteOperatorCoordinator coord = new StreamWriteOperatorCoordinator(conf, context);
+      coord.start();
+      coord.setExecutor(new MockCoordinatorExecutor(context));
+      coord.setInstantRequestExecutor(new MockCoordinatorExecutor(context));
+
+      assertEquals(1, construction.constructed().size(), "Hook should be constructed once by loader");
+      StreamWriteCommitHook hook = construction.constructed().get(0);
+
+      // First commit: request instant for checkpointId=1, then commit via notifyCheckpointComplete(2)
+      // (commitInstants(N) commits buffers with key < N, so buffer at key=1 is committed by N=2)
+      String instant1 = requestInstantTime(coord, 1);
+      coord.handleEventFromOperator(0, createOperatorEvent(0, 1, instant1, "par1", false, true, 0.1));
+      coord.handleEventFromOperator(1, createOperatorEvent(1, 1, instant1, "par2", false, false, 0.2));
+      coord.notifyCheckpointComplete(2);
+
+      // Second commit: request instant for checkpointId=2, committed by notifyCheckpointComplete(3)
+      String instant2 = requestInstantTime(coord, 2);
+      coord.handleEventFromOperator(0, createOperatorEvent(0, 2, instant2, "par1", false, true, 0.1));
+      coord.handleEventFromOperator(1, createOperatorEvent(1, 2, instant2, "par2", false, false, 0.2));
+      coord.notifyCheckpointComplete(3);
+
+      // Verify lifecycle order: init once (with exact conf), then for each commit getCommitExtraMetadata then postCommit; finally close
+      ArgumentCaptor<StreamWriteCommitHook.PostCommitContext> postCommitCaptor =
+          ArgumentCaptor.forClass(StreamWriteCommitHook.PostCommitContext.class);
+      InOrder inOrder = inOrder(hook);
+      inOrder.verify(hook).init(same(conf));
+      inOrder.verify(hook).getCommitExtraMetadata(eq(1L));
+      inOrder.verify(hook).postCommit(postCommitCaptor.capture());
+      inOrder.verify(hook).getCommitExtraMetadata(eq(2L));
+      inOrder.verify(hook).postCommit(postCommitCaptor.capture());
+
+      List<StreamWriteCommitHook.PostCommitContext> postCommitContexts = postCommitCaptor.getAllValues();
+      assertEquals(2, postCommitContexts.size());
+      assertEquals(1L, postCommitContexts.get(0).getCheckpointId(), "First postCommit checkpointId");
+      assertEquals(instant1, postCommitContexts.get(0).getInstant(), "First postCommit instant");
+      assertEquals(2L, postCommitContexts.get(1).getCheckpointId(), "Second postCommit checkpointId");
+      assertEquals(instant2, postCommitContexts.get(1).getInstant(), "Second postCommit instant");
+
+      coord.close();
+      inOrder.verify(hook).close();
+    }
   }
 
   // -------------------------------------------------------------------------

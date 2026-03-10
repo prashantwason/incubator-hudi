@@ -39,6 +39,8 @@ import org.apache.hudi.sink.common.AbstractStreamWriteFunction;
 import org.apache.hudi.sink.event.Correspondent;
 import org.apache.hudi.sink.event.WriteMetadataEvent;
 import org.apache.hudi.sink.validator.FlinkValidatorUtils;
+import org.apache.hudi.sink.extensions.StreamWriteCommitHook;
+import org.apache.hudi.sink.extensions.StreamWriteCommitHookLoader;
 import org.apache.hudi.sink.utils.CoordinationResponseSerDe;
 import org.apache.hudi.sink.utils.EventBuffers;
 import org.apache.hudi.sink.utils.EventBuffers.EventBuffer;
@@ -201,6 +203,14 @@ public class StreamWriteOperatorCoordinator
   private ClientIds clientIds;
 
   /**
+   * Optional extension hook for Flink streaming commits.
+   *
+   * <p>If present, legacy Athena/Kafka offset logic is skipped in favor of the hook.
+   */
+  @Nullable
+  private transient StreamWriteCommitHook commitHook;
+
+  /**
    * Constructs a StreamingSinkOperatorCoordinator.
    *
    * @param conf    The config options
@@ -253,6 +263,8 @@ public class StreamWriteOperatorCoordinator
         initClientIds(conf);
       }
       restoreEvents();
+      // load commit hook if configured
+      this.commitHook = StreamWriteCommitHookLoader.load(conf);
     } catch (Throwable throwable) {
       log.error("Failed to start operator coordinator.", throwable);
       context.failJob(throwable);
@@ -282,6 +294,9 @@ public class StreamWriteOperatorCoordinator
     this.eventBuffers = null;
     if (this.clientIds != null) {
       this.clientIds.close();
+    }
+    if (commitHook != null) {
+      commitHook.close();
     }
   }
 
@@ -642,7 +657,14 @@ public class StreamWriteOperatorCoordinator
     // commit and error logging
     HashMap<String, String> checkpointCommitMetadata = new HashMap<>();
     StreamerUtil.addFlinkCheckpointIdIntoMetaData(conf, checkpointCommitMetadata, checkpointId);
-    StreamerUtil.addKafkaOffsetMetaData(conf, checkpointCommitMetadata, checkpointId);
+    if (commitHook != null) {
+      Map<String, String> extraMetadata = commitHook.getCommitExtraMetadata(checkpointId);
+      if (extraMetadata != null) {
+        checkpointCommitMetadata.putAll(extraMetadata);
+      }
+    } else {
+      StreamerUtil.addKafkaOffsetMetaData(conf, checkpointCommitMetadata, checkpointId);
+    }
     final Map<String, List<String>> partitionToReplacedFileIds = tableState.isOverwrite
         ? writeClient.getPartitionToReplacedFileIds(tableState.operationType, dataWriteResults)
         : Collections.emptyMap();
@@ -657,6 +679,11 @@ public class StreamWriteOperatorCoordinator
     if (success) {
       this.eventBuffers.reset(checkpointId);
       log.info("Commit instant [{}] success!", instant);
+      if (commitHook != null) {
+        commitHook.postCommit(
+            new StreamWriteCommitHook.PostCommitContext(
+                checkpointId, instant, allWriteStatus, metaClient));
+      }
     } else {
       throw new HoodieException(String.format("Commit instant [%s] failed!", instant));
     }
