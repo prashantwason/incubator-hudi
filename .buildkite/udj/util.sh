@@ -480,28 +480,13 @@ set_commands() {
   fi
 }
 
-# install JDK 11 (required for Spark 3)
-echo "Installing JDK 11 from https://cdn.azul.com/zulu/bin/zulu11.66.15-ca-jdk11.0.20-linux_x64.tar.gz"
-wget --no-verbose https://cdn.azul.com/zulu/bin/zulu11.66.15-ca-jdk11.0.20-linux_x64.tar.gz
-tar xzf zulu11.66.15-ca-jdk11.0.20-linux_x64.tar.gz
-export JRE_11_PATH=`pwd`/zulu11.66.15-ca-jdk11.0.20-linux_x64/bin/java
-export JRE_11_DIR=`pwd`/zulu11.66.15-ca-jdk11.0.20-linux_x64/bin/
-echo "Set JRE_11 executable path to $JRE_11_PATH"
-echo "Set JRE_11 directory to $JRE_11_DIR"
-cp "$PROJECT_ROOT/.buildkite/settings.xml" "/home/udocker/.m2/settings.xml"
+# Use JDK 11 and MVN 3.6.3
+export JAVA_HOME=$JAVA_11_HOME
+export JDK_HOME=$JAVA_HOME
+export PATH=$JAVA_HOME/bin:$PATH
+export MAVEN_HOME=$MAVEN_3_6_3_HOME
+export PATH=$MAVEN_HOME/bin:$PATH
 
-export JAVA_HOME=`pwd`/zulu11.66.15-ca-jdk11.0.20-linux_x64
-export PATH="$JAVA_HOME/bin/:$PATH"
-
-$JRE_11_PATH -version
 javac --version
 java --version
-
-# install mvn 3.6.3 (REMOVE when the buildkite image is updated)
-wget --no-verbose https://archive.apache.org/dist/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz
-tar xzf apache-maven-3.6.3-bin.tar.gz
-export MVN_PATH=`pwd`/apache-maven-3.6.3
-export PATH="$MVN_PATH/bin/:$PATH"
 mvn --version
-
-
