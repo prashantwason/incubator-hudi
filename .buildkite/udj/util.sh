@@ -33,16 +33,15 @@ check_jars_correctness()
   fi
   echo "Validation for unwanted avsc files is successful."
 
-  RES=`jar tf $SPARK_BUNDLE | grep \.class$ | grep  ^org/apache/hudi/ -v | grep ^com/uber/hoodie -v | grep ^org/apache/spark -v | grep ^shaded -v | wc -l`
+  RES=`jar tf $SPARK_BUNDLE | grep \.class$ | grep  ^org/apache/hudi/ -v | grep ^com/uber/hoodie -v | grep ^org/apache/spark -v | grep ^shaded -v | grep ^META-INF/versions -v | grep ^org/apache/parquet/Hoodie -v | wc -l`
   if [ $? -ne 0 ] || [ $RES -ne 0 ]
   then
     echo "Validation for shading classes in spark bundle failed."
     echo "$RES classes are not shaded"
+    jar tf $SPARK_BUNDLE | grep \.class$ | grep  ^org/apache/hudi/ -v | grep ^com/uber/hoodie -v | grep ^org/apache/spark -v | grep ^shaded -v | grep ^META-INF/versions -v | grep ^org/apache/parquet/Hoodie -v
     return 1
   fi
   echo "Validation for shading classes in spark bundle is successful."
-
-  echo "Validation for shading classes in spark bundle is ignored for now."
   RES=`jar tf $SPARK_BUNDLE | grep hbase-default.xml | wc -l`
   if [ $? -ne 0 ] || [ $RES -ne 0 ]
   then
@@ -75,20 +74,78 @@ check_jars_correctness()
 #  done
 #  echo "Validation count for shaded metrics classes for both presto and hive bundles is successful."
 
-  RES=`find packaging | grep \.jar$ | xargs -n 1 jar tf | grep "org/apache/log4j/.*\\.class" | wc -l`
-  if [ $RES -ne 0 ]
-  then
-    echo "Across all package .jar files, there are $RES occurrences of class names having 'log4j' in them"
+  # Check for vulnerable Log4j 1.x classes in all bundle jars.
+  # The safe Log4j 2.x bridge (log4j-1.2-api) also ships org/apache/log4j/ classes
+  # but always alongside org/apache/logging/log4j/ (Log4j 2.x core).
+  # A jar with org/apache/log4j/ but WITHOUT org/apache/logging/log4j/ has the real Log4j 1.x.
+  for jar in `find packaging -name "*.jar" | grep -v sources | grep -v original | grep -v javadoc`; do
+    log4j1_count=`jar tf "$jar" | grep -c "org/apache/log4j/.*\\.class" || true`
+    if [ "$log4j1_count" -gt 0 ]; then
+      log4j2_count=`jar tf "$jar" | grep -c "org/apache/logging/log4j/.*\\.class" || true`
+      if [ "$log4j2_count" -eq 0 ]; then
+        echo "Vulnerable Log4j 1.x detected in $jar ($log4j1_count classes, no Log4j 2.x bridge)"
+        return 1
+      fi
+    fi
+  done
+  echo "Validation for no vulnerable Log4j 1.x jars is successful."
+
+  # Validate that bundle JARs do not expose shaded Hudi modules as transitive dependencies.
+  # Each bundle shades certain Hudi modules (with Avro relocation) into a fat JAR. If the
+  # published POM still lists any of those shaded modules as dependencies, consumers will
+  # pull in unshaded copies alongside the bundle, causing AbstractMethodError at runtime
+  # due to relocated vs non-relocated Avro types in method signatures.
+  #
+  # For each bundle's dependency-reduced-pom.xml, we extract which Hudi modules are in its
+  # shade artifactSet, then verify none of them appear as dependencies in the published POM.
+  LEAKED=$(find packaging -name "dependency-reduced-pom.xml" -path "*/hudi-*bundle*/target/*" 2>/dev/null \
+    | xargs python3 -c "
+import xml.etree.ElementTree as ET, sys
+NS = 'http://maven.apache.org/POM/4.0.0'
+ns = {'m': NS}
+failed = False
+for pom_path in sys.argv[1:]:
+    tree = ET.parse(pom_path)
+    root = tree.getroot()
+    # Collect shaded hudi modules from the top-level shade artifactSet (not profile-gated)
+    shaded = set()
+    for plugin in root.findall('.//m:build/m:plugins/m:plugin', ns):
+        aid = plugin.find('m:artifactId', ns)
+        if aid is not None and aid.text == 'maven-shade-plugin':
+            for inc in plugin.iter('{%s}include' % NS):
+                text = inc.text or ''
+                if text.startswith('org.apache.hudi:'):
+                    shaded.add(text.split(':')[1])
+    if not shaded:
+        continue
+    # Check only top-level dependencies (not profile deps which are conditionally activated)
+    deps_elem = root.find('m:dependencies', ns)
+    if deps_elem is None:
+        continue
+    for dep in deps_elem.findall('m:dependency', ns):
+        aid = dep.find('m:artifactId', ns)
+        gid = dep.find('m:groupId', ns)
+        if aid is not None and gid is not None and gid.text == 'org.apache.hudi' and aid.text in shaded:
+            bundle = pom_path.replace('packaging/', '').split('/target/')[0]
+            print(f'{bundle}: leaked shaded module {aid.text}')
+            failed = True
+sys.exit(1 if failed else 0)
+")
+  if [ $? -ne 0 ]; then
+    echo "FAILED: Shaded modules found as dependencies in bundle published POMs:"
+    echo "$LEAKED"
+    echo "This will cause unshaded JARs to leak onto the classpath and may cause AbstractMethodError."
     return 1
   fi
-  echo "Validation for zero occurrences of log4j jar is successful."
+  echo "Validation for no leaked shaded modules in all bundles is successful."
 
   return 0
 }
 
 check_validation() {
   # Check if spark bundle is correctly shaded
-  RES=check_jars_correctness
+  check_jars_correctness
+  RES=$?
   if [ $RES -ne 0 ]
   then
     echo "Validation for jars correctness failed."

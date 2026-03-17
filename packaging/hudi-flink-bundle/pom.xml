@@ -275,12 +275,51 @@
           <artifactId>guava</artifactId>
           <groupId>com.google.guava</groupId>
         </exclusion>
+        <exclusion>
+          <groupId>org.apache.hudi</groupId>
+          <artifactId>hudi-hadoop-common</artifactId>
+        </exclusion>
       </exclusions>
     </dependency>
     <dependency>
       <groupId>org.apache.hudi</groupId>
       <artifactId>hudi-aws</artifactId>
       <version>${project.version}</version>
+      <exclusions>
+        <!-- hudi-aws is NOT in the shade artifactSet, so it stays in the published POM.
+             All its transitive Hudi deps are already shaded into this bundle with Avro
+             relocation. Without these exclusions, unshaded copies of these JARs leak
+             into the classpath, causing AbstractMethodError due to relocated vs
+             non-relocated Avro types in method signatures. -->
+        <exclusion>
+          <groupId>org.apache.hudi</groupId>
+          <artifactId>hudi-common</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hudi</groupId>
+          <artifactId>hudi-client-common</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hudi</groupId>
+          <artifactId>hudi-hadoop-common</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hudi</groupId>
+          <artifactId>hudi-hadoop-mr</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hudi</groupId>
+          <artifactId>hudi-hive-sync</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hudi</groupId>
+          <artifactId>hudi-sync-common</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hudi</groupId>
+          <artifactId>hudi-timeline-service</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.apache.hudi</groupId>
@@ -312,6 +351,10 @@
           <artifactId>guava</artifactId>
           <groupId>com.google.guava</groupId>
         </exclusion>
+        <exclusion>
+          <groupId>org.apache.hudi</groupId>
+          <artifactId>hudi-hadoop-common</artifactId>
+        </exclusion>
       </exclusions>
     </dependency>
     <dependency>
@@ -322,6 +365,10 @@
         <exclusion>
           <artifactId>guava</artifactId>
           <groupId>com.google.guava</groupId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hudi</groupId>
+          <artifactId>hudi-hadoop-common</artifactId>
         </exclusion>
       </exclusions>
     </dependency>
@@ -337,6 +384,10 @@
         <exclusion>
           <artifactId>guava</artifactId>
           <groupId>com.google.guava</groupId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hudi</groupId>
+          <artifactId>hudi-hadoop-common</artifactId>
         </exclusion>
       </exclusions>
     </dependency>

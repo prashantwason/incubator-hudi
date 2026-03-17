@@ -201,6 +201,70 @@
                   <pattern>com.uber.m3.</pattern>
                   <shadedPattern>org.apache.hudi.com.uber.m3.</shadedPattern>
                 </relocation>
+                <relocation>
+                  <pattern>com.fasterxml.jackson.datatype.jsr310.</pattern>
+                  <shadedPattern>org.apache.hudi.com.fasterxml.jackson.datatype.jsr310.</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>com.github.davidmoten.</pattern>
+                  <shadedPattern>org.apache.hudi.com.github.davidmoten.</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>org.davidmoten.</pattern>
+                  <shadedPattern>org.apache.hudi.org.davidmoten.</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>com.google.thirdparty.</pattern>
+                  <shadedPattern>org.apache.hudi.com.google.thirdparty.</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>com.github.benmanes.caffeine.</pattern>
+                  <shadedPattern>org.apache.hudi.com.github.benmanes.caffeine.</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>com.lmax.disruptor.</pattern>
+                  <shadedPattern>org.apache.hudi.com.lmax.disruptor.</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>com.twitter.chill.</pattern>
+                  <shadedPattern>org.apache.hudi.com.twitter.chill.</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>io.airlift.compress.</pattern>
+                  <shadedPattern>org.apache.hudi.io.airlift.compress.</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>io.javalin.</pattern>
+                  <shadedPattern>org.apache.hudi.io.javalin.</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>io.prometheus.</pattern>
+                  <shadedPattern>org.apache.hudi.io.prometheus.</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>kotlin.</pattern>
+                  <shadedPattern>org.apache.hudi.kotlin.</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>org.apache.curator.</pattern>
+                  <shadedPattern>org.apache.hudi.org.apache.curator.</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>org.apache.parquet.avro.</pattern>
+                  <shadedPattern>org.apache.hudi.org.apache.parquet.avro.</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>org.apache.parquet.conf.</pattern>
+                  <shadedPattern>org.apache.hudi.org.apache.parquet.conf.</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>org.apache.parquet.schema.</pattern>
+                  <shadedPattern>org.apache.hudi.org.apache.parquet.schema.</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>org.rocksdb.</pattern>
+                  <shadedPattern>org.apache.hudi.org.rocksdb.</shadedPattern>
+                </relocation>
               </relocations>
               <filters>
                 <filter>
@@ -210,7 +274,9 @@
                     <exclude>META-INF/*.DSA</exclude>
                     <exclude>META-INF/*.RSA</exclude>
                     <exclude>META-INF/services/javax.*</exclude>
+                    <exclude>META-INF/services/com.fasterxml.*</exclude>
                     <exclude>**/*.proto</exclude>
+                    <exclude>*.avsc</exclude>
                   </excludes>
                 </filter>
               </filters>
