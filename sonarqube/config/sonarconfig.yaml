@@ -1,0 +1,120 @@
+schema:
+  version: 1
+
+sonarw_output_dir: 'sonarqube' # Non-overridable
+
+connection: # Non-overridable
+  sonarqube:
+    production:
+      udg_path: 'udg://sonarqube-udg'
+      zones:
+        - 'dca11'
+        - 'dca4'
+    staging:
+      udg_path: 'udg://sonarqube-udg-staging'
+      zones:
+        - 'dca11'
+        - 'dca4'
+
+sonarqube:
+  approval_ticket: "https://t3.uberinternal.com/browse/SONARQUBE-985"
+  sources:
+    - "**/*.java"
+#    - "**/*.scala"
+  source_exclusions:
+    - "**/src/test/**/*"
+    - "hudi-aws/**/*"
+    - "hudi-examples/**/*"
+    - "hudi-flink-datasource/**/*"
+    - "hudi-client/hudi-flink-client/**/*"
+    - "hudi-kafka-connect/**/*"
+    - "hudi-gcp/**/*"
+    - "hudi-integ-test/**/*"
+    - "hudi-sync/hudi-adb-sync/**/*"
+    - "hudi-sync/hudi-datahub-sync/**/*"
+    - "hudi-spark-datasource/hudi-spark/src/main/resources/**"
+    - "hudi-spark-datasource/hudi-spark/src/main/scala/org/apache/spark/sql/hudi/runner/**"
+    - "hudi-spark-datasource/hudi-spark2/**/*"
+    - "hudi-spark-datasource/hudi-spark2-common/**/*"
+    - "hudi-spark-datasource/hudi-spark3.0.x/**/*"
+    - "hudi-spark-datasource/hudi-spark3.1.x/**/*"
+    - "hudi-spark-datasource/hudi-spark3.2x/**/*"
+    - "hudi-platform-service/hudi-metaserver/**/*"
+    - "packaging/**/*"
+    - "*.py"
+    - "**/target/**/*"
+    - "hudi-spark-datasource/hudi-spark3.3.x/target/generated-sources/**/*"
+    - "hudi-spark-datasource/hudi-spark/target/generated-sources/**/*"
+  static_analysis: # Overridable (addition disallowed)
+    # Each language has 2 options:
+    #   (a) UberNone  - Disables static analysis and reports only code coverage
+    #   (b) UberAll   - Enables static analysis and is noisy since all the rules are enabled
+    java: UberAll
+    kotlin: UberNone
+  unit_test_coverage:
+    location: packaging/hudi-codecoverage/target/site/jacoco-aggregate/jacoco.xml    # Path to coverage file
+    exclusions:
+      file_path_patterns:                   # Overridable (extendable list)
+        - "**/src/test/**/*"
+        - "*.py"
+        # Validators for debugging/testing purposes
+        - "hudi-uber/src/main/java/com/uber/hudi/tools/validator/**/*"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/HoodieMetadataTableValidator.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/HoodieDataTableValidator.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/HoodieDropPartitionsTool.java"
+        - "hudi-uber/src/main/java/com/uber/hudi/tools/utils/HoodieToolsUtils.java"
+        # Replication Integration test tools for E2E automation testing purposes
+        - "hudi-uber/src/main/java/com/uber/hudi/tools/manager/HoodieOperationReplicationIntegTests.java"
+        # CLI wrappers over operations that are already unit tested.
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/TableSizeStats.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/HudiHiveSyncJob.java"
+        - "hudi-cli/src/main/java/org/apache/hudi/cli/commands/BootstrapCommand.java"
+        - "hudi-cli/src/main/java/org/apache/hudi/cli/commands/ClusteringCommand.java"
+        - "hudi-cli/src/main/java/org/apache/hudi/cli/commands/CompactionCommand.java"
+        - "hudi-cli/src/main/java/org/apache/hudi/cli/commands/HDFSParquetImportCommand.java"
+        - "hudi-cli/src/main/java/org/apache/hudi/cli/commands/HoodieSyncValidateCommand.java"
+        - "hudi-cli/src/main/java/org/apache/hudi/cli/commands/KerberosAuthenticationCommand.java"
+        - "hudi-cli/src/main/java/org/apache/hudi/cli/commands/MarkersCommand.java"
+        - "hudi-cli/src/main/java/org/apache/hudi/cli/HoodiePrintHelper.java"
+        - "hudi-cli/src/main/java/org/apache/hudi/cli/Main.java"
+        - "hudi-cli/src/main/java/org/apache/hudi/cli/commands/TempViewCommand.java"
+        - "hudi-cli/src/main/java/org/apache/hudi/cli/utils/CommitUtil.java"
+        - "hudi-cli/src/main/java/org/apache/hudi/cli/utils/SparkTempViewProvider.java"
+        # Untouched from OSS, not used in prod
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/HoodieCompactionAdminTool.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/HoodieRepairTool.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/HoodieSnapshotCopier.java"
+        - "hudi-uber/src/main/java/com/uber/hudi/tools/tableservice/testsuite/HoodieTableServicesTestSuite.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/HDFSParquetImporter.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/HoodieWithTimelineServer.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/perf/TimelineServerPerf.java"
+        - "hudi-client/hudi-client-common/src/main/java/org/apache/hudi/client/HoodieTableServiceManagerClient.java"
+        - "hudi-client/hudi-client-common/src/main/java/org/apache/hudi/metrics/prometheus/**/*"
+        - "hudi-client/hudi-client-common/src/main/java/org/apache/hudi/metrics/cloudwatch/**/*"
+        - "hudi-client/hudi-spark-client/src/main/java/org/apache/hudi/index/hbase/SparkHoodieHBaseIndex.java"
+        # Unused sources from OSS
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/helpers/gcs/**/*"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/callback/pulsar/**/*"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/config/PulsarSourceConfig.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/config/HiveIncrPullSourceConfig.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/HiveIncrPullSource.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/PulsarSource.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/GcsEventsSource.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/helpers/IncrSourceCloudStorageHelper.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/config/HiveSchemaProviderConfig.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/helpers/CloudStoreIngestionConfig.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/schema/SchemaRegistryProvider.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/schema/ProtoClassBasedSchemaProvider.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/schema/NullTargetSchemaRegistryProvider.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/schema/HiveSchemaProvider.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/helpers/CloudObjectsSelectorCommon.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/helpers/QueryRunner.java"
+        - "hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/helpers/CloudDataFetcher.java"
+        # Deprecated OSS classes that have no usage
+        - "hudi-cli/src/main/java/org/apache/hudi/cli/HoodiePrompt.java"
+        # Deprecated at Uber
+        - "hudi-uber/src/main/java/com/uber/hudi/table/services/HoodieSimpleTableService.java"
+        - "hudi-uber/src/main/java/com/uber/hudi/table/services/HudiCompactionService.java"
+        - "hudi-uber/src/main/java/com/uber/hudi/table/services/TableServicesExecutorJob.java"
+        - "hudi-uber/src/main/java/com/uber/hudi/config/manager/TableServicesHDFSBasedConfigManager.java"
+      file_content_patterns:
