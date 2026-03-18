@@ -33,17 +33,17 @@ check_jars_correctness()
   fi
   echo "Validation for unwanted avsc files is successful."
 
-  RES=`jar tf $SPARK_BUNDLE | grep \.class$ | grep  ^org/apache/hudi/ -v | grep ^com/uber/hoodie -v | grep ^org/apache/spark -v | grep ^shaded -v | grep ^META-INF/versions -v | grep ^org/apache/parquet/Hoodie -v | wc -l`
-  if [ $? -ne 0 ] || [ $RES -ne 0 ]
+  RES=$(jar tf "$SPARK_BUNDLE" | grep '\.class$' | grep -v -E '^(org/apache/hudi/|com/uber/hoodie|org/apache/spark|shaded|META-INF/versions|org/apache/parquet/Hoodie)' | wc -l || true)
+  if [ "$RES" -ne 0 ]
   then
     echo "Validation for shading classes in spark bundle failed."
     echo "$RES classes are not shaded"
-    jar tf $SPARK_BUNDLE | grep \.class$ | grep  ^org/apache/hudi/ -v | grep ^com/uber/hoodie -v | grep ^org/apache/spark -v | grep ^shaded -v | grep ^META-INF/versions -v | grep ^org/apache/parquet/Hoodie -v
+    jar tf "$SPARK_BUNDLE" | grep '\.class$' | grep -v -E '^(org/apache/hudi/|com/uber/hoodie|org/apache/spark|shaded|META-INF/versions|org/apache/parquet/Hoodie)'
     return 1
   fi
   echo "Validation for shading classes in spark bundle is successful."
   RES=`jar tf $SPARK_BUNDLE | grep hbase-default.xml | wc -l`
-  if [ $? -ne 0 ] || [ $RES -ne 0 ]
+  if [ $RES -ne 0 ]
   then
     echo "hbase-default.xml file is included as part of hudi-spark bundle."
     echo "$RES occurrences of hbase-default.xml found in hudi-spark bundle"
@@ -78,7 +78,7 @@ check_jars_correctness()
   # The safe Log4j 2.x bridge (log4j-1.2-api) also ships org/apache/log4j/ classes
   # but always alongside org/apache/logging/log4j/ (Log4j 2.x core).
   # A jar with org/apache/log4j/ but WITHOUT org/apache/logging/log4j/ has the real Log4j 1.x.
-  for jar in `find packaging -name "*.jar" | grep -v sources | grep -v original | grep -v javadoc`; do
+  for jar in $(find packaging -name "*.jar" | grep -v -E '(sources|original|javadoc)'); do
     log4j1_count=`jar tf "$jar" | grep -c "org/apache/log4j/.*\\.class" || true`
     if [ "$log4j1_count" -gt 0 ]; then
       log4j2_count=`jar tf "$jar" | grep -c "org/apache/logging/log4j/.*\\.class" || true`
