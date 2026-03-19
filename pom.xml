@@ -65,6 +65,7 @@
     <module>packaging/hudi-flink-bundle</module>
     <module>packaging/hudi-kafka-connect-bundle</module>
     <module>packaging/hudi-cli-bundle</module>
+    <module>packaging/hudi-codecoverage</module>
     <module>hudi-tests-common</module>
   </modules>
 
