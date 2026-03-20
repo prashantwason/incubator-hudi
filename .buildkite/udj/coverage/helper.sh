@@ -225,18 +225,26 @@ get_base_branch_sha() {
 find_coverage_sha() {
   local base_branch_sha=$1
 
-  # Get the last 7 commits from the base branch SHA, including commit messages
+  # Get the last 30 days of commits from the base branch SHA, including commit messages
   local commits
-  commits=$(git log "$base_branch_sha" --pretty=format:"%h %ci %s" --since="7 days ago" 2>/dev/null)
+  commits=$(git log "$base_branch_sha" --pretty=format:"%h %ci %s" --since="30 days ago" 2>/dev/null)
 
   echo -e "\nCommits in the order from most recent to oldest :"
   echo "$commits"
+
+  if [ -z "$commits" ]; then
+    echo "No commits found in the last 30 days from base branch SHA $base_branch_sha."
+    return 1
+  fi
+
   mkdir -p "packaging/hudi-codecoverage/target/site/jacoco-aggregate/"
   while read -r commit_line; do
+    [ -z "$commit_line" ] && continue
     local sha
     echo "Checking commit to see if coverage is available: $commit_line"
     sha=$(echo "$commit_line" | awk '{print $1}')  # Extract SHA
-    sha=$(git rev-parse --short=8 "$sha")
+    sha=$(git rev-parse --short=8 "$sha" 2>/dev/null)
+    [ -z "$sha" ] && continue
 
     valid_coverage_sha=$(has_coverage "$sha")
     if [[ $? -eq 0 ]]; then
@@ -276,13 +284,15 @@ get_valid_coverage_sha() {
 }
 
 upload_to_phab() {
-  get_valid_coverage_sha
-  if [ $? -ne 0 ]; then
-    echo "Failed to find a valid coverage SHA."
-    return 1
-  fi
   mkdir -p build/comment/phabricator-comment-code-coverage
   mkdir -p packaging/hudi-codecoverage/target/site/jacoco-aggregate/
+
+  get_valid_coverage_sha
+  if [ $? -ne 0 ]; then
+    echo "No baseline coverage found. Skipping coverage comparison."
+    echo "No baseline coverage available for comparison." > "build/comment/phabricator-comment-code-coverage/newline_coverage.md"
+    return 0
+  fi
 
   newline_coverage_file="newline_coverage.txt"
   python3 .buildkite/udj/coverage/compare_coverage_file.py "packaging/hudi-codecoverage/target/site/jacoco-aggregate/coverage_base.xml" "packaging/hudi-codecoverage/target/site/jacoco-aggregate/jacoco.xml"
