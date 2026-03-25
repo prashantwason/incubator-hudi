@@ -675,6 +675,16 @@ public class HoodieWriteConfig extends HoodieConfig {
       .markAdvanced()
       .withDocumentation("Number of heartbeat misses, before a writer is deemed not alive and all pending writes are aborted.");
 
+  public static final ConfigProperty<Boolean> CLUSTERING_BLOCK_FOR_PENDING_INGESTION = ConfigProperty
+      .key("hoodie.clustering.fail.on.pending.ingestion.during.conflict.resolution")
+      .defaultValue(false)
+      .markAdvanced()
+      .withDocumentation("Only applicable when \"hoodie.write.concurrency.mode\" is set to OCC or NBCC and the conflict "
+          + "resolution strategy (\"hoodie.write.conflict.resolution.strategy\") is set to "
+          + "PreferWriterConflictResolutionStrategy. When enabled, proactively prevents clustering from committing if "
+          + "there are any ongoing ingestion writes that have not transitioned from requested to inflight yet and have "
+          + "an active heartbeat, since ingestion may be targeting the same files and should have precedence.");
+
   public static final ConfigProperty<String> WRITE_CONCURRENCY_MODE = ConfigProperty
       .key("hoodie.write.concurrency.mode")
       .defaultValue(WriteConcurrencyMode.SINGLE_WRITER.name())
@@ -720,6 +730,13 @@ public class HoodieWriteConfig extends HoodieConfig {
       .defaultValue("false")
       .markAdvanced()
       .withDocumentation("");
+
+  public static final ConfigProperty<Boolean> CAN_IGNORE_POST_COMMIT_FAILURES = ConfigProperty
+      .key("hoodie.write.can.ignore.post.commit.failures")
+      .defaultValue(false)
+      .withAlternatives("hoodie.post.commit.failures.ignored")
+      .withDocumentation("When this config is true, any failures in post-commit operations are"
+          + " ignored and do not kill the application.");
 
   public static final ConfigProperty<String> AVRO_EXTERNAL_SCHEMA_TRANSFORMATION_ENABLE = ConfigProperty
       .key(AVRO_SCHEMA_STRING.key() + ".external.transformation")
@@ -2665,6 +2682,10 @@ public class HoodieWriteConfig extends HoodieConfig {
     return getInt(CLIENT_HEARTBEAT_NUM_TOLERABLE_MISSES);
   }
 
+  public boolean isClusteringBlockForPendingIngestion() {
+    return getBooleanOrDefault(CLUSTERING_BLOCK_FOR_PENDING_INGESTION);
+  }
+
   /**
    * File listing metadata configs.
    */
@@ -2694,6 +2715,10 @@ public class HoodieWriteConfig extends HoodieConfig {
 
   public boolean isLogCompactionEnabledOnMetadata() {
     return getBoolean(HoodieMetadataConfig.ENABLE_LOG_COMPACTION_ON_METADATA_TABLE);
+  }
+
+  public boolean isAutoDeleteMdtPartitionsEnabled() {
+    return metadataConfig.isAutoDeletePartitionsEnabled();
   }
 
   public int getGlobalRecordLevelIndexMinFileGroupCount() {
@@ -2784,6 +2809,10 @@ public class HoodieWriteConfig extends HoodieConfig {
 
   public boolean shouldBlockWritesOnSpeculativeExecution() {
     return getBoolean(BLOCK_WRITES_ON_SPECULATIVE_EXECUTION);
+  }
+
+  public boolean canIgnorePostCommitFailures() {
+    return getBoolean(CAN_IGNORE_POST_COMMIT_FAILURES);
   }
 
   /**
@@ -3455,8 +3484,18 @@ public class HoodieWriteConfig extends HoodieConfig {
       return this;
     }
 
+    public Builder withClusteringBlockForPendingIngestion(boolean enable) {
+      writeConfig.setValue(CLUSTERING_BLOCK_FOR_PENDING_INGESTION, String.valueOf(enable));
+      return this;
+    }
+
     public Builder withWriteConcurrencyMode(WriteConcurrencyMode concurrencyMode) {
       writeConfig.setValue(WRITE_CONCURRENCY_MODE, concurrencyMode.name());
+      return this;
+    }
+
+    public Builder withCanIgnorePostCommitFailures(boolean canIgnorePostCommitFailures) {
+      writeConfig.setValue(CAN_IGNORE_POST_COMMIT_FAILURES, String.valueOf(canIgnorePostCommitFailures));
       return this;
     }
 

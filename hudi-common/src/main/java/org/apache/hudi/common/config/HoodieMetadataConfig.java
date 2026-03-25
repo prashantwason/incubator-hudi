@@ -371,6 +371,14 @@ public final class HoodieMetadataConfig extends HoodieConfig {
       .withDocumentation("The current number of records are multiplied by this number when estimating the number of "
           + "file groups to create automatically. This helps account for growth in the number of records in the dataset.");
 
+  public static final ConfigProperty<Boolean> DEFER_RLI_INIT_FOR_FRESH_TABLE = ConfigProperty
+      .key(METADATA_PREFIX + ".record.level.index.defer.init")
+      .defaultValue(false)
+      .markAdvanced()
+      .sinceVersion("1.2.0")
+      .withDocumentation("When enabled, defers RLI initialization to 2nd commit for a fresh table. This should help with determining the file group "
+          + "count dynamically for Record Index (global and non-global RLI)");
+
   public static final ConfigProperty<Integer> RECORD_INDEX_MAX_PARALLELISM = ConfigProperty
       .key(METADATA_PREFIX + ".max.init.parallelism")
       .defaultValue(100000)
@@ -510,6 +518,17 @@ public final class HoodieMetadataConfig extends HoodieConfig {
           + "The value should be the name of the index to delete. You can check index names using `SHOW INDEXES` command. "
           + "The index name either starts with or matches exactly can be one of the following: "
           + StringUtils.join(Arrays.stream(MetadataPartitionType.values()).map(MetadataPartitionType::getPartitionPath).collect(Collectors.toList()), ", "));
+
+  public static final ConfigProperty<Boolean> AUTO_DELETE_PARTITIONS = ConfigProperty
+      .key(METADATA_PREFIX + ".auto.delete.partitions")
+      .defaultValue(true)
+      .markAdvanced()
+      .sinceVersion("1.2.0")
+      .withDocumentation("When enabled (default), metadata table partitions (indexes) that are disabled in the write config "
+          + "will be automatically deleted. When disabled, users must explicitly drop metadata partitions "
+          + "using the hudi-cli or DROP INDEX command. Disabling automatic deletion is recommended for production "
+          + "datasets with multiple writers to avoid accidental deletion of large metadata indexes due to "
+          + "misconfiguration.");
 
   // Range-based repartitioning configuration for metadata table lookups
   public static final ConfigProperty<Double> RANGE_REPARTITION_SAMPLING_FRACTION = ConfigProperty
@@ -677,6 +696,10 @@ public final class HoodieMetadataConfig extends HoodieConfig {
 
   public boolean isRecordLevelIndexEnabled() {
     return isEnabled() && getBooleanOrDefault(RECORD_LEVEL_INDEX_ENABLE_PROP);
+  }
+
+  public boolean shouldDeferRliInitForFreshTable() {
+    return getBooleanOrDefault(DEFER_RLI_INIT_FOR_FRESH_TABLE);
   }
 
   public List<String> getColumnsEnabledForColumnStatsIndex() {
@@ -925,6 +948,10 @@ public final class HoodieMetadataConfig extends HoodieConfig {
     return getBooleanOrDefault(FAIL_ON_TABLE_SERVICE_FAILURES);
   }
 
+  public boolean isAutoDeletePartitionsEnabled() {
+    return getBooleanOrDefault(AUTO_DELETE_PARTITIONS);
+  }
+
   /**
    * Checks if a specific metadata index is marked for dropping based on the metadata configuration.
    * NOTE: Only applicable for secondary indexes (SI) or expression indexes (EI).
@@ -1099,6 +1126,11 @@ public final class HoodieMetadataConfig extends HoodieConfig {
       return this;
     }
 
+    public Builder withDeferRliInitializationForFreshTable(boolean deferRliInitializationForFreshTable) {
+      metadataConfig.setValue(DEFER_RLI_INIT_FOR_FRESH_TABLE, String.valueOf(deferRliInitializationForFreshTable));
+      return this;
+    }
+
     public Builder withEnableGlobalRecordLevelIndex(boolean enabled) {
       metadataConfig.setValue(GLOBAL_RECORD_LEVEL_INDEX_ENABLE_PROP, String.valueOf(enabled));
       return this;
@@ -1112,6 +1144,12 @@ public final class HoodieMetadataConfig extends HoodieConfig {
     public Builder withRecordIndexFileGroupCount(int minCount, int maxCount) {
       metadataConfig.setValue(GLOBAL_RECORD_LEVEL_INDEX_MIN_FILE_GROUP_COUNT_PROP, String.valueOf(minCount));
       metadataConfig.setValue(GLOBAL_RECORD_LEVEL_INDEX_MAX_FILE_GROUP_COUNT_PROP, String.valueOf(maxCount));
+      return this;
+    }
+
+    public Builder withPartitionedRecordIndexFileGroupCount(int minCount, int maxCount) {
+      metadataConfig.setValue(RECORD_LEVEL_INDEX_MIN_FILE_GROUP_COUNT_PROP, String.valueOf(minCount));
+      metadataConfig.setValue(RECORD_LEVEL_INDEX_MAX_FILE_GROUP_COUNT_PROP, String.valueOf(maxCount));
       return this;
     }
 
@@ -1244,6 +1282,11 @@ public final class HoodieMetadataConfig extends HoodieConfig {
 
     public Builder setFailOnTableServiceFailures(boolean failOnTableServiceFailures) {
       metadataConfig.setValue(FAIL_ON_TABLE_SERVICE_FAILURES, String.valueOf(failOnTableServiceFailures));
+      return this;
+    }
+
+    public Builder withAutoDeletePartitions(boolean autoDeletePartitions) {
+      metadataConfig.setValue(AUTO_DELETE_PARTITIONS, String.valueOf(autoDeletePartitions));
       return this;
     }
 

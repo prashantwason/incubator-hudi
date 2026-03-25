@@ -253,6 +253,197 @@ public class TestHoodieContinuousSplitEnumerator {
         "Split should be added back to provider");
   }
 
+  /**
+   * Verify that when pending splits exceed maxPendingSplits (READ_SPLITS_LIMIT), discovery
+   * is paused and the enumerator position is NOT advanced.
+   * This ensures that after a pause, the next scan resumes from the correct instant.
+   */
+  @Test
+  public void testReadSplitsLimitPositionPreservedWhenDiscoveryIsPaused() throws Exception {
+    // Use a small maxPendingSplits to make it easy to exceed
+    Configuration conf = new Configuration();
+    conf.set(FlinkOptions.PATH, "/tmp/test");
+    conf.set(FlinkOptions.READ_STREAMING_CHECK_INTERVAL, 1);
+    HoodieScanContext limitedScanContext = HoodieScanContext.builder()
+        .conf(conf)
+        .path(new StoragePath("/tmp/test"))
+        .rowType(TestConfigurations.ROW_TYPE)
+        .startInstant("20231201000000000")
+        .maxPendingSplits(2)
+        .build();
+
+    String knownOffset = "20231201060000000";
+    HoodieSplitEnumeratorState initialState = new HoodieSplitEnumeratorState(
+        Collections.emptyList(),
+        Option.of("20231201000000000"),
+        Option.of(knownOffset));
+
+    // Fill provider with 3 splits, exceeding the limit of 2
+    splitProvider.onDiscoveredSplits(Arrays.asList(split1, split2, createTestSplit(3, "file3")));
+
+    // Configure discover to return new splits — but they should never be reached
+    splitDiscover.setNextBatch(new HoodieContinuousSplitBatch(
+        Collections.singletonList(createTestSplit(4, "file4")), "20231201000000000", "20231201120000000"));
+
+    enumerator = new HoodieContinuousSplitEnumerator(
+        TABLE_NAME, context, splitProvider, splitDiscover, limitedScanContext, Option.of(initialState));
+    enumerator.start();
+    context.executeAsyncCallbacks();
+
+    // Position must remain at knownOffset; discovery was paused and returned EMPTY (no new offset)
+    HoodieSplitEnumeratorState state = enumerator.snapshotState(1L);
+    assertTrue(state.getLastEnumeratedInstantOffset().isPresent(),
+        "Position offset must not be cleared when discovery is paused by READ_SPLITS_LIMIT");
+    assertEquals(knownOffset, state.getLastEnumeratedInstantOffset().get(),
+        "Position offset must stay at last consumed offset when paused by READ_SPLITS_LIMIT");
+  }
+
+  /**
+   * Verify that discovery proceeds when pending splits are exactly at the threshold (not exceeding).
+   * The condition is strictly greater-than, so pending == limit should still allow discovery.
+   */
+  @Test
+  public void testReadSplitsLimitDiscoveryProceedsAtExactThreshold() throws Exception {
+    Configuration conf = new Configuration();
+    conf.set(FlinkOptions.PATH, "/tmp/test");
+    conf.set(FlinkOptions.READ_STREAMING_CHECK_INTERVAL, 1);
+    HoodieScanContext limitedScanContext = HoodieScanContext.builder()
+        .conf(conf)
+        .path(new StoragePath("/tmp/test"))
+        .rowType(TestConfigurations.ROW_TYPE)
+        .startInstant("20231201000000000")
+        .maxPendingSplits(2)
+        .build();
+
+    // Add exactly 2 splits — equal to limit, should NOT pause
+    splitProvider.onDiscoveredSplits(Arrays.asList(split1, split2));
+
+    splitDiscover.setNextBatch(new HoodieContinuousSplitBatch(
+        Collections.singletonList(createTestSplit(3, "file3")), "20231201000000000", "20231201120000000"));
+
+    enumerator = new HoodieContinuousSplitEnumerator(
+        TABLE_NAME, context, splitProvider, splitDiscover, limitedScanContext, Option.empty());
+    enumerator.start();
+    context.executeAsyncCallbacks();
+
+    // One new split should have been discovered and added
+    assertEquals(3, splitProvider.pendingSplitCount(),
+        "Discovery should proceed when pending splits equal (not exceed) the limit");
+  }
+
+  /**
+   * Verify that discovery pauses when pending splits exceed the threshold by exactly one.
+   */
+  @Test
+  public void testReadSplitsLimitDiscoveryPausedExceedingByOne() throws Exception {
+    Configuration conf = new Configuration();
+    conf.set(FlinkOptions.PATH, "/tmp/test");
+    conf.set(FlinkOptions.READ_STREAMING_CHECK_INTERVAL, 1);
+    HoodieScanContext limitedScanContext = HoodieScanContext.builder()
+        .conf(conf)
+        .path(new StoragePath("/tmp/test"))
+        .rowType(TestConfigurations.ROW_TYPE)
+        .startInstant("20231201000000000")
+        .maxPendingSplits(2)
+        .build();
+
+    // Add 3 splits — exceeds limit by 1
+    splitProvider.onDiscoveredSplits(Arrays.asList(split1, split2, createTestSplit(3, "file3")));
+
+    splitDiscover.setNextBatch(new HoodieContinuousSplitBatch(
+        Collections.singletonList(createTestSplit(4, "file4")), "20231201000000000", "20231201120000000"));
+
+    enumerator = new HoodieContinuousSplitEnumerator(
+        TABLE_NAME, context, splitProvider, splitDiscover, limitedScanContext, Option.empty());
+    enumerator.start();
+    int countBeforeCallback = splitProvider.pendingSplitCount();
+    context.executeAsyncCallbacks();
+
+    assertEquals(countBeforeCallback, splitProvider.pendingSplitCount(),
+        "Discovery should pause when pending splits exceed the limit by one");
+  }
+
+  /**
+   * Verify that the enumerator position is NOT reset when no new commits are found
+   * (i.e., when the split discover returns a batch with an empty offset).
+   * This is critical for READ_COMMITS_LIMIT: after catching up to the latest commit,
+   * subsequent scans must resume from the last consumed offset, not from the beginning.
+   */
+  @Test
+  public void testPositionPreservedWhenNoNewCommits() throws Exception {
+    // Initialize enumerator with a known position
+    HoodieSplitEnumeratorState initialState = new HoodieSplitEnumeratorState(
+        Collections.emptyList(),
+        Option.of("20231201000000000"),
+        Option.of("20231201120000000"));
+
+    splitDiscover.setNextBatch(HoodieContinuousSplitBatch.EMPTY);
+    enumerator = new HoodieContinuousSplitEnumerator(
+        TABLE_NAME, context, splitProvider, splitDiscover, scanContext, Option.of(initialState));
+    enumerator.start();
+    context.executeAsyncCallbacks();
+
+    // Position must remain at the initial offset, not be reset to empty
+    HoodieSplitEnumeratorState state = enumerator.snapshotState(1L);
+    assertTrue(state.getLastEnumeratedInstantOffset().isPresent(),
+        "Position offset must not be cleared when no new commits are found");
+    assertEquals("20231201120000000", state.getLastEnumeratedInstantOffset().get(),
+        "Position offset must be preserved at the last consumed offset");
+  }
+
+  /**
+   * Verify that the enumerator position advances correctly when READ_COMMITS_LIMIT constrains
+   * the batch to commits that contain no data (empty commits).
+   * The position must advance to the end of the limited batch so the next scan picks up
+   * the subsequent commits rather than re-processing the same ones.
+   */
+  @Test
+  public void testReadCommitsLimitPositionAdvancesWithEmptyCommitBatch() throws Exception {
+    // Simulate READ_COMMITS_LIMIT returning a limited batch of empty commits:
+    // splits are empty but the batch carries a valid offset from the analyzed commits.
+    HoodieContinuousSplitBatch emptyCommitsBatch = new HoodieContinuousSplitBatch(
+        Collections.emptyList(), "20231201000000000", "20231201120000000");
+    splitDiscover.setNextBatch(emptyCommitsBatch);
+
+    enumerator = new HoodieContinuousSplitEnumerator(
+        TABLE_NAME, context, splitProvider, splitDiscover, scanContext, Option.empty());
+    enumerator.start();
+    context.executeAsyncCallbacks();
+
+    // Position must advance to the batch offset even though no splits were produced
+    HoodieSplitEnumeratorState state = enumerator.snapshotState(1L);
+    assertTrue(state.getLastEnumeratedInstantOffset().isPresent(),
+        "Position offset must be set after processing a limited batch of empty commits");
+    assertEquals("20231201120000000", state.getLastEnumeratedInstantOffset().get(),
+        "Position offset must advance to the end of the limited commit batch");
+  }
+
+  /**
+   * Verify that after READ_COMMITS_LIMIT advances the position to offset X,
+   * the next discover call passes X as the lastInstant so that only subsequent
+   * commits are scanned (no re-reading of already-consumed commits).
+   */
+  @Test
+  public void testReadCommitsLimitPassesLastInstantToNextDiscover() throws Exception {
+    // Initialize enumerator with a known position (simulating state after first limited batch)
+    String previousOffset = "20231201120000000";
+    HoodieSplitEnumeratorState initialState = new HoodieSplitEnumeratorState(
+        Collections.emptyList(),
+        Option.of("20231201000000000"),
+        Option.of(previousOffset));
+
+    splitDiscover.setNextBatch(HoodieContinuousSplitBatch.EMPTY);
+    enumerator = new HoodieContinuousSplitEnumerator(
+        TABLE_NAME, context, splitProvider, splitDiscover, scanContext, Option.of(initialState));
+    enumerator.start();
+    context.executeAsyncCallbacks();
+
+    // The discover call must receive the previous batch's offset so scanning resumes
+    // from after the last consumed commit, not from READ_START_COMMIT
+    assertEquals(previousOffset, splitDiscover.getLastDiscoveredInstant(),
+        "discover must be called with the last consumed offset to avoid re-reading commits");
+  }
+
   private HoodieSourceSplit createTestSplit(int splitNum, String fileId) {
     return new HoodieSourceSplit(
         splitNum,
@@ -273,6 +464,7 @@ public class TestHoodieContinuousSplitEnumerator {
   private static class MockContinuousSplitDiscover implements HoodieContinuousSplitDiscover {
     private HoodieContinuousSplitBatch nextBatch = HoodieContinuousSplitBatch.EMPTY;
     private boolean throwException = false;
+    private String lastDiscoveredInstant;
 
     public void setNextBatch(HoodieContinuousSplitBatch batch) {
       this.nextBatch = batch;
@@ -282,8 +474,13 @@ public class TestHoodieContinuousSplitEnumerator {
       this.throwException = throwException;
     }
 
+    public String getLastDiscoveredInstant() {
+      return lastDiscoveredInstant;
+    }
+
     @Override
     public HoodieContinuousSplitBatch discoverSplits(String lastInstant) {
+      this.lastDiscoveredInstant = lastInstant;
       if (throwException) {
         throw new RuntimeException("Mock exception during split discovery");
       }

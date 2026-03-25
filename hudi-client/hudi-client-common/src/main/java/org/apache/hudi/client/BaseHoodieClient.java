@@ -240,6 +240,7 @@ public abstract class BaseHoodieClient implements Serializable, AutoCloseable {
       metrics.emitConflictResolutionSuccessful();
     } catch (HoodieWriteConflictException e) {
       metrics.emitConflictResolutionFailed();
+      e.getCategory().ifPresent(metrics::emitConflictResolutionByCategory);
       throw e;
     } finally {
       if (conflictResolutionTimer != null) {

@@ -29,6 +29,7 @@ import org.apache.hudi.common.util.StringUtils;
 import org.apache.hudi.common.util.VisibleForTesting;
 import org.apache.hudi.common.util.collection.Pair;
 import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.exception.HoodieWriteConflictException;
 import org.apache.hudi.storage.HoodieStorage;
 
 import com.codahale.metrics.Counter;
@@ -85,6 +86,7 @@ public class HoodieMetrics {
   public static final String PENDING_COMPACTION_INSTANT_COUNT_STR = "pendingCompactionInstantCount";
   public static final String PENDING_CLEAN_INSTANT_COUNT_STR = "pendingCleanInstantCount";
   public static final String PENDING_ROLLBACK_INSTANT_COUNT_STR = "pendingRollbackInstantCount";
+  public static final String POST_COMMIT_STR = "postCommit";
   public static final String SUCCESS_EXTENSION = ".success";
   public static final String FAILURE_EXTENSION = ".failure";
 
@@ -116,6 +118,10 @@ public class HoodieMetrics {
   private String conflictResolutionTimerName = null;
   private String conflictResolutionSuccessCounterName = null;
   private String conflictResolutionFailureCounterName = null;
+  private String conflictResolutionIngestionVsIngestionCounterName = null;
+  private String conflictResolutionIngestionVsTableServiceCounterName = null;
+  private String conflictResolutionTableServiceVsIngestionCounterName = null;
+  private String conflictResolutionTableServiceVsTableServiceCounterName = null;
   private String compactionRequestedCounterName = null;
   private String compactionCompletedCounterName = null;
   private String rollbackFailureCounterName = null;
@@ -135,9 +141,17 @@ public class HoodieMetrics {
   private Timer conflictResolutionTimer = null;
   private Counter conflictResolutionSuccessCounter = null;
   private Counter conflictResolutionFailureCounter = null;
+  private Counter conflictResolutionIngestionVsIngestionCounter = null;
+  private Counter conflictResolutionIngestionVsTableServiceCounter = null;
+  private Counter conflictResolutionTableServiceVsIngestionCounter = null;
+  private Counter conflictResolutionTableServiceVsTableServiceCounter = null;
   private Counter compactionRequestedCounter = null;
   private Counter compactionCompletedCounter = null;
   private Counter rollbackFailureCounter = null;
+  private Counter postCommitSuccessCounter = null;
+  private Counter postCommitFailureCounter = null;
+  private String postCommitSuccessCounterName = null;
+  private String postCommitFailureCounterName = null;
 
   public HoodieMetrics(HoodieWriteConfig config, HoodieStorage storage) {
     this.config = config;
@@ -158,9 +172,15 @@ public class HoodieMetrics {
       this.conflictResolutionTimerName = getMetricsName(CONFLICT_RESOLUTION_STR, TIMER_METRIC);
       this.conflictResolutionSuccessCounterName = getMetricsName(CONFLICT_RESOLUTION_STR, SUCCESS_COUNTER);
       this.conflictResolutionFailureCounterName = getMetricsName(CONFLICT_RESOLUTION_STR, FAILURE_COUNTER);
+      this.conflictResolutionIngestionVsIngestionCounterName = getMetricsName(CONFLICT_RESOLUTION_STR, "ingestion_vs_ingestion" + COUNTER_METRIC_EXTENSION);
+      this.conflictResolutionIngestionVsTableServiceCounterName = getMetricsName(CONFLICT_RESOLUTION_STR, "ingestion_vs_table_service" + COUNTER_METRIC_EXTENSION);
+      this.conflictResolutionTableServiceVsIngestionCounterName = getMetricsName(CONFLICT_RESOLUTION_STR, "table_service_vs_ingestion" + COUNTER_METRIC_EXTENSION);
+      this.conflictResolutionTableServiceVsTableServiceCounterName = getMetricsName(CONFLICT_RESOLUTION_STR, "table_service_vs_table_service" + COUNTER_METRIC_EXTENSION);
       this.compactionRequestedCounterName = getMetricsName(HoodieTimeline.COMPACTION_ACTION, HoodieTimeline.REQUESTED_COMPACTION_SUFFIX + COUNTER_METRIC_EXTENSION);
       this.compactionCompletedCounterName = getMetricsName(HoodieTimeline.COMPACTION_ACTION, HoodieTimeline.COMPLETED_COMPACTION_SUFFIX + COUNTER_METRIC_EXTENSION);
       this.rollbackFailureCounterName = getMetricsName("rollback", FAILURE_COUNTER);
+      this.postCommitSuccessCounterName = getMetricsName(POST_COMMIT_STR, SUCCESS_COUNTER);
+      this.postCommitFailureCounterName = getMetricsName(POST_COMMIT_STR, FAILURE_COUNTER);
     }
   }
 
@@ -342,6 +362,19 @@ public class HoodieMetrics {
               DELETE_FILES_NUM_STR, numFilesDeleted));
       metrics.registerGauge(getMetricsName(HoodieTimeline.ROLLBACK_ACTION, DURATION_STR), durationInMs);
       metrics.registerGauge(getMetricsName(HoodieTimeline.ROLLBACK_ACTION, DELETE_FILES_NUM_STR), numFilesDeleted);
+    }
+  }
+
+  public void updatePostCommitMetrics(boolean status, long durationInMs) {
+    if (config.isMetricsOn()) {
+      if (status) {
+        postCommitSuccessCounter = getCounter(postCommitSuccessCounter, postCommitSuccessCounterName);
+        postCommitSuccessCounter.inc();
+      } else {
+        postCommitFailureCounter = getCounter(postCommitFailureCounter, postCommitFailureCounterName);
+        postCommitFailureCounter.inc();
+      }
+      metrics.registerGauge(getMetricsName(POST_COMMIT_STR, DURATION_STR), durationInMs);
     }
   }
 
@@ -545,6 +578,35 @@ public class HoodieMetrics {
       log.info("Sending conflict resolution failure metric");
       conflictResolutionFailureCounter = getCounter(conflictResolutionFailureCounter, conflictResolutionFailureCounterName);
       conflictResolutionFailureCounter.inc();
+    }
+  }
+
+  public void emitConflictResolutionByCategory(HoodieWriteConflictException.ConflictCategory category) {
+    if (config.isLockingMetricsEnabled()) {
+      switch (category) {
+        case INGESTION_VS_INGESTION:
+          conflictResolutionIngestionVsIngestionCounter = getCounter(
+              conflictResolutionIngestionVsIngestionCounter, conflictResolutionIngestionVsIngestionCounterName);
+          conflictResolutionIngestionVsIngestionCounter.inc();
+          break;
+        case INGESTION_VS_TABLE_SERVICE:
+          conflictResolutionIngestionVsTableServiceCounter = getCounter(
+              conflictResolutionIngestionVsTableServiceCounter, conflictResolutionIngestionVsTableServiceCounterName);
+          conflictResolutionIngestionVsTableServiceCounter.inc();
+          break;
+        case TABLE_SERVICE_VS_INGESTION:
+          conflictResolutionTableServiceVsIngestionCounter = getCounter(
+              conflictResolutionTableServiceVsIngestionCounter, conflictResolutionTableServiceVsIngestionCounterName);
+          conflictResolutionTableServiceVsIngestionCounter.inc();
+          break;
+        case TABLE_SERVICE_VS_TABLE_SERVICE:
+          conflictResolutionTableServiceVsTableServiceCounter = getCounter(
+              conflictResolutionTableServiceVsTableServiceCounter, conflictResolutionTableServiceVsTableServiceCounterName);
+          conflictResolutionTableServiceVsTableServiceCounter.inc();
+          break;
+        default:
+          break;
+      }
     }
   }
 

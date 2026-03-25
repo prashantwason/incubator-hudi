@@ -418,6 +418,96 @@ public class TestHoodieBackedMetadata extends TestHoodieMetadataBase {
   }
 
   @Test
+  public void testAutoDeletePartitionsDisabledPreservesColumnStats() throws Exception {
+    initPath();
+    HoodieWriteConfig cfg = getConfigBuilder(TRIP_EXAMPLE_SCHEMA, HoodieIndex.IndexType.BLOOM, HoodieFailedWritesCleaningPolicy.EAGER)
+        .withParallelism(1, 1).withBulkInsertParallelism(1).withFinalizeWriteParallelism(1).withDeleteParallelism(1)
+        .withConsistencyGuardConfig(ConsistencyGuardConfig.newBuilder().withConsistencyCheckEnabled(true).build())
+        .withMetadataConfig(HoodieMetadataConfig.newBuilder()
+            .enable(true)
+            .withMetadataIndexColumnStats(true)
+            .build())
+        .build();
+    init(COPY_ON_WRITE, Option.of(cfg), true, false, false);
+    HoodieSparkEngineContext engineContext = new HoodieSparkEngineContext(jsc);
+
+    // Step 1: Insert and upsert with column stats enabled
+    try (SparkRDDWriteClient client = new SparkRDDWriteClient(engineContext, cfg)) {
+      String commitTime = "0000001";
+      List<HoodieRecord> records = dataGen.generateInserts(commitTime, 20);
+      WriteClientTestUtils.startCommitWithTime(client, commitTime);
+      List<WriteStatus> statusList = client.insert(jsc.parallelize(records, 1), commitTime).collect();
+      assertTrue(client.commit(commitTime, jsc.parallelize(statusList)));
+      assertNoWriteErrors(statusList);
+
+      commitTime = "0000002";
+      WriteClientTestUtils.startCommitWithTime(client, commitTime);
+      records = dataGen.generateUniqueUpdates(commitTime, 10);
+      statusList = client.upsert(jsc.parallelize(records, 1), commitTime).collect();
+      assertTrue(client.commit(commitTime, jsc.parallelize(statusList)));
+      assertNoWriteErrors(statusList);
+      validateMetadata(client);
+    }
+
+    // Verify column_stats is present in table config
+    metaClient = HoodieTableMetaClient.reload(metaClient);
+    HoodieTableConfig tableConfig = metaClient.getTableConfig();
+    assertTrue(tableConfig.getMetadataPartitions().contains(COLUMN_STATS.getPartitionPath()));
+
+    // Step 2: Disable column stats but set auto.delete.partitions=false, then do an upsert
+    HoodieWriteConfig cfgWithAutoDeleteDisabled = HoodieWriteConfig.newBuilder()
+        .withProperties(cfg.getProps())
+        .withMetadataConfig(HoodieMetadataConfig.newBuilder()
+            .withProperties(cfg.getMetadataConfig().getProps())
+            .withMetadataIndexColumnStats(false)
+            .withAutoDeletePartitions(false)
+            .build())
+        .build();
+
+    // Record the number of log files in column_stats partition before the upsert
+    HoodieTableMetaClient metadataMetaClient = HoodieTestUtils.createMetaClient(
+        storageConf, metadataTableBasePath);
+    HoodieTableFileSystemView fsViewBefore = HoodieTableFileSystemView.fileListingBasedFileSystemView(
+        engineContext, metadataMetaClient, metadataMetaClient.getActiveTimeline());
+    List<FileSlice> colStatsSlicesBefore = fsViewBefore
+        .getLatestFileSlices(COLUMN_STATS.getPartitionPath()).collect(Collectors.toList());
+    assertFalse(colStatsSlicesBefore.isEmpty(), "Column stats partition should have file slices before upsert");
+    long logFileCountBefore = colStatsSlicesBefore.get(0).getLogFiles().count();
+
+    try (SparkRDDWriteClient client = new SparkRDDWriteClient(engineContext, cfgWithAutoDeleteDisabled)) {
+      String commitTime = "0000003";
+      WriteClientTestUtils.startCommitWithTime(client, commitTime);
+      List<HoodieRecord> records = dataGen.generateUniqueUpdates(commitTime, 10);
+      List<WriteStatus> writeStatuses = client.upsert(jsc.parallelize(records, 1), commitTime).collect();
+      assertTrue(client.commit(commitTime, jsc.parallelize(writeStatuses)));
+      assertNoWriteErrors(writeStatuses);
+    }
+
+    // Step 3: Verify column_stats partition is NOT deleted from table config
+    metaClient = HoodieTableMetaClient.reload(metaClient);
+    tableConfig = metaClient.getTableConfig();
+    assertTrue(tableConfig.getMetadataPartitions().contains(COLUMN_STATS.getPartitionPath()),
+        "Column stats partition should NOT be deleted when auto-delete is disabled");
+
+    // Step 4: Verify column_stats partition received new log files (from HoodieCommitMetadata)
+    metadataMetaClient = HoodieTableMetaClient.reload(metadataMetaClient);
+    HoodieTableFileSystemView fsViewAfter = HoodieTableFileSystemView.fileListingBasedFileSystemView(
+        engineContext, metadataMetaClient, metadataMetaClient.getActiveTimeline());
+    List<FileSlice> colStatsSlicesAfter = fsViewAfter
+        .getLatestFileSlices(COLUMN_STATS.getPartitionPath()).collect(Collectors.toList());
+    assertFalse(colStatsSlicesAfter.isEmpty(), "Column stats partition should still have file slices after upsert");
+    long logFileCountAfter = colStatsSlicesAfter.get(0).getLogFiles().count();
+    assertTrue(logFileCountAfter > logFileCountBefore,
+        "Column stats partition should have received new log files after upsert. Before: "
+            + logFileCountBefore + ", After: " + logFileCountAfter);
+
+    // Step 5: Verify column stats log files contain valid column stats records
+    List<HoodieLogFile> colStatsLogFiles = colStatsSlicesAfter.get(0)
+        .getLogFiles().collect(Collectors.toList());
+    verifyMetadataColumnStatsRecords(storage, colStatsLogFiles);
+  }
+
+  @Test
   public void testTurnOffMetadataTableAfterEnable() throws Exception {
     init(COPY_ON_WRITE, true);
     String instant1 = "0000001";
@@ -1938,6 +2028,138 @@ public class TestHoodieBackedMetadata extends TestHoodieMetadataBase {
           MetadataPartitionType.FILES.getPartitionPath()).size(), 1);
       assertEquals(HoodieTableMetadataUtil.getPartitionLatestFileSlices(metadataReader.getMetadataMetaClient(), Option.empty(),
           RECORD_INDEX.getPartitionPath()).size(), 3);
+    }
+  }
+
+  /**
+   * Test that partitioned RLI initialization is deferred for fresh tables.
+   * Partitioned RLI should NOT be initialized on the first commit but should be initialized
+   * on the second commit with programmatically determined file group count.
+   */
+  @ParameterizedTest
+  @EnumSource(HoodieTableType.class)
+  public void testPartitionedRecordIndexDeferredInitializationForFreshTable(HoodieTableType tableType) throws Exception {
+    init(tableType);
+    HoodieSparkEngineContext engineContext = new HoodieSparkEngineContext(jsc);
+
+    // Config with partitioned record index enabled (not global)
+    HoodieWriteConfig writeConfig = getWriteConfigBuilder(true, true, false)
+        .withIndexConfig(HoodieIndexConfig.newBuilder()
+            .withIndexType(HoodieIndex.IndexType.RECORD_LEVEL_INDEX)
+            .build())
+        .withMetadataConfig(HoodieMetadataConfig.newBuilder()
+            .enable(true)
+            .withEnableRecordLevelIndex(true)
+            .withPartitionedRecordIndexFileGroupCount(1, 10)
+            .withDeferRliInitializationForFreshTable(true)
+            .build())
+        .build();
+
+    try (SparkRDDWriteClient client = new SparkRDDWriteClient(engineContext, writeConfig)) {
+      // First commit - Partitioned RLI should NOT be initialized yet for a fresh table
+      String firstCommitTime = client.startCommit();
+      List<HoodieRecord> records = dataGen.generateInserts(firstCommitTime, 1000);
+      List<WriteStatus> writeStatuses = client.insert(jsc.parallelize(records, 2), firstCommitTime).collect();
+      assertNoWriteErrors(writeStatuses);
+      client.commit(firstCommitTime, jsc.parallelize(writeStatuses));
+
+      // Verify metadata table exists
+      metaClient = HoodieTableMetaClient.reload(metaClient);
+      assertTrue(metaClient.getTableConfig().isMetadataTableAvailable());
+
+      // Verify partitioned RLI partition is NOT initialized after first commit
+      assertFalse(metaClient.getTableConfig().isMetadataPartitionAvailable(RECORD_INDEX),
+          "Partitioned RLI should NOT be initialized on first commit for a fresh table");
+
+      // Files partition should be initialized
+      assertTrue(metaClient.getTableConfig().isMetadataPartitionAvailable(MetadataPartitionType.FILES),
+          "Files partition should be initialized");
+
+      // Second commit - Partitioned RLI should NOW be initialized
+      String secondCommitTime = client.startCommit();
+      List<HoodieRecord> moreRecords = dataGen.generateInserts(secondCommitTime, 500);
+      writeStatuses = client.insert(jsc.parallelize(moreRecords, 2), secondCommitTime).collect();
+      assertNoWriteErrors(writeStatuses);
+      client.commit(secondCommitTime, jsc.parallelize(writeStatuses));
+
+      // Reload and verify partitioned RLI is now initialized
+      metaClient = HoodieTableMetaClient.reload(metaClient);
+      assertTrue(metaClient.getTableConfig().isMetadataPartitionAvailable(RECORD_INDEX),
+          "Partitioned RLI should be initialized after second commit");
+
+      // Verify file group count is 3 (1 for each data table partition and we have 3 partitions)
+      HoodieBackedTableMetadata metadataReader = (HoodieBackedTableMetadata) metadata(client, storage);
+      int fileGroupCount = HoodieTableMetadataUtil.getPartitionLatestFileSlices(
+          metadataReader.getMetadataMetaClient(), Option.empty(),
+          RECORD_INDEX.getPartitionPath()).size();
+
+      // For partitioned RLI with small data, file group count should be 3 (1 as default for 3 partitions)
+      assertEquals(3, fileGroupCount,
+          "File group count should be 3 for partitioned RLI table (1 per partition x 3 partitions), but got: " + fileGroupCount);
+
+      // Validate metadata integrity
+      validateMetadata(client);
+    }
+  }
+
+  /**
+   * Test that global RLI with larger data results in appropriate file group count.
+   * This validates that the file group count is determined programmatically based on data size,
+   * not using a hardcoded default.
+   */
+  @Test
+  public void testGlobalRecordIndexDeferredInitialization() throws Exception {
+    init(HoodieTableType.COPY_ON_WRITE);
+    HoodieSparkEngineContext engineContext = new HoodieSparkEngineContext(jsc);
+
+    // Config with global record index enabled
+    HoodieWriteConfig writeConfig = getWriteConfigBuilder(true, true, false)
+        .withIndexConfig(HoodieIndexConfig.newBuilder()
+            .withIndexType(HoodieIndex.IndexType.RECORD_INDEX)
+            .build())
+        .withMetadataConfig(HoodieMetadataConfig.newBuilder()
+            .enable(true)
+            .withEnableGlobalRecordLevelIndex(true)
+            .withDeferRliInitializationForFreshTable(true)
+            .build())
+        .build();
+
+    try (SparkRDDWriteClient client = new SparkRDDWriteClient(engineContext, writeConfig)) {
+      // First commit with moderate data size (4000 records)
+      String firstCommitTime = client.startCommit();
+      List<HoodieRecord> records = dataGen.generateInserts(firstCommitTime, 4000);
+      List<WriteStatus> writeStatuses = client.insert(jsc.parallelize(records, 5), firstCommitTime).collect();
+      assertNoWriteErrors(writeStatuses);
+      client.commit(firstCommitTime, jsc.parallelize(writeStatuses));
+
+      // Verify RLI is NOT initialized after first commit
+      metaClient = HoodieTableMetaClient.reload(metaClient);
+      assertFalse(metaClient.getTableConfig().isMetadataPartitionAvailable(RECORD_INDEX),
+          "Global RLI should NOT be initialized on first commit");
+
+      // Second commit to trigger RLI initialization
+      String secondCommitTime = client.startCommit();
+      List<HoodieRecord> moreRecords = dataGen.generateInserts(secondCommitTime, 2000);
+      writeStatuses = client.insert(jsc.parallelize(moreRecords, 3), secondCommitTime).collect();
+      assertNoWriteErrors(writeStatuses);
+      client.commit(secondCommitTime, jsc.parallelize(writeStatuses));
+
+      // Verify global RLI is now initialized
+      metaClient = HoodieTableMetaClient.reload(metaClient);
+      assertTrue(metaClient.getTableConfig().isMetadataPartitionAvailable(RECORD_INDEX));
+
+      // Verify file group count is determined based on data size
+      HoodieBackedTableMetadata metadataReader = (HoodieBackedTableMetadata) metadata(client, storage);
+      int fileGroupCount = HoodieTableMetadataUtil.getPartitionLatestFileSlices(
+          metadataReader.getMetadataMetaClient(), Option.empty(),
+          RECORD_INDEX.getPartitionPath()).size();
+
+      // For 4000 records with global RLI, file group count should be within configured bounds
+      int maxFileGroupCount = writeConfig.getMetadataConfig().getGlobalRecordLevelIndexMaxFileGroupCount();
+      assertTrue(fileGroupCount > 1 && fileGroupCount <= maxFileGroupCount,
+          "File group count should be between 1 and " + maxFileGroupCount + ", but got: " + fileGroupCount);
+      // Validate metadata integrity
+      validateMetadata(client);
     }
   }
 

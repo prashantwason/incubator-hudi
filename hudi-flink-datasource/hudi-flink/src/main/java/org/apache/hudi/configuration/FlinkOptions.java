@@ -38,8 +38,10 @@ import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.hive.MultiPartKeysValueExtractor;
 import org.apache.hudi.hive.ddl.HiveSyncMode;
 import org.apache.hudi.index.HoodieIndex;
+import org.apache.hudi.io.util.FileIOUtils;
 import org.apache.hudi.keygen.constant.KeyGeneratorOptions;
 import org.apache.hudi.keygen.constant.KeyGeneratorType;
+import org.apache.hudi.sink.buffer.BufferMemoryType;
 import org.apache.hudi.sink.overwrite.PartitionOverwriteMode;
 import org.apache.hudi.table.action.cluster.ClusteringPlanPartitionFilterMode;
 import org.apache.hudi.util.ClientIds;
@@ -272,6 +274,15 @@ public class FlinkOptions extends HoodieConfig {
       .doubleType()
       .defaultValue(0D)
       .withDescription("Index state ttl in days, default stores the index permanently");
+
+  @AdvancedConfig
+  public static final ConfigOption<String> INDEX_BOOTSTRAP_ROCKSDB_PATH = ConfigOptions
+      .key("index.bootstrap.rocksdb.path")
+      .stringType()
+      .defaultValue(FileIOUtils.getDefaultSpillableMapBasePath())
+      .withDescription("Local directory path for RocksDB when "
+          + "bootstrap is enabled for record level index type."
+          + "Each task manager creates a unique subdirectory under this path.");
 
   @AdvancedConfig
   public static final ConfigOption<Boolean> INDEX_GLOBAL_ENABLED = ConfigOptions
@@ -708,6 +719,17 @@ public class FlinkOptions extends HoodieConfig {
           + "it flushes the max size data bucket to avoid OOM, default 1GB");
 
   @AdvancedConfig
+  public static final ConfigOption<String> WRITE_BUFFER_MEMORY_TYPE = ConfigOptions
+      .key("write.buffer.memory.type")
+      .stringType()
+      .defaultValue(BufferMemoryType.ON_HEAP.name())
+      .withDescription("The memory type used for the write buffer. "
+          + "Supported values are ON_HEAP (default) and MANAGED. "
+          + "ON_HEAP uses JVM heap memory, while MANAGED uses Flink managed memory "
+          + "which is accounted for in the task manager's memory budget "
+          + "and helps avoid OOM errors in containerized environments.");
+
+  @AdvancedConfig
   public static final ConfigOption<Boolean> WRITE_BUFFER_SORT_ENABLED = ConfigOptions
       .key("write.buffer.sort.enabled")
       .booleanType()
@@ -885,6 +907,14 @@ public class FlinkOptions extends HoodieConfig {
       .stringType()
       .defaultValue(ClientIds.INIT_CLIENT_ID)
       .withDescription("Unique identifier used to distinguish different writer pipelines for concurrent mode");
+
+  // this is only for internal use
+  @AdvancedConfig
+  public static final ConfigOption<String> WRITE_OPERATOR_UID = ConfigOptions
+      .key("write.operator.uid")
+      .stringType()
+      .noDefaultValue()
+      .withDescription("The write operator uid used as the uid for hudi sink transformation.");
 
   // ------------------------------------------------------------------------
   //  Compaction Options
