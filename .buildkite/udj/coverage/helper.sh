@@ -287,8 +287,7 @@ upload_to_phab() {
   mkdir -p build/comment/phabricator-comment-code-coverage
   mkdir -p packaging/hudi-codecoverage/target/site/jacoco-aggregate/
 
-  get_valid_coverage_sha
-  if [ $? -ne 0 ]; then
+  if ! get_valid_coverage_sha; then
     echo "No baseline coverage found. Skipping coverage comparison."
     echo "No baseline coverage available for comparison." > "build/comment/phabricator-comment-code-coverage/newline_coverage.md"
     return 0
