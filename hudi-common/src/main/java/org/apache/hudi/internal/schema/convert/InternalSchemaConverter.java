@@ -50,6 +50,11 @@ import java.util.stream.Collectors;
 public class InternalSchemaConverter {
   private static final String FIELD_NAME_DELIMITER = ".";
 
+  // Sentinel field IDs used to mark Variant sub-fields in the internal schema representation.
+  // These negative IDs distinguish Variant fields from regular record fields during round-trip conversion.
+  static final int VARIANT_VALUE_FIELD_ID = -1;
+  static final int VARIANT_METADATA_FIELD_ID = -2;
+
   /**
    * Convert internalSchema to HoodieSchema.
    *
@@ -314,6 +319,12 @@ public class InternalSchemaConverter {
         return Types.StringType.get();
       case FIXED:
         return Types.FixedType.getFixed(schema.getFixedSize());
+      case VECTOR:
+        HoodieSchema.Vector vectorSchema = (HoodieSchema.Vector) schema;
+        return Types.VectorType.get(
+            vectorSchema.getDimension(),
+            vectorSchema.getVectorElementType().name(),
+            vectorSchema.getStorageBacking().name());
       case BYTES:
         return Types.BinaryType.get();
       case UUID:
@@ -346,6 +357,15 @@ public class InternalSchemaConverter {
         return Types.DateType.get();
       case NULL:
         return null;
+      case VARIANT:
+        // Variant is represented as a RecordType with sentinel negative field IDs so the reverse
+        // path can detect and reconstruct it
+        List<Types.Field> variantFields = new ArrayList<>(2);
+        variantFields.add(Types.Field.get(VARIANT_METADATA_FIELD_ID, false,
+            HoodieSchema.Variant.VARIANT_METADATA_FIELD, Types.BinaryType.get(), "Variant metadata component"));
+        variantFields.add(Types.Field.get(VARIANT_VALUE_FIELD_ID, false,
+            HoodieSchema.Variant.VARIANT_VALUE_FIELD, Types.BinaryType.get(), "Variant value component"));
+        return Types.RecordType.get(variantFields);
       default:
         throw new UnsupportedOperationException("Unsupported primitive type: " + schema.getType());
     }
@@ -441,6 +461,24 @@ public class InternalSchemaConverter {
    */
   private static HoodieSchema visitInternalRecordToBuildHoodieRecord(Types.RecordType recordType, List<HoodieSchema> fieldSchemas, String recordNameFallback) {
     List<Types.Field> fields = recordType.fields();
+
+    // Detect Variant round-trip: sentinel negative IDs with value/metadata fields
+    if (fields.size() == 2) {
+      Types.Field field0 = fields.get(0);
+      Types.Field field1 = fields.get(1);
+      boolean hasNegativeIds = field0.fieldId() < 0 && field1.fieldId() < 0;
+      boolean hasVariantFields = (field0.name().equals(HoodieSchema.Variant.VARIANT_VALUE_FIELD)
+              && field1.name().equals(HoodieSchema.Variant.VARIANT_METADATA_FIELD))
+          || (field0.name().equals(HoodieSchema.Variant.VARIANT_METADATA_FIELD)
+              && field1.name().equals(HoodieSchema.Variant.VARIANT_VALUE_FIELD));
+
+      if (hasNegativeIds && hasVariantFields) {
+        // TODO: Flesh out schema evolution for Variant types #18285
+        return HoodieSchema.createVariant();
+      }
+    }
+
+    // Create regular record
     List<HoodieSchemaField> schemaFields = new ArrayList<>(fields.size());
     for (int i = 0; i < fields.size(); i++) {
       Types.Field f = fields.get(i);
@@ -536,6 +574,14 @@ public class InternalSchemaConverter {
         //       with the "fixed" name to stay compatible w/ [[SchemaConverters]]
         String name = recordName + FIELD_NAME_DELIMITER + "fixed";
         return HoodieSchema.createFixed(name, null, null, fixed.getFixedSize());
+      }
+
+      case VECTOR: {
+        Types.VectorType vector = (Types.VectorType) primitive;
+        return HoodieSchema.createVector(
+            vector.getDimension(),
+            HoodieSchema.Vector.VectorElementType.fromString(vector.getElementType()),
+            HoodieSchema.Vector.StorageBacking.fromString(vector.getStorageBacking()));
       }
 
       case DECIMAL:

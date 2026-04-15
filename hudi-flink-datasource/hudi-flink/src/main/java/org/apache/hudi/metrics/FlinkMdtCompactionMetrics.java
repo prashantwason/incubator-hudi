@@ -7,7 +7,7 @@
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,18 +16,22 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.avro
+package org.apache.hudi.metrics;
 
-import org.apache.avro.Schema
-import org.apache.spark.sql.types.DataType
+import org.apache.flink.metrics.MetricGroup;
 
 /**
- * Allows to convert Avro schema into Spark's Catalyst one
+ * Compaction metrics for metadata table services.
  */
-trait HoodieAvroSchemaConverters {
+public class FlinkMdtCompactionMetrics extends FlinkCompactionMetrics {
+  private static final String MDT_PREFIX = "mdt.";
 
-  def toSqlType(avroSchema: Schema): (DataType, Boolean)
+  public FlinkMdtCompactionMetrics(MetricGroup metricGroup) {
+    super(metricGroup);
+  }
 
-  def toAvroType(catalystType: DataType, nullable: Boolean, recordName: String, nameSpace: String = ""): Schema
-
+  @Override
+  protected String getMetricsName(String action, String metric) {
+    return MDT_PREFIX + super.getMetricsName(action, metric);
+  }
 }

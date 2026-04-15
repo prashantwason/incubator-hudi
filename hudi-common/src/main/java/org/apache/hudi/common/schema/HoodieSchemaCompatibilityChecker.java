@@ -298,6 +298,7 @@ public class HoodieSchemaCompatibilityChecker {
           case DATE:
           case STRING:
           case UUID:
+          case VARIANT:
             return result;
           case TIME:
             return result.mergedWith(checkTimeCompatibility(reader, writer, locations));
@@ -310,6 +311,8 @@ public class HoodieSchemaCompatibilityChecker {
           case FIXED:
             result = result.mergedWith(checkSchemaNames(reader, writer, locations));
             return result.mergedWith(checkFixedSize(reader, writer, locations));
+          case VECTOR:
+            return result.mergedWith(checkVectorCompatibility(reader, writer, locations));
           case DECIMAL:
             return result.mergedWith(checkDecimalWidening(reader, writer, locations));
           case ENUM:
@@ -377,10 +380,13 @@ public class HoodieSchemaCompatibilityChecker {
           case MAP:
             return result.mergedWith(typeMismatch(reader, writer, locations));
           case FIXED:
+          case VECTOR:
             return result.mergedWith(typeMismatch(reader, writer, locations));
           case ENUM:
             return result.mergedWith(typeMismatch(reader, writer, locations));
           case RECORD:
+            return result.mergedWith(typeMismatch(reader, writer, locations));
+          case VARIANT:
             return result.mergedWith(typeMismatch(reader, writer, locations));
           case UNION: {
             for (final HoodieSchema readerBranch : reader.getTypes()) {
@@ -455,6 +461,25 @@ public class HoodieSchemaCompatibilityChecker {
             message, asList(locations));
       }
       return checkDecimalWidening(reader, writer, locations);
+    }
+
+    // Convention: "expected" = writer (existing data), "found" = reader (evolved schema).
+    // This matches checkFixedSize, checkDecimalWidening, checkTimeCompatibility, etc.
+    private SchemaCompatibilityResult checkVectorCompatibility(final HoodieSchema reader, final HoodieSchema writer,
+                                                               final Deque<LocationInfo> locations) {
+      HoodieSchema.Vector readerVector = (HoodieSchema.Vector) reader;
+      HoodieSchema.Vector writerVector = (HoodieSchema.Vector) writer;
+      if (readerVector.getDimension() != writerVector.getDimension()
+          || readerVector.getVectorElementType() != writerVector.getVectorElementType()
+          || readerVector.getStorageBacking() != writerVector.getStorageBacking()) {
+        String message = String.format("Vector field '%s' expected dimension: %d, elementType: %s, storageBacking: %s, found: dimension: %d, elementType: %s, storageBacking: %s",
+            getLocationName(locations, reader.getType()),
+            writerVector.getDimension(), writerVector.getVectorElementType(), writerVector.getStorageBacking(),
+            readerVector.getDimension(), readerVector.getVectorElementType(), readerVector.getStorageBacking());
+        return SchemaCompatibilityResult.incompatible(SchemaIncompatibilityType.TYPE_MISMATCH, reader, writer,
+            message, asList(locations));
+      }
+      return SchemaCompatibilityResult.compatible();
     }
 
     private SchemaCompatibilityResult checkDecimalWidening(final HoodieSchema reader, final HoodieSchema writer,

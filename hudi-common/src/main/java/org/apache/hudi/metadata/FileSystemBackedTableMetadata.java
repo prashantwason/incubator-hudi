@@ -18,6 +18,7 @@
 
 package org.apache.hudi.metadata;
 
+import lombok.Getter;
 import org.apache.hudi.avro.model.HoodieMetadataColumnStats;
 import org.apache.hudi.common.bloom.BloomFilter;
 import org.apache.hudi.common.data.HoodieData;
@@ -64,6 +65,9 @@ public class FileSystemBackedTableMetadata extends AbstractHoodieTableMetadata {
 
   private static final int DEFAULT_LISTING_PARALLELISM = 1500;
 
+  @Getter
+  private final String databaseName;
+  @Getter
   private final String tableName;
   private final boolean hiveStylePartitioningEnabled;
   private final boolean urlEncodePartitioningEnabled;
@@ -71,6 +75,7 @@ public class FileSystemBackedTableMetadata extends AbstractHoodieTableMetadata {
   public FileSystemBackedTableMetadata(HoodieEngineContext engineContext, HoodieTableConfig tableConfig,
                                        HoodieStorage storage, String datasetBasePath) {
     super(engineContext, storage, datasetBasePath);
+    this.databaseName = tableConfig.getDatabaseName();
     this.tableName = tableConfig.getTableName();
     this.hiveStylePartitioningEnabled = Boolean.parseBoolean(tableConfig.getHiveStylePartitioningEnable());
     this.urlEncodePartitioningEnabled = Boolean.parseBoolean(tableConfig.getUrlEncodePartitioning());
@@ -84,6 +89,7 @@ public class FileSystemBackedTableMetadata extends AbstractHoodieTableMetadata {
     StoragePath metaPath =
         new StoragePath(dataBasePath, HoodieTableMetaClient.METAFOLDER_NAME);
     HoodieTableConfig tableConfig = new HoodieTableConfig(storage, metaPath);
+    this.databaseName = tableConfig.getDatabaseName();
     this.tableName = tableConfig.getTableName();
     this.hiveStylePartitioningEnabled =
         Boolean.parseBoolean(tableConfig.getHiveStylePartitioningEnable());
@@ -130,9 +136,9 @@ public class FileSystemBackedTableMetadata extends AbstractHoodieTableMetadata {
     return getPartitionPathWithPathPrefixUsingFilterExpression(relativePathPrefix, null, null);
   }
 
-  private List<String> getPartitionPathWithPathPrefixUsingFilterExpression(String relativePathPrefix,
-                                                                           Types.RecordType partitionFields,
-                                                                           Expression pushedExpr) throws IOException {
+  protected List<String> getPartitionPathWithPathPrefixUsingFilterExpression(String relativePathPrefix,
+                                                                             Types.RecordType partitionFields,
+                                                                             Expression pushedExpr) throws IOException {
     List<StoragePath> pathsToList = new CopyOnWriteArrayList<>();
     pathsToList.add(StringUtils.isNullOrEmpty(relativePathPrefix)
         ? dataBasePath : new StoragePath(dataBasePath, relativePathPrefix));
@@ -156,12 +162,16 @@ public class FileSystemBackedTableMetadata extends AbstractHoodieTableMetadata {
       needPushDownExpressions = false;
     }
 
+    int recursiveListingStep = 0;
     while (!pathsToList.isEmpty()) {
+      recursiveListingStep++;
       // TODO: Get the parallelism from HoodieWriteConfig
       int listingParallelism = Math.min(DEFAULT_LISTING_PARALLELISM, pathsToList.size());
+      String recursiveListingJobName =
+          String.format("%s recursive listing step %d", this.getClass().getSimpleName(), recursiveListingStep);
 
       // List all directories in parallel
-      engineContext.setJobStatus(this.getClass().getSimpleName(),
+      engineContext.setJobStatus(recursiveListingJobName,
           "Listing all partitions on " + this.tableName
               + " with prefix " + relativePathPrefix);
       // Need to use serializable file status here, see HUDI-5936
@@ -183,7 +193,8 @@ public class FileSystemBackedTableMetadata extends AbstractHoodieTableMetadata {
       if (!dirToFileListingPairs.isEmpty()) {
         // result below holds a list of pair. first entry in the pair optionally holds the deduced list of partitions.
         // and second entry holds optionally a directory path to be processed further.
-        engineContext.setJobStatus(this.getClass().getSimpleName(), "Processing listed partitions");
+        engineContext.setJobStatus(recursiveListingJobName,
+            "Processing recursively listed partitions on " + this.tableName);
         List<Pair<Option<String>, Option<StoragePath>>> result =
             engineContext.map(dirToFileListingPairs,
                 fileInfoPair -> {

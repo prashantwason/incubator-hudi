@@ -18,29 +18,32 @@
 
 package org.apache.spark.sql.avro
 
-import org.apache.hudi.common.schema.HoodieSchema.TimePrecision
+import org.apache.hudi.SparkAdapterSupport
 import org.apache.hudi.common.schema.{HoodieJsonProperties, HoodieSchema, HoodieSchemaField, HoodieSchemaType}
+import org.apache.hudi.common.schema.HoodieSchema.TimePrecision
 import org.apache.hudi.internal.schema.HoodieSchemaException
+
 import org.apache.spark.annotation.DeveloperApi
-import org.apache.spark.sql.types.Decimal.minBytesForPrecision
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.types.Decimal.minBytesForPrecision
 
 import scala.collection.JavaConverters._
 
 /**
- * This object contains methods that are used to convert HoodieSchema to Spark SQL schemas and vice versa.
+ * Object containing methods to convert HoodieSchema to Spark SQL schemas and vice versa.
  *
  * This provides direct conversion between HoodieSchema and Spark DataType
  * without going through Avro Schema intermediary.
+ *
+ * Version-specific types (like VariantType in Spark >4.x) are handled via SparkAdapterSupport.
  *
  * NOTE: the package of this class is intentionally kept as "org.apache.spark.sql.avro" which is similar to the existing
  * Spark Avro connector's SchemaConverters.scala
  * (https://github.com/apache/spark/blob/master/connector/avro/src/main/scala/org/apache/spark/sql/avro/SchemaConverters.scala).
  * The reason for this is so that Spark 3.3 is able to access private spark sql type classes like TimestampNTZType.
  */
-
 @DeveloperApi
-object HoodieSparkSchemaConverters {
+object HoodieSparkSchemaConverters extends SparkAdapterSupport {
 
   /**
    * Internal wrapper for SQL data type and nullability.
@@ -57,6 +60,24 @@ object HoodieSparkSchemaConverters {
                    recordName: String = "topLevelRecord",
                    nameSpace: String = "",
                    metadata: Metadata = Metadata.empty): HoodieSchema = {
+    toHoodieTypeNested(catalystType, nullable, recordName, nameSpace, metadata, depth = 0)
+  }
+
+  /**
+   * Converts a Spark DataType to a HoodieSchema, tracking how deeply nested the current type is
+   * relative to the top-level table schema. This depth is used to enforce that VECTOR columns can
+   * only appear as direct fields of the root record — not inside nested structs, arrays, or maps.
+   *
+   * The caller passes depth=0 for the root StructType. Each level of nesting increments depth by 1,
+   * so direct fields of the root record are at depth=1 (VECTOR allowed), and anything deeper is
+   * at depth≥2 (VECTOR not allowed).
+   */
+  private def toHoodieTypeNested(catalystType: DataType,
+                                  nullable: Boolean,
+                                  recordName: String,
+                                  nameSpace: String,
+                                  metadata: Metadata,
+                                  depth: Int): HoodieSchema = {
     val schema = catalystType match {
       // Primitive types
       case BooleanType => HoodieSchema.create(HoodieSchemaType.BOOLEAN)
@@ -83,6 +104,10 @@ object HoodieSparkSchemaConverters {
       case ArrayType(elementSparkType, containsNull)
           if metadata.contains(HoodieSchema.TYPE_METADATA_FIELD) &&
             HoodieSchema.parseTypeDescriptor(metadata.getString(HoodieSchema.TYPE_METADATA_FIELD)).getType == HoodieSchemaType.VECTOR =>
+        if (depth > 1) {
+          throw new HoodieSchemaException(
+            s"VECTOR column '$recordName' must be a top-level field. Nested VECTOR columns (inside STRUCT, ARRAY, or MAP) are not supported.")
+        }
         if (containsNull) {
           throw new HoodieSchemaException(
             s"VECTOR type does not support nullable elements (field: $recordName)")
@@ -104,11 +129,11 @@ object HoodieSparkSchemaConverters {
         HoodieSchema.createVector(dimension, elementType)
 
       case ArrayType(elementType, containsNull) =>
-        val elementSchema = toHoodieType(elementType, containsNull, recordName, nameSpace, metadata)
+        val elementSchema = toHoodieTypeNested(elementType, containsNull, recordName, nameSpace, metadata, depth + 1)
         HoodieSchema.createArray(elementSchema)
 
       case MapType(StringType, valueType, valueContainsNull) =>
-        val valueSchema = toHoodieType(valueType, valueContainsNull, recordName, nameSpace, metadata)
+        val valueSchema = toHoodieTypeNested(valueType, valueContainsNull, recordName, nameSpace, metadata, depth + 1)
         HoodieSchema.createMap(valueSchema)
 
       case blobStruct: StructType if metadata.contains(HoodieSchema.TYPE_METADATA_FIELD) &&
@@ -122,7 +147,7 @@ object HoodieSparkSchemaConverters {
         // Check if this might be a union (using heuristic like Avro converter)
         if (canBeUnion(st)) {
           val nonNullUnionFieldTypes = st.map { f =>
-            toHoodieType(f.dataType, nullable = false, f.name, childNameSpace, f.metadata)
+            toHoodieTypeNested(f.dataType, nullable = false, f.name, childNameSpace, f.metadata, depth + 1)
           }
           val unionFieldTypes = if (nullable) {
             (HoodieSchema.create(HoodieSchemaType.NULL) +: nonNullUnionFieldTypes).asJava
@@ -133,7 +158,7 @@ object HoodieSparkSchemaConverters {
         } else {
           // Create record
           val fields = st.map { f =>
-            val fieldSchema = toHoodieType(f.dataType, f.nullable, f.name, childNameSpace, f.metadata)
+            val fieldSchema = toHoodieTypeNested(f.dataType, f.nullable, f.name, childNameSpace, f.metadata, depth + 1)
             val doc = f.getComment.orNull
             // Match existing Avro SchemaConverters behavior: use NULL_VALUE for nullable unions
             // to avoid serializing "default":null in JSON representation
@@ -148,7 +173,12 @@ object HoodieSparkSchemaConverters {
           HoodieSchema.createRecord(recordName, nameSpace, null, fields.asJava)
         }
 
-      case other => throw new IncompatibleSchemaException(s"Unexpected Spark DataType: $other")
+      // VARIANT type (Spark >4.x only), which will be handled via SparkAdapter
+      case other if sparkAdapter.isVariantType(other) =>
+        HoodieSchema.createVariant(recordName, nameSpace, null)
+
+      case other =>
+        throw new IncompatibleSchemaException(s"Unexpected Spark DataType: $other")
     }
 
     // Wrap with null union if nullable (and not already a union)
@@ -159,6 +189,9 @@ object HoodieSparkSchemaConverters {
     }
   }
 
+  /**
+   * Helper method to convert HoodieSchema to Catalyst DataType.
+   */
   private def toSqlTypeHelper(hoodieSchema: HoodieSchema, existingRecordNames: Set[String]): SchemaType = {
     hoodieSchema.getType match {
       // Primitive types
@@ -293,7 +326,16 @@ object HoodieSparkSchemaConverters {
           }
         }
 
-      case other => throw new IncompatibleSchemaException(s"Unsupported HoodieSchemaType: $other")
+      // VARIANT type (Spark >4.x only), which will be handled via SparkAdapter
+      // TODO: Check if internalSchema will throw any errors here: #18021
+      case HoodieSchemaType.VARIANT =>
+        sparkAdapter.getVariantDataType match {
+          case Some(variantType) => SchemaType(variantType, nullable = false)
+          case None => throw new IncompatibleSchemaException("VARIANT type is only supported in Spark 4.0+")
+        }
+
+      case other =>
+        throw new IncompatibleSchemaException(s"Unsupported HoodieSchemaType: $other")
     }
   }
 

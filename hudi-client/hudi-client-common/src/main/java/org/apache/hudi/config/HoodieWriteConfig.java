@@ -21,6 +21,7 @@ package org.apache.hudi.config;
 import org.apache.hudi.client.WriteStatus;
 import org.apache.hudi.client.bootstrap.BootstrapMode;
 import org.apache.hudi.client.transaction.ConflictResolutionStrategy;
+
 import org.apache.hudi.client.transaction.lock.InProcessLockProvider;
 import org.apache.hudi.common.config.ConfigClassProperty;
 import org.apache.hudi.common.config.ConfigGroups;
@@ -94,7 +95,6 @@ import org.apache.hudi.table.storage.HoodieStorageLayout;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.orc.CompressionKind;
 
 import javax.annotation.concurrent.Immutable;
 
@@ -1830,8 +1830,8 @@ public class HoodieWriteConfig extends HoodieConfig {
     return getInt(HoodieCleanConfig.CLEANER_PARALLELISM_VALUE);
   }
 
-  public int getCleaningMaxCommits() {
-    return getInt(HoodieCleanConfig.CLEAN_MAX_COMMITS);
+  public int getCleanTriggerMaxCommits() {
+    return getInt(HoodieCleanConfig.CLEAN_TRIGGER_MAX_COMMITS);
   }
 
   public CleaningTriggerStrategy getCleaningTriggerStrategy() {
@@ -1868,6 +1868,10 @@ public class HoodieWriteConfig extends HoodieConfig {
 
   public String getCleanerPartitionFilterSelected() {
     return getString(HoodieCleanConfig.CLEAN_PARTITION_FILTER_SELECTED);
+  }
+
+  public long getMaxCommitsToClean() {
+    return getLong(HoodieCleanConfig.MAX_COMMITS_TO_CLEAN);
   }
 
   public boolean inlineCompactionEnabled() {
@@ -2038,6 +2042,10 @@ public class HoodieWriteConfig extends HoodieConfig {
 
   public String getClusteringPartitionFilterRegexPattern() {
     return getString(HoodieClusteringConfig.PARTITION_REGEX_PATTERN);
+  }
+
+  public String getClusteringEarliestCommitToCluster() {
+    return getString(HoodieClusteringConfig.PLAN_STRATEGY_EARLIEST_COMMIT_TO_CLUSTER);
   }
 
   public int getClusteringMaxNumGroups() {
@@ -2441,10 +2449,6 @@ public class HoodieWriteConfig extends HoodieConfig {
     return getInt(HoodieStorageConfig.ORC_BLOCK_SIZE);
   }
 
-  public CompressionKind getOrcCompressionCodec() {
-    return CompressionKind.valueOf(getString(HoodieStorageConfig.ORC_COMPRESSION_CODEC_NAME));
-  }
-
   /**
    * metrics properties.
    */
@@ -2684,6 +2688,14 @@ public class HoodieWriteConfig extends HoodieConfig {
 
   public boolean isClusteringBlockForPendingIngestion() {
     return getBooleanOrDefault(CLUSTERING_BLOCK_FOR_PENDING_INGESTION);
+  }
+
+  public boolean isExpirationOfClusteringEnabled() {
+    return getBooleanOrDefault(HoodieClusteringConfig.ENABLE_EXPIRATIONS);
+  }
+
+  public long getClusteringExpirationThresholdMins() {
+    return getLong(HoodieClusteringConfig.EXPIRATION_THRESHOLD_MINS);
   }
 
   /**
@@ -3722,6 +3734,7 @@ public class HoodieWriteConfig extends HoodieConfig {
             HoodieFailedWritesCleaningPolicy.LAZY.name(),
             writeConcurrencyMode.name());
       }
+
     }
 
     private void validate() {

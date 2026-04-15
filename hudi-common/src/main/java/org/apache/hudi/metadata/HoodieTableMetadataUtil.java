@@ -284,11 +284,14 @@ public class HoodieTableMetadataUtil {
         String fieldName = fieldNameFieldPair.getKey();
         HoodieSchemaField field = fieldNameFieldPair.getValue();
         HoodieSchema fieldSchema = field.schema().getNonNullType();
+        if (!isColumnTypeSupported(fieldSchema, Option.of(record.getRecordType()), indexVersion)) {
+          return;
+        }
         ColumnStats colStats = allColumnStats.computeIfAbsent(fieldName, ignored -> new ColumnStats(getValueMetadata(fieldSchema, indexVersion)));
         Object fieldValue = collectColumnRangeFieldValue(record, colStats.valueMetadata, fieldName, fieldSchema, recordSchema, properties);
 
         colStats.valueCount++;
-        if (fieldValue != null && isColumnTypeSupported(fieldSchema, Option.of(record.getRecordType()), indexVersion)) {
+        if (fieldValue != null) {
           // Set the min value of the field
           if (colStats.minValue == null
               || ConvertingGenericData.INSTANCE.compare(fieldValue, colStats.minValue, fieldSchema.toAvroSchema()) < 0) {
@@ -1931,6 +1934,7 @@ public class HoodieTableMetadataUtil {
       case NULL:
       case RECORD:
       case ARRAY:
+      case VARIANT:
         return null;
 
       default:
@@ -2041,22 +2045,27 @@ public class HoodieTableMetadataUtil {
     // if record type is set and if its AVRO, MAP, ARRAY, RECORD and ENUM types are unsupported.
     if (recordType.isPresent() && recordType.get() == HoodieRecordType.AVRO) {
       return (type != HoodieSchemaType.RECORD && type != HoodieSchemaType.ARRAY && type != HoodieSchemaType.MAP
-          && type != HoodieSchemaType.ENUM);
+          && type != HoodieSchemaType.ENUM && type != HoodieSchemaType.VARIANT);
     }
     // if record Type is not set or if recordType is SPARK then we cannot support AVRO, MAP, ARRAY, RECORD, ENUM and FIXED and BYTES type as well.
     // HUDI-8585 will add support for BYTES and FIXED
     return type != HoodieSchemaType.RECORD && type != HoodieSchemaType.ARRAY && type != HoodieSchemaType.MAP
         && type != HoodieSchemaType.ENUM && type != HoodieSchemaType.BYTES && type != HoodieSchemaType.FIXED
         && type != HoodieSchemaType.DECIMAL // DECIMAL's underlying type is BYTES
-        && type != HoodieSchemaType.BLOB;
+        && type != HoodieSchemaType.BLOB
+        && type != HoodieSchemaType.VARIANT;
   }
 
   private static boolean isColumnTypeSupportedV2(HoodieSchema schema) {
     HoodieSchemaType type = schema.getType();
     // Check for precision and scale if the schema has a logical decimal type.
+    // VARIANT (unshredded) type is excluded because it stores semi-structured data as opaque binary blobs,
+    // making min/max statistics meaningless
+    // TODO: For shredded, we are able to store colstats, explore that: #17988
     return type != HoodieSchemaType.RECORD && type != HoodieSchemaType.MAP
         && type != HoodieSchemaType.ARRAY && type != HoodieSchemaType.ENUM
-        && type != HoodieSchemaType.BLOB;
+        && type != HoodieSchemaType.BLOB && type != HoodieSchemaType.VECTOR
+        && type != HoodieSchemaType.VARIANT;
   }
 
   public static Set<String> getInflightMetadataPartitions(HoodieTableConfig tableConfig) {

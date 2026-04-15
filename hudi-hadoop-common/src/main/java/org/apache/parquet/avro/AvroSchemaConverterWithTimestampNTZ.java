@@ -221,6 +221,7 @@ public class AvroSchemaConverterWithTimestampNTZ extends HoodieAvroParquetSchema
         }
         break;
       case RECORD:
+      case BLOB:
         return new GroupType(repetition, fieldName, convertFields(schema.getFields(), schemaPath));
       case ENUM:
         builder = Types.primitive(BINARY, repetition).as(enumType());
@@ -248,8 +249,24 @@ public class AvroSchemaConverterWithTimestampNTZ extends HoodieAvroParquetSchema
           builder = Types.primitive(FIXED_LEN_BYTE_ARRAY, repetition).length(schema.getFixedSize());
         }
         break;
+      case VECTOR:
+        // Vectors are stored as bare FIXED_LEN_BYTE_ARRAY without a Parquet logical type annotation.
+        // Vector semantics (dimension, element type) are resolved from HoodieSchema (the table's
+        // stored schema), not from the Parquet file schema. The reverse direction
+        // (FIXED_LEN_BYTE_ARRAY → HoodieSchema) currently maps to generic FIXED; this is
+        // acceptable because the read path detects vectors from the HoodieSchema, not from Parquet.
+        // TODO: Consider adding VectorLogicalTypeAnnotation for fully self-describing Parquet files.
+        HoodieSchema.Vector vectorSchema = (HoodieSchema.Vector) schema;
+        int fixedSize = vectorSchema.getDimension()
+                * vectorSchema.getVectorElementType().getElementSize();
+        builder = Types.primitive(FIXED_LEN_BYTE_ARRAY, repetition).length(fixedSize);
+        break;
       case UNION:
         return convertUnion(fieldName, schema, repetition, schemaPath);
+      case VARIANT:
+        // Variant is represented as a record with value and metadata binary fields
+        // Convert the variant schema's fields to Parquet types
+        return new GroupType(repetition, fieldName, convertFields(schema.getFields(), schemaPath));
       default:
         throw new UnsupportedOperationException("Cannot convert Avro type " + type);
     }

@@ -24,7 +24,9 @@ import org.apache.hudi.common.util.ValidationUtils;
 import org.apache.hudi.common.util.collection.Pair;
 import org.apache.hudi.exception.HoodieAvroSchemaException;
 import org.apache.hudi.exception.HoodieIOException;
+import org.apache.hudi.internal.schema.HoodieSchemaException;
 
+import lombok.Getter;
 import org.apache.avro.JsonProperties;
 import org.apache.avro.LogicalType;
 import org.apache.avro.LogicalTypes;
@@ -102,6 +104,11 @@ public class HoodieSchema implements Serializable {
   public static final String TYPE_METADATA_FIELD = "hudi_type";
 
   /**
+   * The Avro logical type name used for Variant schemas.
+   */
+  public static final String VARIANT_TYPE_NAME = VariantLogicalType.VARIANT_LOGICAL_TYPE_NAME;
+
+  /**
    * Parses a type descriptor string for custom Hudi logical types such as VECTOR and BLOB.
    * Examples: "VECTOR(128)", "VECTOR(512, DOUBLE)", "BLOB".
    * Throws for non-custom logical type names.
@@ -115,9 +122,9 @@ public class HoodieSchema implements Serializable {
         if (params.isEmpty()) {
           throw new IllegalArgumentException("VECTOR type descriptor must include a dimension parameter");
         }
-        if (params.size() > 2) {
+        if (params.size() > 3) {
           throw new IllegalArgumentException(
-              "VECTOR type descriptor supports at most 2 parameters: dimension and optional element type");
+              "VECTOR type descriptor supports at most 3 parameters: dimension, optional element type, and optional storage backing");
         }
         int dimension;
         try {
@@ -128,7 +135,10 @@ public class HoodieSchema implements Serializable {
         Vector.VectorElementType elementType = params.size() > 1
             ? Vector.VectorElementType.fromString(params.get(1))
             : Vector.VectorElementType.FLOAT;
-        return createVector(dimension, elementType);
+        Vector.StorageBacking backing = params.size() > 2
+            ? Vector.StorageBacking.fromString(params.get(2))
+            : Vector.StorageBacking.FIXED_BYTES;
+        return createVector(dimension, elementType, backing);
       case BLOB:
         if (!params.isEmpty()) {
           throw new IllegalArgumentException(
@@ -198,6 +208,42 @@ public class HoodieSchema implements Serializable {
 
   public static final String PARQUET_ARRAY_SPARK = ".array";
   public static final String PARQUET_ARRAY_AVRO = "." + ARRAY_LIST_ELEMENT;
+
+  /**
+   * Parquet file-footer metadata key under which VECTOR column names and type descriptors
+   * are recorded. The value is a comma-separated list of {@code colName:VECTOR(dim[,elemType])}
+   * entries, e.g. {@code "embedding:VECTOR(128),tags:VECTOR(64,INT8)"}.
+   *
+   * <p>Stored as file-level key-value metadata (Parquet footer) so that any reader can
+   * identify vector columns without needing the Hudi schema store.
+   */
+  public static final String PARQUET_VECTOR_COLUMNS_METADATA_KEY = "hoodie.vector.columns";
+
+  /**
+   * Builds the value string for {@link #PARQUET_VECTOR_COLUMNS_METADATA_KEY}.
+   *
+   * @param schema a HoodieSchema of type RECORD (or null)
+   * @return comma-separated {@code colName:VECTOR(dim[,elemType])} entries, or empty string
+   *         if the schema is null or has no VECTOR columns
+   */
+  public static String buildVectorColumnsMetadataValue(HoodieSchema schema) {
+    if (schema == null || schema.isSchemaNull()) {
+      return "";
+    }
+    List<HoodieSchemaField> fields = schema.getFields();
+    StringBuilder sb = new StringBuilder();
+    for (HoodieSchemaField field : fields) {
+      HoodieSchema fieldSchema = field.schema().getNonNullType();
+      if (fieldSchema.getType() == HoodieSchemaType.VECTOR) {
+        Vector vectorSchema = (Vector) fieldSchema;
+        if (sb.length() > 0) {
+          sb.append(',');
+        }
+        sb.append(field.name()).append(':').append(vectorSchema.toTypeDescriptor());
+      }
+    }
+    return sb.toString();
+  }
 
   private Schema avroSchema;
   private HoodieSchemaType type;
@@ -375,6 +421,11 @@ public class HoodieSchema implements Serializable {
   public static HoodieSchema createArray(HoodieSchema elementSchema) {
     ValidationUtils.checkArgument(elementSchema != null, "Element schema cannot be null");
 
+    if (elementSchema.getNonNullType().getType() == HoodieSchemaType.VECTOR) {
+      throw new HoodieSchemaException(
+          "VECTOR type is not supported as an array element. VECTOR columns must be top-level fields.");
+    }
+
     Schema elementAvroSchema = elementSchema.avroSchema;
     ValidationUtils.checkState(elementAvroSchema != null, "Element schema's Avro schema cannot be null");
 
@@ -390,6 +441,11 @@ public class HoodieSchema implements Serializable {
    */
   public static HoodieSchema createMap(HoodieSchema valueSchema) {
     ValidationUtils.checkArgument(valueSchema != null, "Value schema cannot be null");
+
+    if (valueSchema.getNonNullType().getType() == HoodieSchemaType.VECTOR) {
+      throw new HoodieSchemaException(
+          "VECTOR type is not supported as a map value. VECTOR columns must be top-level fields.");
+    }
 
     Schema valueAvroSchema = valueSchema.avroSchema;
     ValidationUtils.checkState(valueAvroSchema != null, "Value schema's Avro schema cannot be null");
@@ -425,6 +481,8 @@ public class HoodieSchema implements Serializable {
     ValidationUtils.checkArgument(name != null && !name.isEmpty(), "Record name cannot be null or empty");
     ValidationUtils.checkArgument(fields != null, "Fields cannot be null");
 
+    validateNoVectorInNestedRecord(fields, false);
+
     // Convert HoodieSchemaFields to Avro Fields
     List<Schema.Field> avroFields = fields.stream()
         .map(HoodieSchemaField::getAvroField)
@@ -433,6 +491,28 @@ public class HoodieSchema implements Serializable {
     Schema recordSchema = Schema.createRecord(name, doc, namespace, isError);
     recordSchema.setFields(avroFields);
     return new HoodieSchema(recordSchema, fields);
+  }
+
+  /**
+   * Verifies that no VECTOR fields appear inside nested RECORD types. Top-level VECTOR fields
+   * (direct fields of the record being created) are allowed; VECTOR inside a child struct is not.
+   *
+   * @param fields the fields to validate
+   * @param nested true when validating inside a child RECORD (VECTOR throws); false at the top level (VECTOR is allowed)
+   * @throws HoodieSchemaException if any field (at any depth) is a VECTOR type
+   */
+  private static void validateNoVectorInNestedRecord(List<HoodieSchemaField> fields, boolean nested) {
+    for (HoodieSchemaField field : fields) {
+      HoodieSchema nonNull = field.schema().getNonNullType();
+      if (nested && nonNull.getType() == HoodieSchemaType.VECTOR) {
+        throw new HoodieSchemaException(
+            "VECTOR column '" + field.name() + "' must be a top-level field. "
+                + "Nested VECTOR columns (inside STRUCT, ARRAY, or MAP) are not supported.");
+      }
+      if (nonNull.getType() == HoodieSchemaType.RECORD) {
+        validateNoVectorInNestedRecord(nonNull.getFields(), true);
+      }
+    }
   }
 
   /**
@@ -651,6 +731,8 @@ public class HoodieSchema implements Serializable {
         null
     );
 
+    // Field order is (metadata, value) to match the Parquet spec and Iceberg convention.
+    // Fields are accessed by name, not position.
     List<HoodieSchemaField> fields = Arrays.asList(metadataField, valueField);
 
     Schema recordSchema = Schema.createRecord(variantName, doc, namespace, false);
@@ -691,7 +773,9 @@ public class HoodieSchema implements Serializable {
 
     List<HoodieSchemaField> fields = new ArrayList<>();
 
-    // Create metadata field (required bytes)
+    // Field order is (metadata, value) to match the Parquet spec and Iceberg convention.
+    // Fields are accessed by name, not position.
+    // Create metadata field first (required bytes)
     fields.add(HoodieSchemaField.of(
         Variant.VARIANT_METADATA_FIELD,
         HoodieSchema.create(HoodieSchemaType.BYTES),
@@ -699,7 +783,7 @@ public class HoodieSchema implements Serializable {
         null
     ));
 
-    // Create value field (nullable bytes for shredded)
+    // Create value field second (nullable bytes for shredded)
     fields.add(HoodieSchemaField.of(
         Variant.VARIANT_VALUE_FIELD,
         HoodieSchema.createNullable(HoodieSchemaType.BYTES),
@@ -770,23 +854,157 @@ public class HoodieSchema implements Serializable {
    * @return new HoodieSchema.Vector
    */
   public static HoodieSchema.Vector createVector(int dimension, Vector.VectorElementType elementType) {
+    return createVector(dimension, elementType, Vector.StorageBacking.FIXED_BYTES);
+  }
+
+  /**
+   * Creates Vector schema with custom dimension, element type, and storage backing.
+   *
+   * @param dimension vector dimension (must be > 0)
+   * @param elementType element type
+   * @param storageBacking physical storage format
+   * @return new HoodieSchema.Vector
+   */
+  public static HoodieSchema.Vector createVector(int dimension, Vector.VectorElementType elementType,
+                                                  Vector.StorageBacking storageBacking) {
     String vectorName = Vector.DEFAULT_NAME + "_" + elementType.name().toLowerCase() + "_" + dimension;
-    return createVector(vectorName, dimension, elementType);
+    return createVector(vectorName, dimension, elementType, storageBacking);
   }
 
   /**
    * Creates Vector schema with custom name, dimension, and element type.
+   * Defaults to {@link Vector.StorageBacking#FIXED_BYTES}.
    *
    * @param name FIXED type name (must not be null or empty)
    * @param dimension vector dimension (must be > 0)
-   * @param elementType element type (use {@link Vector.VectorElementType#FLOAT} or {@link Vector.VectorElementType#DOUBLE})
+   * @param elementType element type
    * @return new HoodieSchema.Vector
    */
   public static HoodieSchema.Vector createVector(String name, int dimension, Vector.VectorElementType elementType) {
+    return createVector(name, dimension, elementType, Vector.StorageBacking.FIXED_BYTES);
+  }
+
+  /**
+   * Creates Vector schema with custom name, dimension, element type, and storage backing.
+   *
+   * @param name FIXED type name (must not be null or empty)
+   * @param dimension vector dimension (must be > 0)
+   * @param elementType element type
+   * @param storageBacking physical storage format
+   * @return new HoodieSchema.Vector
+   */
+  public static HoodieSchema.Vector createVector(String name, int dimension, Vector.VectorElementType elementType,
+                                                  Vector.StorageBacking storageBacking) {
     ValidationUtils.checkArgument(name != null && !name.isEmpty(),
         () -> "Vector name must not be null or empty");
-    Schema vectorSchema = Vector.createSchema(name, dimension, elementType);
+    Schema vectorSchema = Vector.createSchema(name, dimension, elementType, storageBacking);
     return new HoodieSchema.Vector(vectorSchema);
+  }
+
+  /**
+   * Creates a shredded field struct per the Parquet variant shredding spec. The returned struct contains two nullable fields:
+   * <ul>
+   *   <li>{@code value}: nullable bytes (fallback binary representation)</li>
+   *   <li>{@code typed_value}: nullable type (the typed representation)</li>
+   * </ul>
+   *
+   * <p>Example output structure:
+   * <pre>
+   *   fieldName: struct
+   *     |-- value: binary (nullable)
+   *     |-- typed_value: &lt;fieldType&gt; (nullable)
+   * </pre></p>
+   *
+   * @param fieldName the name for the record (used as the Avro record name)
+   * @param fieldType the schema for the typed_value within this field
+   * @return a new HoodieSchema representing the shredded field struct
+   */
+  public static HoodieSchema createShreddedFieldStruct(String fieldName, HoodieSchema fieldType) {
+    ValidationUtils.checkArgument(fieldName != null && !fieldName.isEmpty(), "Field name cannot be null or empty");
+    ValidationUtils.checkArgument(fieldType != null, "Field type cannot be null");
+    List<HoodieSchemaField> fields = Arrays.asList(
+        HoodieSchemaField.of(
+            Variant.VARIANT_VALUE_FIELD,
+            HoodieSchema.createNullable(HoodieSchemaType.BYTES),
+            "Fallback binary representation",
+            NULL_VALUE
+        ),
+        HoodieSchemaField.of(
+            Variant.VARIANT_TYPED_VALUE_FIELD,
+            HoodieSchema.createNullable(fieldType),
+            "Typed value representation",
+            NULL_VALUE
+        )
+    );
+    return HoodieSchema.createRecord(fieldName, null, null, fields);
+  }
+
+  /**
+   * Creates a shredded Variant schema for an object type following the Parquet variant shredding spec. Each field in shreddedFields is wrapped in a struct with
+   * {@code {value: nullable binary, typed_value: nullable type}}.
+   *
+   * <p>Example usage:
+   * <pre>{@code
+   * Map<String, HoodieSchema> fields = new LinkedHashMap<>();
+   * fields.put("a", HoodieSchema.create(HoodieSchemaType.INT));
+   * fields.put("b", HoodieSchema.create(HoodieSchemaType.STRING));
+   * fields.put("c", HoodieSchema.createDecimal(15, 1));
+   * HoodieSchema.Variant variant = HoodieSchema.createVariantShreddedObject(fields);
+   * }</pre></p>
+   *
+   * <p>Produces the following structure:
+   * <pre>
+   * variant
+   *  |-- value: binary (nullable)
+   *  |-- metadata: binary
+   *  |-- typed_value: struct
+   *  |    |-- a: struct (nullable)
+   *  |    |    |-- value: binary (nullable)
+   *  |    |    |-- typed_value: integer (nullable)
+   *  |    |-- b: struct (nullable)
+   *  |    |    |-- value: binary (nullable)
+   *  |    |    |-- typed_value: string (nullable)
+   *  |    |-- c: struct (nullable)
+   *  |    |    |-- value: binary (nullable)
+   *  |    |    |-- typed_value: decimal(15,1) (nullable)
+   * </pre></p>
+   *
+   * @param shreddedFields Map of field names to their typed value schemas. Use LinkedHashMap for ordered fields.
+   * @return a new HoodieSchema.Variant with properly nested typed_value
+   */
+  public static HoodieSchema.Variant createVariantShreddedObject(Map<String, HoodieSchema> shreddedFields) {
+    return createVariantShreddedObject(null, null, null, shreddedFields);
+  }
+
+  /**
+   * Creates a shredded Variant schema for an object type with custom name, namespace, and documentation.
+   *
+   * @param name           the variant record name (can be null, defaults to "variant")
+   * @param namespace      the namespace (can be null)
+   * @param doc            the documentation (can be null)
+   * @param shreddedFields Map of field names to their typed value schemas. Use LinkedHashMap for ordered fields.
+   * @return a new HoodieSchema.Variant with properly nested typed_value
+   */
+  public static HoodieSchema.Variant createVariantShreddedObject(
+      String name, String namespace, String doc, Map<String, HoodieSchema> shreddedFields) {
+    ValidationUtils.checkArgument(shreddedFields != null && !shreddedFields.isEmpty(),
+        "Shredded fields cannot be null or empty");
+
+    // Build typed_value fields, each wrapped in the spec-compliant {value, typed_value} struct
+    List<HoodieSchemaField> typedValueFields = new ArrayList<>();
+    for (Map.Entry<String, HoodieSchema> entry : shreddedFields.entrySet()) {
+      HoodieSchema fieldStruct = createShreddedFieldStruct(entry.getKey(), entry.getValue());
+      typedValueFields.add(HoodieSchemaField.of(
+          entry.getKey(),
+          HoodieSchema.createNullable(fieldStruct),
+          null,
+          NULL_VALUE
+      ));
+    }
+
+    HoodieSchema typedValueSchema = HoodieSchema.createRecord(
+        Variant.VARIANT_TYPED_VALUE_FIELD, namespace, null, typedValueFields);
+    return createVariantShredded(name, namespace, doc, typedValueSchema);
   }
 
   /**
@@ -1820,10 +2038,14 @@ public class HoodieSchema implements Serializable {
      * Default element type (FLOAT) is omitted.
      */
     public String toTypeDescriptor() {
-      if (getVectorElementType() == VectorElementType.FLOAT) {
+      boolean defaultElemType = getVectorElementType() == VectorElementType.FLOAT;
+      boolean defaultBacking = getStorageBacking() == StorageBacking.FIXED_BYTES;
+      if (defaultElemType && defaultBacking) {
         return "VECTOR(" + getDimension() + ")";
+      } else if (defaultBacking) {
+        return "VECTOR(" + getDimension() + ", " + getVectorElementType() + ")";
       }
-      return "VECTOR(" + getDimension() + ", " + getVectorElementType() + ")";
+      return "VECTOR(" + getDimension() + ", " + getVectorElementType() + ", " + getStorageBacking() + ")";
     }
 
     /**
@@ -1835,11 +2057,17 @@ public class HoodieSchema implements Serializable {
      * @return new Vector schema
      */
     private static Schema createSchema(String name, int dimension, VectorElementType elementType) {
+      return createSchema(name, dimension, elementType, StorageBacking.FIXED_BYTES);
+    }
+
+    private static Schema createSchema(String name, int dimension, VectorElementType elementType,
+                                        StorageBacking storageBacking) {
       ValidationUtils.checkArgument(dimension > 0,
           () -> "Vector dimension must be positive: " + dimension);
 
       // Validate elementType
       VectorElementType resolvedElementType = elementType != null ? elementType : VectorElementType.FLOAT;
+      StorageBacking resolvedBacking = storageBacking != null ? storageBacking : StorageBacking.FIXED_BYTES;
 
       // Calculate fixed size: dimension × element size in bytes
       int elementSize = resolvedElementType.getElementSize();
@@ -1849,7 +2077,7 @@ public class HoodieSchema implements Serializable {
       Schema vectorSchema = Schema.createFixed(name, null, null, fixedSize);
 
       // Apply logical type with properties directly to FIXED
-      VectorLogicalType vectorLogicalType = new VectorLogicalType(dimension, resolvedElementType.name(), StorageBacking.FIXED_BYTES.name());
+      VectorLogicalType vectorLogicalType = new VectorLogicalType(dimension, resolvedElementType.name(), resolvedBacking.name());
       vectorLogicalType.addToSchema(vectorSchema);
 
       return vectorSchema;
@@ -2229,10 +2457,17 @@ public class HoodieSchema implements Serializable {
   public static class Variant extends HoodieSchema {
 
     private static final String VARIANT_DEFAULT_NAME = "variant";
-    private static final String VARIANT_METADATA_FIELD = "metadata";
-    private static final String VARIANT_VALUE_FIELD = "value";
-    private static final String VARIANT_TYPED_VALUE_FIELD = "typed_value";
+    public static final String VARIANT_METADATA_FIELD = "metadata";
+    public static final String VARIANT_VALUE_FIELD = "value";
+    public static final String VARIANT_TYPED_VALUE_FIELD = "typed_value";
 
+    /**
+     * -- GETTER --
+     *  Checks if this is a shredded variant (has typed_value field or nullable value field).
+     *
+     * @return true if this is a shredded variant, false for unshredded
+     */
+    @Getter
     private final boolean isShredded;
     private final Option<HoodieSchema> typedValueSchema;
 
@@ -2341,15 +2576,6 @@ public class HoodieSchema implements Serializable {
     }
 
     /**
-     * Checks if this is a shredded variant (has typed_value field or nullable value field).
-     *
-     * @return true if this is a shredded variant, false for unshredded
-     */
-    public boolean isShredded() {
-      return isShredded;
-    }
-
-    /**
      * Returns the metadata field schema.
      *
      * @return HoodieSchema for the metadata field (always BYTES)
@@ -2378,9 +2604,81 @@ public class HoodieSchema implements Serializable {
       return typedValueSchema;
     }
 
+    /**
+     * Returns the typed_value schema with plain (unwrapped) types suitable for Spark shredding utilities, i.e. essentially removing the `value` field
+     *
+     * <p>If the typed_value follows the variant shredding spec (each field is a struct with
+     * {@code {value: bytes, typed_value: <type>}}), this extracts only the inner typed_value types and returns a record schema containing just those plain types.</p>
+     *
+     * <p>If the typed_value is already in plain form (created with {@code createVariantShredded}),
+     * returns the schema as-is.</p>
+     *
+     * @return Option containing the plain typed_value schema, or Option.empty() if not present
+     */
+    public Option<HoodieSchema> getPlainTypedValueSchema() {
+      if (!typedValueSchema.isPresent()) {
+        return Option.empty();
+      }
+      HoodieSchema tvSchema = typedValueSchema.get();
+      if (tvSchema.getType() != HoodieSchemaType.RECORD) {
+        return typedValueSchema;
+      }
+
+      List<HoodieSchemaField> fields = tvSchema.getFields();
+      // Check if all fields follow the nested shredding pattern: each field is a record with {value, typed_value}
+      boolean isNestedForm = !fields.isEmpty() && fields.stream().allMatch(field -> {
+        HoodieSchema fieldSchema = field.schema();
+        if (fieldSchema.isNullable()) {
+          fieldSchema = fieldSchema.getNonNullType();
+        }
+        if (fieldSchema.getType() != HoodieSchemaType.RECORD) {
+          return false;
+        }
+        Option<HoodieSchemaField> valueSubField = fieldSchema.getField(VARIANT_VALUE_FIELD);
+        Option<HoodieSchemaField> typedValueSubField = fieldSchema.getField(VARIANT_TYPED_VALUE_FIELD);
+        return valueSubField.isPresent()
+            && valueSubField.get().schema().isNullable()
+            && valueSubField.get().schema().getNonNullType().getType() == HoodieSchemaType.BYTES
+            && typedValueSubField.isPresent()
+            && typedValueSubField.get().schema().isNullable()
+            && fieldSchema.getFields().size() == 2;
+      });
+
+      if (!isNestedForm) {
+        return typedValueSchema;
+      }
+
+      // Extract the plain types from the nested form
+      List<HoodieSchemaField> plainFields = new ArrayList<>();
+      for (HoodieSchemaField field : fields) {
+        HoodieSchema fieldSchema = field.schema();
+        if (fieldSchema.isNullable()) {
+          fieldSchema = fieldSchema.getNonNullType();
+        }
+        HoodieSchema innerTypedValue = fieldSchema.getField(VARIANT_TYPED_VALUE_FIELD).get().schema();
+        plainFields.add(HoodieSchemaField.of(field.name(), innerTypedValue));
+      }
+      return Option.of(HoodieSchema.createRecord(
+          tvSchema.getAvroSchema().getName() + "_plain", null, null, plainFields));
+    }
+
     @Override
     public String getName() {
       return VARIANT_DEFAULT_NAME;
+    }
+
+    /**
+     * Returns the type of this schema.
+     * Note: This override is not strictly necessary as the base class constructor
+     * already sets the type correctly via HoodieSchemaType.fromAvro() which detects
+     * the VariantLogicalType. This explicit override is provided for consistency
+     * with other logical type subclasses (e.g., Blob) and for clarity.
+     *
+     * @return HoodieSchemaType.VARIANT
+     */
+    @Override
+    public HoodieSchemaType getType() {
+      return HoodieSchemaType.VARIANT;
     }
 
     @Override
@@ -2449,7 +2747,10 @@ public class HoodieSchema implements Serializable {
     public static final String TYPE_DESCRIPTOR = "BLOB";
     private static final String DEFAULT_NAME = "blob";
     private static final List<Schema.Field> BLOB_FIELDS = createBlobFields();
+    private static final int REFERENCE_FIELD_COUNT = AvroSchemaUtils.getNonNullTypeFromUnion(BLOB_FIELDS.get(2).schema()).getFields().size();
 
+    public static final String INLINE = "INLINE";
+    public static final String OUT_OF_LINE = "OUT_OF_LINE";
     public static final String TYPE = "type";
     public static final String INLINE_DATA_FIELD = "data";
     public static final String EXTERNAL_REFERENCE = "reference";
@@ -2465,7 +2766,7 @@ public class HoodieSchema implements Serializable {
     }
 
     public static int getReferenceFieldCount() {
-      return AvroSchemaUtils.getNonNullTypeFromUnion(BLOB_FIELDS.get(2).schema()).getFields().size();
+      return REFERENCE_FIELD_COUNT;
     }
 
     /**
@@ -2523,7 +2824,7 @@ public class HoodieSchema implements Serializable {
       referenceField.setFields(referenceFields);
 
       return Arrays.asList(
-          new Schema.Field(TYPE, Schema.createEnum("blob_storage_type", null, null, Arrays.asList("INLINE", "OUT_OF_LINE")), null, null),
+          new Schema.Field(TYPE, Schema.createEnum("blob_storage_type", null, null, Arrays.asList(INLINE, OUT_OF_LINE)), null, null),
           new Schema.Field(INLINE_DATA_FIELD, AvroSchemaUtils.createNullableSchema(bytesField), null, Schema.Field.NULL_DEFAULT_VALUE),
           new Schema.Field(EXTERNAL_REFERENCE, AvroSchemaUtils.createNullableSchema(referenceField), null, Schema.Field.NULL_DEFAULT_VALUE)
       );
