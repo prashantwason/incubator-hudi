@@ -103,7 +103,7 @@ class DefaultSource extends RelationProvider
     val storage = HoodieStorageUtils.getStorage(
       allPaths.head, HadoopFSUtils.getStorageConf(sqlContext.sparkContext.hadoopConfiguration))
 
-    if (path.exists(_.contains("*")) || readPaths.nonEmpty) {
+    if (path.exists(_.contains("*")) || readPaths.exists(_.contains("*"))) {
       throw new HoodieException("Glob paths are not supported for read paths as of Hudi 1.2.0")
     }
 
@@ -119,8 +119,9 @@ class DefaultSource extends RelationProvider
     val parameters = DataSourceOptionsHelper.parametersWithReadDefaults(
       hoodieAndSparkHoodieSqlConfs ++ optParams)
 
-    // Get the table base path
-    val tablePath = DataSourceUtils.getTablePath(storage, Seq(new StoragePath(path.get)).asJava)
+    // Get the table base path. Use path if available, otherwise fall back to readPaths.
+    val effectivePath = path.getOrElse(readPaths.head)
+    val tablePath = DataSourceUtils.getTablePath(storage, Seq(new StoragePath(effectivePath)).asJava)
     log.info("Obtained hudi table path: " + tablePath)
 
     val metaClient = HoodieTableMetaClient.builder().setMetaserverConfig(parameters.toMap.asJava)
@@ -134,7 +135,11 @@ class DefaultSource extends RelationProvider
       parameters
     }
 
-    val relation = DefaultSource.createRelation(sqlContext, metaClient, schema, options.toMap)
+    // Ensure 'path' is set in options for downstream components (e.g., HoodieFileIndex)
+    // that require it. When reading via HiveMetastoreCatalog, only hoodie.datasource.read.paths
+    // may be provided without an explicit 'path' option.
+    val optionsWithPath = if (options.contains("path")) options else options + ("path" -> tablePath)
+    val relation = DefaultSource.createRelation(sqlContext, metaClient, schema, optionsWithPath.toMap)
     log.info(s"Created relation ${relation.getClass.getSimpleName} with ${options.size} resolved options")
     relation
   }

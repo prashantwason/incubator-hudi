@@ -34,17 +34,27 @@ object FileFormatUtilsForFileGroupReader extends SparkAdapterSupport {
   def applyNewFileFormatChanges(scanOperation: LogicalPlan, logicalRelation: LogicalPlan, fs: HadoopFsRelation): LogicalPlan = {
     val ff = fs.fileFormat.asInstanceOf[ParquetFileFormat with HoodieFormatTrait]
     ff.isProjected = true
-    val tableSchema = fs.location match {
-      case _: HoodieCDCFileIndex => HoodieCDCFileIndex.FULL_CDC_SPARK_SCHEMA
-      case index: SparkHoodieTableFileIndex => index.schema
+    fs.location match {
+      case _: HoodieCDCFileIndex =>
+        val tableSchema = HoodieCDCFileIndex.FULL_CDC_SPARK_SCHEMA
+        val resolvedSchema = logicalRelation.resolve(tableSchema, fs.sparkSession.sessionState.analyzer.resolver)
+        val unfilteredPlan = if (!fs.partitionSchema.fields.isEmpty && sparkAdapter.getCatalystPlanUtils.produceSameOutput(scanOperation, logicalRelation)) {
+          Project(resolvedSchema, scanOperation)
+        } else {
+          scanOperation
+        }
+        applyFiltersToPlan(unfilteredPlan, tableSchema, resolvedSchema, ff.getRequiredFilters)
+      case index: SparkHoodieTableFileIndex =>
+        val tableSchema = index.schema
+        val resolvedSchema = logicalRelation.resolve(tableSchema, fs.sparkSession.sessionState.analyzer.resolver)
+        val unfilteredPlan = if (!fs.partitionSchema.fields.isEmpty && sparkAdapter.getCatalystPlanUtils.produceSameOutput(scanOperation, logicalRelation)) {
+          Project(resolvedSchema, scanOperation)
+        } else {
+          scanOperation
+        }
+        applyFiltersToPlan(unfilteredPlan, tableSchema, resolvedSchema, ff.getRequiredFilters)
+      case _ => scanOperation // Not a Hudi file index (e.g. CatalogFileIndex from Uber Spark fork), skip
     }
-    val resolvedSchema = logicalRelation.resolve(tableSchema, fs.sparkSession.sessionState.analyzer.resolver)
-    val unfilteredPlan = if (!fs.partitionSchema.fields.isEmpty && sparkAdapter.getCatalystPlanUtils.produceSameOutput(scanOperation, logicalRelation)) {
-      Project(resolvedSchema, scanOperation)
-    } else {
-      scanOperation
-    }
-    applyFiltersToPlan(unfilteredPlan, tableSchema, resolvedSchema, ff.getRequiredFilters)
   }
 
   /**
