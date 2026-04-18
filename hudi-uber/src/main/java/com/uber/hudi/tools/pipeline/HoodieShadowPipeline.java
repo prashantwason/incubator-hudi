@@ -19,7 +19,6 @@
 package com.uber.hudi.tools.pipeline;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
@@ -85,7 +84,6 @@ import org.apache.hudi.hive.HiveSyncTool;
 import org.apache.hudi.hive.ddl.HiveSyncMode;
 import org.apache.hudi.keygen.constant.KeyGeneratorOptions;
 import org.apache.hudi.metrics.MetricsReporterType;
-import org.apache.hudi.storage.StorageConfiguration;
 import org.apache.hudi.storage.StoragePath;
 import org.apache.hudi.sync.common.HoodieSyncConfig;
 import org.apache.hudi.table.HoodieSparkTable;
@@ -310,7 +308,9 @@ public class HoodieShadowPipeline {
             List<String> failedToCopy = new ArrayList<>();
             commitFileStatusesList.forEachRemaining(fileStatus -> {
               Path srcPath = fileStatus.getPath();
-              Path destPath = new Path(srcPath.toString().replace(cfg.srcPath, cfg.destPath));
+              String instantFileName = fileStatus.getPath().getName();
+              Path timelinePath = HadoopFSUtils.convertToHadoopPath(destMetaClient.getTimelinePath());
+              Path destPath = new Path(timelinePath, instantFileName);
               int retries = 0;
               boolean checksumVerifiedCopyCreated = false;
               while (!checksumVerifiedCopyCreated && retries < 3) {
