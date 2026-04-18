@@ -81,7 +81,6 @@ import org.apache.hudi.exception.TableNotFoundException;
 import org.apache.hudi.hadoop.fs.HadoopFSUtils;
 import org.apache.hudi.hive.HiveSyncConfigHolder;
 import org.apache.hudi.hive.HiveSyncTool;
-import org.apache.hudi.hive.ddl.HiveSyncMode;
 import org.apache.hudi.keygen.constant.KeyGeneratorOptions;
 import org.apache.hudi.metrics.MetricsReporterType;
 import org.apache.hudi.storage.StoragePath;
@@ -389,7 +388,7 @@ public class HoodieShadowPipeline {
     bootstrapMetadataTable(destMetaClient, sparkEngineContext, cfg, props);
 
     if (cfg.enableHiveSync) {
-      runHiveSync(jssc, cfg);
+      runHiveSync(jssc, destMetaClient, cfg);
     }
 
     return destMetaClient;
@@ -705,7 +704,8 @@ public class HoodieShadowPipeline {
   /**
    * When enableHiveSync is true, register dest dataset in HMS using HiveSyncTool.
    */
-  public static void runHiveSync(JavaSparkContext jssc, HoodieShadowPipelineConfig config) throws IOException {
+  public static void runHiveSync(JavaSparkContext jssc, HoodieTableMetaClient destMetaClient,
+                                 HoodieShadowPipelineConfig config) throws IOException {
     LOG.info("Starting Hive sync for " + getFullTargetTableName(config));
     Properties props = new Properties();
     props.setProperty(HoodieSyncConfig.META_SYNC_BASE_PATH.key(), config.destPath);
@@ -713,7 +713,11 @@ public class HoodieShadowPipeline {
     props.setProperty(HoodieSyncConfig.META_SYNC_DATABASE_NAME.key(), config.hiveDatabase);
     props.setProperty(HoodieSyncConfig.META_SYNC_TABLE_NAME.key(), getTargetTableName(config));
     props.setProperty(HoodieSyncConfig.META_SYNC_PARTITION_FIELDS.key(), config.partitionColumns);
-    props.setProperty(HiveSyncConfigHolder.HIVE_SYNC_MODE.key(), HiveSyncMode.HMS.name());
+    props.setProperty(HiveSyncConfigHolder.HIVE_SYNC_MODE.key(), HIVEQL.name());
+    props.put(HoodieSyncConfig.META_SYNC_PARTITION_EXTRACTOR_CLASS.key(), config.partitionValueExtractorClass);
+    if (HoodieTableType.MERGE_ON_READ.equals(destMetaClient.getTableType())) {
+      props.put(DataSourceWriteOptions.HIVE_SKIP_RO_SUFFIX_FOR_READ_OPTIMIZED_TABLE().key(), "true");
+    }
     try (HiveSyncTool syncTool = new HiveSyncTool(props, jssc.hadoopConfiguration())) {
       syncTool.syncHoodieTable();
     } catch (Exception e) {
