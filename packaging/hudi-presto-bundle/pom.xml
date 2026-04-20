@@ -147,6 +147,10 @@
                   <pattern>org.openjdk.jol.</pattern>
                   <shadedPattern>org.apache.hudi.org.openjdk.jol.</shadedPattern>
                 </relocation>
+                <relocation>
+                  <pattern>io.airlift.compress.</pattern>
+                  <shadedPattern>org.apache.hudi.io.airlift.compress.</shadedPattern>
+                </relocation>
               </relocations>
               <createDependencyReducedPom>false</createDependencyReducedPom>
               <filters>
