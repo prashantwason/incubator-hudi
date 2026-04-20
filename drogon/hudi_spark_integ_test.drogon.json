@@ -1,0 +1,88 @@
+{
+  "project_name": "hudi_spark_integ_test",
+  "project_hdfs_dir": "/user/hudi/hudi_spark_integ_test/",
+  "deployment": {
+    "artifacts": {
+      "file": "packaging/hudi-spark-bundle/target/hudi-spark3.3-bundle_${scala_version}-${HUDI_VERSION}.jar"
+    },
+    "flatten_directories": true
+  },
+
+  "launch": {
+    "className": "org.apache.spark.sql.hudi.runner.HoodieSparkSqlWriterRunner",
+    "jars": [
+      "http://artifactory.uber.internal:4587/artifactory/libs-release-local/org/apache/spark/spark-avro_${scala_version}/${spark_avro_version}/spark-avro_${scala_version}-${spark_avro_version}.jar",
+      "http://artifactory.uber.internal:4587/artifactory/libs-release-local/com/uber/crypto-write-supports/crypto-write-supports/${clac_version}-java-monorepo/crypto-write-supports-${clac_version}-java-monorepo.jar",
+      "http://artifactory.uber.internal:4587/artifactory/repo1-cache/org/apache/calcite/calcite-core/1.10.0/calcite-core-1.10.0.jar",
+      "http://artifactory.uber.internal:4587/artifactory/repo1-cache/org/apache/calcite/calcite-linq4j/1.10.0/calcite-linq4j-1.10.0.jar",
+      "http://artifactory.uber.internal:4587/artifactory/repo1-cache/org/apache/calcite/avatica/avatica/1.8.0/avatica-1.8.0.jar"
+    ],
+    "driverMemory": "${DRIVER_MEMORY}",
+    "executorMemory": "${EXECUTOR_MEMORY}",
+    "queue": "${queue}",
+    "sparkEnv": "${spark_env}",
+    "proxyUser": "${proxy_user}",
+    "args": [
+      "--test-category", "${TEST_CATEGORY}",
+      "--test-name", "${TEST_NAME}"
+    ],
+    "conf": {
+      "spark.yarn.maxAppAttempts": "1",
+      "spark.task.maxFailures": "3",
+      "spark.executor.instances": "${NUM_EXECUTORS}",
+      "spark.driver.maxResultSize": "8g",
+      "spark.driver.cores": "${DRIVER_CORES}",
+      "spark.executor.cores": "${EXECUTOR_CORES}",
+      "spark.serializer": "${spark_serializer}",
+      "spark.yarn.jars.exclusionRegex": "(.*hudi.*)",
+      "spark.uber.executor.logging.verbose": "true",
+      "spark.sql.legacy.dataset.nameNonStructGroupingKeyAsValue": "true",
+      "spark.sql.storeAssignmentPolicy": "LEGACY",
+      "spark.sql.legacy.setCommandRejectsSparkCoreConfs": "false",
+      "spark.sql.legacy.parseNullPartitionSpecAsStringLiteral": "true",
+      "spark.sql.legacy.exponentLiteralAsDecimal.enabled": "true",
+      "spark.sql.legacy.createEmptyCollectionUsingStringType": "true",
+      "spark.sql.legacy.typeCoercion.datetimeToString.enabled": "true",
+      "spark.sql.legacy.castComplexTypesToString.enabled": "true",
+      "spark.sql.legacy.lpadRpadAlwaysReturnString": "true",
+      "spark.sql.legacy.interval.enabled": "true",
+      "spark.sql.parquet.datetimeRebaseModeInRead": "LEGACY",
+      "spark.sql.parquet.int96RebaseModeInRead": "LEGACY",
+      "spark.driver.extraJavaOptions": "-verbose:class",
+      "spark.executor.extraJavaOptions": "-verbose:class",
+      "parquet.crypto.read.masked.value.enabled": "true",
+      "spark.hoodie.datasource.read.file.index.list.partitions.from.hms": "${HMS_PARTITION_LIST_ENABLED}",
+      "spark.hoodie.datasource.read.schema.from.hms": "${FETCH_SCHEMA_FROM_HMS_ENABLED}",
+      "spark.hoodie.datasource.read.file.index.list.file.statuses.using.ro.path.filter": "${RO_PATH_FILTER_ENABLED}",
+      "spark.plugins": "org.apache.spark.sql.hudi.HoodieSparkPlugin",
+      "spark.livy.spark.binary-type": "PARQUET_13",
+      "spark.sql.hive.metastore.sharedPrefixes": "org.apache.hudi"
+    }
+  },
+  "build": {
+    "shell_command": "python3 ./scripts/check_and_build.py packaging/hudi-spark-bundle ${HUDI_VERSION} ${scala_version}",
+    "cd_enabled": true
+  },
+  "variables": {
+    "spark_env": "SPARK_33",
+    "queue": "hadoop-platform-komondor-schemaless-normal",
+    "proxy_user": "hoover",
+    "avro_version": "1.11.4",
+    "spark_avro_version": "3.3.2-uber-13",
+    "HUDI_VERSION": "1.2.0-uber-test-7",
+    "scala_version": "2.12",
+    "clac_version": "0.10.1-51881-184ea5016e20",
+    "DRIVER_MEMORY": "20g",
+    "EXECUTOR_MEMORY": "6g",
+    "DRIVER_CORES": "4",
+    "EXECUTOR_CORES": "1",
+    "NUM_EXECUTORS": "4",
+    "spark_serializer": "org.apache.spark.serializer.KryoSerializer",
+    "HMS_PARTITION_LIST_ENABLED": "true",
+    "FETCH_SCHEMA_FROM_HMS_ENABLED": "true",
+    "FILE_INDEX_IMPLEMENTATION": "org.apache.hudi.HybridHoodieSparkSqlFileIndex",
+    "RO_PATH_FILTER_ENABLED": "true",
+    "TEST_CATEGORY": "",
+    "TEST_NAME": ""
+  }
+}

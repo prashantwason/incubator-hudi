@@ -124,6 +124,10 @@
                   <include>org.apache.hive:hive-metastore</include>
                   <include>org.apache.hive:hive-jdbc</include>
 
+                  <include>org.apache.calcite:calcite-core</include>
+                  <include>org.apache.calcite:calcite-linq4j</include>
+                  <include>org.apache.calcite.avatica:avatica</include>
+
                   <include>org.apache.curator:curator-framework</include>
                   <include>org.apache.curator:curator-client</include>
                   <include>org.apache.curator:curator-recipes</include>
@@ -380,6 +384,26 @@
       <groupId>${hive.groupid}</groupId>
       <artifactId>hive-common</artifactId>
       <version>${hive.version}</version>
+      <scope>${spark.bundle.hive.scope}</scope>
+    </dependency>
+
+    <!-- calcite (required for HIVEQL sync mode) -->
+    <dependency>
+      <groupId>org.apache.calcite</groupId>
+      <artifactId>calcite-core</artifactId>
+      <version>1.10.0</version>
+      <scope>${spark.bundle.hive.scope}</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.calcite</groupId>
+      <artifactId>calcite-linq4j</artifactId>
+      <version>1.10.0</version>
+      <scope>${spark.bundle.hive.scope}</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.calcite.avatica</groupId>
+      <artifactId>avatica</artifactId>
+      <version>1.8.0</version>
       <scope>${spark.bundle.hive.scope}</scope>
     </dependency>
 
