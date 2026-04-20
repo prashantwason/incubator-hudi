@@ -132,17 +132,17 @@ public class HoodieShadowPipeline {
     // Create a new HUDI dataset
     LOG.info("Creating HUDI dataset at destination path " + cfg.destPath);
     HoodieTableMetaClient destMetaClient;
+    HoodieTableMetaClient.TableBuilder tableBuilder;
     if (cfg.reuseHoodiePropertiesFileFromSrc) {
       Properties srcTableProperties = srcMetaClient.getTableConfig().getProps();
       Stream.of(HoodieTableConfig.TABLE_METADATA_PARTITIONS.key(), HoodieTableConfig.NAME.key(), HoodieTableConfig.VERSION.key())
           .forEach(srcTableProperties::remove);
-      destMetaClient = HoodieTableMetaClient.newTableBuilder().fromMetaClient(srcMetaClient)
+      tableBuilder = HoodieTableMetaClient.newTableBuilder().fromMetaClient(srcMetaClient)
           .setTableName(getFullTargetTableName(cfg))
           .fromProperties(srcTableProperties)
-          .setTableType(HoodieTableType.valueOf(cfg.destTableType))
-          .initTable(HadoopFSUtils.getStorageConf(jssc.hadoopConfiguration()), cfg.destPath);
+          .setTableType(HoodieTableType.valueOf(cfg.destTableType));
     } else {
-      destMetaClient = HoodieTableMetaClient.newTableBuilder().fromMetaClient(srcMetaClient)
+      tableBuilder = HoodieTableMetaClient.newTableBuilder().fromMetaClient(srcMetaClient)
           .setTableName(getFullTargetTableName(cfg))
           .setBaseFileFormat(srcMetaClient.getTableConfig().getBaseFileFormat().name())
           .setTableType(HoodieTableType.valueOf(cfg.destTableType))
@@ -151,9 +151,12 @@ public class HoodieShadowPipeline {
           .setRecordKeyFields(cfg.recordKeyColumn)
           .setPopulateMetaFields(cfg.writeMetaFields)
           .setKeyGeneratorClassProp(cfg.keyGenerator)
-          .setOrderingFields(cfg.sourceOrderingField)
-          .initTable(HadoopFSUtils.getStorageConf(jssc.hadoopConfiguration()), cfg.destPath);
+          .setOrderingFields(cfg.sourceOrderingField);
+      if (cfg.destTableType.equals(HoodieTableType.MERGE_ON_READ.name())) {
+        tableBuilder.setPayloadClassName(cfg.destPayloadClassName);
+      }
     }
+    destMetaClient = tableBuilder.initTable(HadoopFSUtils.getStorageConf(jssc.hadoopConfiguration()), cfg.destPath);
 
     // Find the partitions in source dataset
     HoodieSparkEngineContext sparkEngineContext = new HoodieSparkEngineContext(jssc);

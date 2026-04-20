@@ -3,6 +3,7 @@ package com.uber.hudi.tools.pipeline;
 import com.beust.jcommander.Parameter;
 import org.apache.hudi.client.utils.OperationConverter;
 import org.apache.hudi.common.model.HoodieTableType;
+import org.apache.hudi.common.model.OverwriteWithLatestAvroPayload;
 import org.apache.hudi.common.model.WriteOperationType;
 import org.apache.hudi.hive.SlashEncodedDayPartitionValueExtractor;
 
@@ -111,6 +112,9 @@ public class HoodieShadowPipelineConfig implements Serializable {
 
   @Parameter(names = {"--dest-table-type"}, description = "Destination table type either COW or MOR. COW is default value")
   public String destTableType = HoodieTableType.COPY_ON_WRITE.name();
+
+  @Parameter(names = {"--dest-payload-class"}, description = "Destination table's payload class. Default is OverwriteWithLatestAvroPayload")
+  public String destPayloadClassName = OverwriteWithLatestAvroPayload.class.getName();
 
   @Parameter(names = {"--assume-date-partitioning"}, description = "Is the dataset date partitioned?", arity = 1)
   public boolean assumeDatePartitioning = true;
