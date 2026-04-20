@@ -151,7 +151,11 @@ public class ArchivedTimelineLoaderV2 implements ArchivedTimelineLoader {
         .getReaderFactory(HoodieRecord.HoodieRecordType.AVRO)
         .getFileReader(DEFAULT_HUDI_CONFIG_FOR_READER, new StoragePath(metaClient.getArchivePath(), fileName));
     //TODO boundary to revisit in later pr to use HoodieSchema directly
-    return reader.getIndexedRecordIterator(HoodieSchema.fromAvroSchema(HoodieLSMTimelineInstant.getClassSchema()),
+    // Use a parsed copy of the schema (not the class schema directly) to avoid
+    // SpecificRecord instantiation by Parquet reader, which would fail with
+    // ClassCastException (Utf8 -> String) under Avro 1.8.2
+    org.apache.avro.Schema genericSchema = new org.apache.avro.Schema.Parser().parse(HoodieLSMTimelineInstant.getClassSchema().toString());
+    return reader.getIndexedRecordIterator(HoodieSchema.fromAvroSchema(genericSchema),
         HoodieSchema.fromAvroSchema(readSchema));
   }
 }

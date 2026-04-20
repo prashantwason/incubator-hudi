@@ -37,6 +37,9 @@ import org.apache.hudi.common.util.ValidationUtils;
 import org.apache.hudi.common.util.VisibleForTesting;
 import org.apache.hudi.common.util.collection.ClosableIterator;
 import org.apache.hudi.config.HoodieWriteConfig;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.parquet.hadoop.ParquetReader;
 import org.apache.hudi.exception.HoodieCommitException;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieIOException;
@@ -300,21 +303,26 @@ public class LSMTimelineWriter {
     log.info("Starting to compact source files.");
     StoragePath compactedFilePath = new StoragePath(archivePath, compactedFileName);
     deleteIfExists(compactedFilePath);
+    //TODO boundary to revisit in later pr to use HoodieSchema directly
+    HoodieSchema schema = HoodieSchema.fromAvroSchema(HoodieLSMTimelineInstant.getClassSchema());
     try (HoodieFileWriter writer = openWriter(compactedFilePath)) {
       for (String fileName : candidateFiles) {
-        // Read the input source file
-        try (HoodieAvroParquetReader reader = (HoodieAvroParquetReader) HoodieIOFactory.getIOFactory(metaClient.getStorage())
-            .getReaderFactory(HoodieRecord.HoodieRecordType.AVRO)
-            .getFileReader(config, new StoragePath(archivePath, fileName))) {
-          // Read the meta entry
-          //TODO boundary to revisit in later pr to use HoodieSchema directly
-          HoodieSchema schema = HoodieSchema.fromAvroSchema(HoodieLSMTimelineInstant.getClassSchema());
-          try (ClosableIterator<IndexedRecord> iterator = reader.getIndexedRecordIterator(schema,
-              schema)) {
-            while (iterator.hasNext()) {
-              IndexedRecord record = iterator.next();
-              writer.write(record.get(0).toString(), new HoodieAvroIndexedRecord(record), schema);
-            }
+        // Read the input source file using GenericData model to avoid Utf8->String ClassCastException
+        // that occurs with SpecificRecord under Avro 1.8.2
+        StoragePath filePath = new StoragePath(archivePath, fileName);
+        Configuration readerConf = metaClient.getStorageConf().unwrapCopyAs(Configuration.class);
+        org.apache.parquet.avro.AvroReadSupport.setAvroReadSchema(readerConf, schema.toAvroSchema());
+        org.apache.parquet.avro.AvroReadSupport.setRequestedProjection(readerConf, schema.toAvroSchema());
+        readerConf.setClass(org.apache.parquet.avro.AvroReadSupport.AVRO_DATA_SUPPLIER,
+            org.apache.parquet.avro.GenericDataSupplier.class, org.apache.parquet.avro.AvroDataSupplier.class);
+        try (ParquetReader<IndexedRecord> reader = org.apache.parquet.avro.AvroParquetReader.<IndexedRecord>builder(
+                new org.apache.hadoop.fs.Path(filePath.toUri()))
+            .withDataModel(org.apache.avro.generic.GenericData.get())
+            .withConf(readerConf)
+            .build()) {
+          IndexedRecord record;
+          while ((record = reader.read()) != null) {
+            writer.write(record.get(0).toString(), new HoodieAvroIndexedRecord(record), schema);
           }
         }
       }

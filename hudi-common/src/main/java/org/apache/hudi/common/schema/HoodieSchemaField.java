@@ -184,7 +184,7 @@ public class HoodieSchemaField implements Serializable {
    * @return Option containing the default value, or Option.empty() if none
    */
   public Option<Object> defaultVal() {
-    if (avroField != null && avroField.hasDefaultValue()) {
+    if (avroField != null && avroField.defaultValue() != null) {
       return Option.ofNullable(avroField.defaultVal());
     }
     return Option.empty();
@@ -214,7 +214,7 @@ public class HoodieSchemaField implements Serializable {
    * @return true if the field has a default value
    */
   public boolean hasDefaultValue() {
-    return avroField.hasDefaultValue();
+    return avroField.defaultValue() != null;
   }
 
   /**
@@ -273,7 +273,7 @@ public class HoodieSchemaField implements Serializable {
     ValidationUtils.checkArgument(newName != null && !newName.isEmpty(), "Field name cannot be null or empty");
 
     Schema.Field newAvroField = HoodieAvroUtils.createNewSchemaField(newName, avroField.schema(), avroField.doc(),
-        avroField.hasDefaultValue() ? avroField.defaultVal() : null, avroField.order());
+        avroField.defaultValue() != null ? avroField.defaultVal() : null, avroField.order());
     return new HoodieSchemaField(newAvroField, fieldSchema);
   }
 
@@ -290,7 +290,7 @@ public class HoodieSchemaField implements Serializable {
     ValidationUtils.checkState(newAvroSchema != null, "New schema's Avro schema cannot be null");
 
     Schema.Field newAvroField = HoodieAvroUtils.createNewSchemaField(avroField.name(), newAvroSchema, avroField.doc(),
-        avroField.hasDefaultValue() ? avroField.defaultVal() : null, avroField.order());
+        avroField.defaultValue() != null ? avroField.defaultVal() : null, avroField.order());
     return new HoodieSchemaField(newAvroField, newSchema);
   }
 

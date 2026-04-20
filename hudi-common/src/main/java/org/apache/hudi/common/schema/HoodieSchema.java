@@ -245,16 +245,22 @@ public class HoodieSchema implements Serializable {
     return sb.toString();
   }
 
-  private Schema avroSchema;
+  private transient Schema avroSchema;
   private HoodieSchemaType type;
   private transient List<HoodieSchemaField> fields;
   private transient Map<String, HoodieSchemaField> fieldMap;
 
   // Register the Variant logical type with Avro
+  // Avro 1.8.2 compat: local-timestamp types are not built into older Avro versions
+  public static final LogicalType LOCAL_TIMESTAMP_MILLIS_TYPE = new LogicalType("local-timestamp-millis") {};
+  public static final LogicalType LOCAL_TIMESTAMP_MICROS_TYPE = new LogicalType("local-timestamp-micros") {};
+
   static {
     LogicalTypes.register(VariantLogicalType.VARIANT_LOGICAL_TYPE_NAME, new VariantLogicalTypeFactory());
     LogicalTypes.register(BlobLogicalType.BLOB_LOGICAL_TYPE_NAME, new BlobLogicalTypeFactory());
     LogicalTypes.register(VectorLogicalType.VECTOR_LOGICAL_TYPE_NAME, new VectorLogicalTypeFactory());
+    LogicalTypes.register("local-timestamp-millis", schema -> LOCAL_TIMESTAMP_MILLIS_TYPE);
+    LogicalTypes.register("local-timestamp-micros", schema -> LOCAL_TIMESTAMP_MICROS_TYPE);
   }
 
   /**
@@ -299,7 +305,7 @@ public class HoodieSchema implements Serializable {
       } else if (logicalType instanceof LogicalTypes.TimeMillis || logicalType instanceof LogicalTypes.TimeMicros) {
         return new HoodieSchema.Time(avroSchema);
       } else if (logicalType instanceof LogicalTypes.TimestampMillis || logicalType instanceof LogicalTypes.TimestampMicros
-          || logicalType instanceof LogicalTypes.LocalTimestampMillis || logicalType instanceof LogicalTypes.LocalTimestampMicros) {
+          || "local-timestamp-millis".equals(logicalType.getName()) || "local-timestamp-micros".equals(logicalType.getName())) {
         return new HoodieSchema.Timestamp(avroSchema);
       } else if (logicalType == VariantLogicalType.variant()) {
         return new HoodieSchema.Variant(avroSchema);
@@ -640,7 +646,7 @@ public class HoodieSchema implements Serializable {
    */
   public static HoodieSchema createLocalTimestampMillis() {
     Schema localTimestampSchema = Schema.create(Schema.Type.LONG);
-    LogicalTypes.localTimestampMillis().addToSchema(localTimestampSchema);
+    LOCAL_TIMESTAMP_MILLIS_TYPE.addToSchema(localTimestampSchema);
     return new HoodieSchema.Timestamp(localTimestampSchema);
   }
 
@@ -650,7 +656,7 @@ public class HoodieSchema implements Serializable {
    */
   public static HoodieSchema createLocalTimestampMicros() {
     Schema localTimestampSchema = Schema.create(Schema.Type.LONG);
-    LogicalTypes.localTimestampMicros().addToSchema(localTimestampSchema);
+    LOCAL_TIMESTAMP_MICROS_TYPE.addToSchema(localTimestampSchema);
     return new HoodieSchema.Timestamp(localTimestampSchema);
   }
 
@@ -2179,10 +2185,10 @@ public class HoodieSchema implements Serializable {
       } else if (logicalType instanceof LogicalTypes.TimestampMicros) {
         this.precision = TimePrecision.MICROS;
         this.isUtcAdjusted = true;
-      } else if (logicalType instanceof LogicalTypes.LocalTimestampMillis) {
+      } else if ("local-timestamp-millis".equals(logicalType.getName())) {
         this.precision = TimePrecision.MILLIS;
         this.isUtcAdjusted = false;
-      } else if (logicalType instanceof LogicalTypes.LocalTimestampMicros) {
+      } else if ("local-timestamp-micros".equals(logicalType.getName())) {
         this.precision = TimePrecision.MICROS;
         this.isUtcAdjusted = false;
       } else {
@@ -2410,7 +2416,7 @@ public class HoodieSchema implements Serializable {
       return new VectorLogicalType(dimension, elementType, storageBacking);
     }
 
-    @Override
+    // In Avro 1.8.2, getTypeName() is not part of LogicalTypeFactory interface
     public String getTypeName() {
       return VectorLogicalType.VECTOR_LOGICAL_TYPE_NAME;
     }
@@ -2425,7 +2431,6 @@ public class HoodieSchema implements Serializable {
       return VariantLogicalType.variant();
     }
 
-    @Override
     public String getTypeName() {
       return VariantLogicalType.VARIANT_LOGICAL_TYPE_NAME;
     }
@@ -2734,7 +2739,6 @@ public class HoodieSchema implements Serializable {
       return BlobLogicalType.blob();
     }
 
-    @Override
     public String getTypeName() {
       return BlobLogicalType.BLOB_LOGICAL_TYPE_NAME;
     }
@@ -2825,8 +2829,8 @@ public class HoodieSchema implements Serializable {
 
       return Arrays.asList(
           new Schema.Field(TYPE, Schema.createEnum("blob_storage_type", null, null, Arrays.asList(INLINE, OUT_OF_LINE)), null, null),
-          new Schema.Field(INLINE_DATA_FIELD, AvroSchemaUtils.createNullableSchema(bytesField), null, Schema.Field.NULL_DEFAULT_VALUE),
-          new Schema.Field(EXTERNAL_REFERENCE, AvroSchemaUtils.createNullableSchema(referenceField), null, Schema.Field.NULL_DEFAULT_VALUE)
+          new Schema.Field(INLINE_DATA_FIELD, AvroSchemaUtils.createNullableSchema(bytesField), null, org.codehaus.jackson.node.NullNode.getInstance()),
+          new Schema.Field(EXTERNAL_REFERENCE, AvroSchemaUtils.createNullableSchema(referenceField), null, org.codehaus.jackson.node.NullNode.getInstance())
       );
     }
   }

@@ -107,7 +107,7 @@ public class TestHoodieSchemaField {
   @Test
   public void testFieldWithoutDefaultValue() {
     Schema intSchema = Schema.create(Schema.Type.INT);
-    Schema.Field avroField = new Schema.Field("count", intSchema);
+    Schema.Field avroField = new Schema.Field("count", intSchema, null, null);
 
     HoodieSchemaField hoodieField = new HoodieSchemaField(avroField);
 
@@ -201,7 +201,7 @@ public class TestHoodieSchemaField {
     assertEquals(Schema.Type.STRING, avroField.schema().getType());
     assertEquals("Test field", avroField.doc());
     assertEquals("default", avroField.defaultVal());
-    assertTrue(avroField.hasDefaultValue());
+    assertTrue(avroField.defaultValue() != null);
 
     // Create new Hudi field from Avro field and verify round-trip
     HoodieSchemaField roundTripField = new HoodieSchemaField(avroField);

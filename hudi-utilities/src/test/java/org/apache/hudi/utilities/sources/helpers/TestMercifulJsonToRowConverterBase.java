@@ -27,6 +27,8 @@ import org.apache.hudi.common.util.DateTimeUtils;
 import org.apache.hudi.stats.ValueType;
 import org.apache.hudi.utilities.exception.HoodieJsonToRowConversionException;
 
+import org.apache.avro.LogicalTypes;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.avro.Conversions;
@@ -187,10 +189,12 @@ public abstract class TestMercifulJsonToRowConverterBase extends MercifulJsonCon
   @MethodSource("decimalGoodCases")
   void decimalLogicalTypeTest(String avroFilePath, String groundTruth, String strInput,
                               Number numInput, boolean testFixedByteArray) throws IOException {
-    BigDecimal bigDecimal = new BigDecimal(groundTruth);
     Map<String, Object> data = new HashMap<>();
 
     HoodieSchema schema = SchemaTestUtil.getSchema(avroFilePath);
+    HoodieSchema fieldSchema = schema.getField("decimalField").get().schema();
+    LogicalTypes.Decimal decimalType = (LogicalTypes.Decimal) fieldSchema.toAvroSchema().getLogicalType();
+    BigDecimal bigDecimal = new BigDecimal(groundTruth).setScale(decimalType.getScale(), RoundingMode.UNNECESSARY);
 
     // Decide the decimal field input according to the test dimension.
     if (strInput != null) {
@@ -200,7 +204,6 @@ public abstract class TestMercifulJsonToRowConverterBase extends MercifulJsonCon
     } else if (testFixedByteArray) {
       // Fixed byte array input.
       // Example: 123.45 - byte array [0, 0, 48, 57].
-      HoodieSchema fieldSchema = schema.getField("decimalField").get().schema();
       GenericFixed fixedValue = new Conversions.DecimalConversion().toFixed(
           bigDecimal, fieldSchema.toAvroSchema(), fieldSchema.toAvroSchema().getLogicalType());
       // Convert the fixed value to int array, which is used as json value literals.

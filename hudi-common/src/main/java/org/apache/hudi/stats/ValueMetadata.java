@@ -202,7 +202,7 @@ public class ValueMetadata implements Serializable {
     }
 
     // This may happen when the record is from old table versions.
-    if (!columnStatsRecord.hasField(COLUMN_STATS_FIELD_VALUE_TYPE)) {
+    if (columnStatsRecord.getSchema().getField(COLUMN_STATS_FIELD_VALUE_TYPE) == null) {
       return V1EmptyMetadata.get();
     }
 

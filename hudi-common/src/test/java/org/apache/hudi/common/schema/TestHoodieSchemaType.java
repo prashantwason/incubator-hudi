@@ -167,9 +167,9 @@ public class TestHoodieSchemaType {
     assertEquals(HoodieSchemaType.MAP, HoodieSchemaType.fromAvro(Schema.createMap(Schema.create(Schema.Type.STRING))));
     assertEquals(HoodieSchemaType.UNION, HoodieSchemaType.fromAvro(Schema.createUnion(Schema.create(Schema.Type.NULL), Schema.create(Schema.Type.INT))));
     assertEquals(HoodieSchemaType.FIXED, HoodieSchemaType.fromAvro(Schema.createFixed("fixed", null, null, 10)));
-    assertEquals(HoodieSchemaType.TIMESTAMP, HoodieSchemaType.fromAvro(LogicalTypes.localTimestampMicros().addToSchema(Schema.create(Schema.Type.LONG))));
+    assertEquals(HoodieSchemaType.TIMESTAMP, HoodieSchemaType.fromAvro(HoodieSchema.LOCAL_TIMESTAMP_MICROS_TYPE.addToSchema(Schema.create(Schema.Type.LONG))));
     assertEquals(HoodieSchemaType.TIMESTAMP, HoodieSchemaType.fromAvro(LogicalTypes.timestampMicros().addToSchema(Schema.create(Schema.Type.LONG))));
-    assertEquals(HoodieSchemaType.TIMESTAMP, HoodieSchemaType.fromAvro(LogicalTypes.localTimestampMillis().addToSchema(Schema.create(Schema.Type.LONG))));
+    assertEquals(HoodieSchemaType.TIMESTAMP, HoodieSchemaType.fromAvro(HoodieSchema.LOCAL_TIMESTAMP_MILLIS_TYPE.addToSchema(Schema.create(Schema.Type.LONG))));
     assertEquals(HoodieSchemaType.TIMESTAMP, HoodieSchemaType.fromAvro(LogicalTypes.timestampMillis().addToSchema(Schema.create(Schema.Type.LONG))));
     assertEquals(HoodieSchemaType.TIME, HoodieSchemaType.fromAvro(LogicalTypes.timeMicros().addToSchema(Schema.create(Schema.Type.LONG))));
     assertEquals(HoodieSchemaType.TIME, HoodieSchemaType.fromAvro(LogicalTypes.timeMillis().addToSchema(Schema.create(Schema.Type.INT))));
@@ -198,7 +198,7 @@ public class TestHoodieSchemaType {
     map.put(HoodieSchemaType.FIXED, Schema.createFixed("fixed", null, null, 10));
     // Logical types
     map.put(HoodieSchemaType.TIMESTAMP,
-        LogicalTypes.localTimestampMicros().addToSchema(Schema.create(Schema.Type.LONG)));
+        HoodieSchema.LOCAL_TIMESTAMP_MICROS_TYPE.addToSchema(Schema.create(Schema.Type.LONG)));
     map.put(HoodieSchemaType.TIME,
         LogicalTypes.timeMillis().addToSchema(Schema.create(Schema.Type.INT)));
     map.put(HoodieSchemaType.DECIMAL,

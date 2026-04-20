@@ -187,10 +187,11 @@ public class TestHoodieStreamerUtils extends UtilitiesTestBase {
         assertEquals(
             recordKeyField.equals("rider") ? HoodieKeyException.class : NullPointerException.class,
             sparkException.getCause().getClass());
-        assertEquals(
+        assertTrue(
             recordKeyField.equals("rider")
-                ? "recordKey value: \"null\" for field: \"rider\" cannot be null or empty."
-                : "null value for (non-nullable) string at rec.rider",
+                ? "recordKey value: \"null\" for field: \"rider\" cannot be null or empty.".equals(sparkException.getCause().getMessage())
+                : sparkException.getCause().getMessage().contains("null") && sparkException.getCause().getMessage().contains("string")
+                    && sparkException.getCause().getMessage().contains("rider"),
             sparkException.getCause().getMessage());
       }
     }

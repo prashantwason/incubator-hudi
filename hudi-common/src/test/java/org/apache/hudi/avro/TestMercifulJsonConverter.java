@@ -128,13 +128,14 @@ public class TestMercifulJsonConverter extends MercifulJsonConverterTestBase {
   @MethodSource("decimalGoodCases")
   void decimalLogicalTypeTest(String avroFilePath, String groundTruth, String strInput,
                               Number numInput, boolean testFixedByteArray) throws IOException {
-    BigDecimal bigDecimal = new BigDecimal(groundTruth);
     Map<String, Object> data = new HashMap<>();
 
     HoodieSchema schema = SchemaTestUtil.getSchemaFromResourceFilePath(avroFilePath);
     GenericRecord record = new GenericData.Record(schema.toAvroSchema());
     Conversions.DecimalConversion conv = new Conversions.DecimalConversion();
     HoodieSchema decimalFieldSchema = schema.getField("decimalField").get().schema();
+    LogicalTypes.Decimal decimalType = (LogicalTypes.Decimal) decimalFieldSchema.toAvroSchema().getLogicalType();
+    BigDecimal bigDecimal = new BigDecimal(groundTruth).setScale(decimalType.getScale(), java.math.RoundingMode.UNNECESSARY);
 
     // Decide the decimal field input according to the test dimension.
     if (strInput != null) {

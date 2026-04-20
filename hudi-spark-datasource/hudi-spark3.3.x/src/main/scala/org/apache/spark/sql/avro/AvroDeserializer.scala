@@ -22,7 +22,7 @@ import org.apache.hudi.common.schema.HoodieSchema.VectorLogicalType
 
 import org.apache.avro.{LogicalTypes, Schema, SchemaBuilder}
 import org.apache.avro.Conversions.DecimalConversion
-import org.apache.avro.LogicalTypes.{LocalTimestampMicros, LocalTimestampMillis, TimestampMicros, TimestampMillis}
+import org.apache.avro.LogicalTypes.{TimestampMicros, TimestampMillis}
 import org.apache.avro.Schema.Type._
 import org.apache.avro.generic._
 import org.apache.avro.util.Utf8
@@ -157,11 +157,11 @@ private[sql] class AvroDeserializer(rootAvroType: Schema,
         // To keep consistent with TimestampType, if the Avro type is Long and it is not
         // logical type (the `null` case), the value is processed as TimestampNTZ
         // with millisecond precision.
-        case null | _: LocalTimestampMillis => (updater, ordinal, value) =>
+        case lt if lt == null || lt.getName == "local-timestamp-millis" => (updater, ordinal, value) =>
           val millis = value.asInstanceOf[Long]
           val micros = DateTimeUtils.millisToMicros(millis)
           updater.setLong(ordinal, micros)
-        case _: LocalTimestampMicros => (updater, ordinal, value) =>
+        case lt if lt.getName == "local-timestamp-micros" => (updater, ordinal, value) =>
           val micros = value.asInstanceOf[Long]
           updater.setLong(ordinal, micros)
         case other => throw new IncompatibleSchemaException(errorPrefix +

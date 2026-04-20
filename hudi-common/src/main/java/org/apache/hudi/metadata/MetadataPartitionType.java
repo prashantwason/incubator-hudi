@@ -168,7 +168,7 @@ public enum MetadataPartitionType {
     public void constructMetadataPayload(HoodieMetadataPayload payload, GenericRecord record) {
       GenericRecord recordIndexRecord = getNestedFieldValue(record, SCHEMA_FIELD_ID_RECORD_INDEX);
       Object recordIndexPosition = null;
-      if (recordIndexRecord.hasField(RECORD_INDEX_FIELD_POSITION)) {
+      if (recordIndexRecord.getSchema().getField(RECORD_INDEX_FIELD_POSITION) != null) {
         recordIndexPosition = recordIndexRecord.get(RECORD_INDEX_FIELD_POSITION);
       }
       payload.recordIndexMetadata = new HoodieRecordIndexInfo(recordIndexRecord.get(RECORD_INDEX_FIELD_PARTITION).toString(),
@@ -321,7 +321,7 @@ public enum MetadataPartitionType {
           .setTotalSize((Long) columnStatsRecord.get(COLUMN_STATS_FIELD_TOTAL_SIZE))
           .setTotalUncompressedSize((Long) columnStatsRecord.get(COLUMN_STATS_FIELD_TOTAL_UNCOMPRESSED_SIZE))
           .setIsDeleted((Boolean) columnStatsRecord.get(COLUMN_STATS_FIELD_IS_DELETED));
-      if (columnStatsRecord.hasField(COLUMN_STATS_FIELD_IS_TIGHT_BOUND)) {
+      if (columnStatsRecord.getSchema().getField(COLUMN_STATS_FIELD_IS_TIGHT_BOUND) != null) {
         columnStatsBuilder.setIsTightBound((Boolean) columnStatsRecord.get(COLUMN_STATS_FIELD_IS_TIGHT_BOUND));
       }
       payload.columnStatMetadata = columnStatsBuilder.build();

@@ -89,7 +89,7 @@
   },
   "variables": {
     "ASSUME_DATE_PARTITIONING": "true",
-    "AVRO_VERSION": "1.11.3",
+    "AVRO_VERSION": "1.8.2-UBER",
     "BASE_FILE_FORMAT": "PARQUET",
     "BOOTSTRAP_WITH_LATEST_BASE_FILES": "true",
     "CONTINUOUS": "false",

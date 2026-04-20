@@ -1234,7 +1234,7 @@ public class TestHoodieSchema {
     assertEquals("local-timestamp-millis", timestampSchema.getName());
     assertFalse(((HoodieSchema.Timestamp) timestampSchema).isUtcAdjusted());
     assertEquals(HoodieSchema.TimePrecision.MILLIS, ((HoodieSchema.Timestamp) timestampSchema).getPrecision());
-    assertInstanceOf(LogicalTypes.LocalTimestampMillis.class, timestampSchema.toAvroSchema().getLogicalType());
+    assertEquals("local-timestamp-millis", timestampSchema.toAvroSchema().getLogicalType().getName());
   }
 
   @Test
@@ -1245,7 +1245,7 @@ public class TestHoodieSchema {
     assertEquals("local-timestamp-micros", timestampSchema.getName());
     assertFalse(((HoodieSchema.Timestamp) timestampSchema).isUtcAdjusted());
     assertEquals(HoodieSchema.TimePrecision.MICROS, ((HoodieSchema.Timestamp) timestampSchema).getPrecision());
-    assertInstanceOf(LogicalTypes.LocalTimestampMicros.class, timestampSchema.toAvroSchema().getLogicalType());
+    assertEquals("local-timestamp-micros", timestampSchema.toAvroSchema().getLogicalType().getName());
   }
 
   @Test

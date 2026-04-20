@@ -953,12 +953,12 @@ public class HoodieAvroUtils {
               if (newSchema.getLogicalType() instanceof LogicalTypes.TimestampMillis) {
                 return DateTimeUtils.microsToMillis((Long) oldValue);
               }
-            } else if (oldSchema.getLogicalType() instanceof LogicalTypes.LocalTimestampMillis) {
-              if (newSchema.getLogicalType() instanceof LogicalTypes.LocalTimestampMicros) {
+            } else if ("local-timestamp-millis".equals(oldSchema.getLogicalType().getName())) {
+              if ("local-timestamp-micros".equals(newSchema.getLogicalType().getName())) {
                 return DateTimeUtils.millisToMicros((Long) oldValue);
               }
-            } else if (oldSchema.getLogicalType() instanceof LogicalTypes.LocalTimestampMicros) {
-              if (newSchema.getLogicalType() instanceof LogicalTypes.LocalTimestampMillis) {
+            } else if ("local-timestamp-micros".equals(oldSchema.getLogicalType().getName())) {
+              if ("local-timestamp-millis".equals(newSchema.getLogicalType().getName())) {
                 return DateTimeUtils.microsToMillis((Long) oldValue);
               }
             }
@@ -1360,7 +1360,7 @@ public class HoodieAvroUtils {
         return null;
       }
       T specificRecord = clazz.newInstance();
-      Schema schema = SpecificData.getForClass(clazz).getSchema(clazz);
+      Schema schema = specificRecord.getSchema();
       for (Field field : schema.getFields()) {
         Object value = genericRecord.get(field.pos());
         if (value == null) {

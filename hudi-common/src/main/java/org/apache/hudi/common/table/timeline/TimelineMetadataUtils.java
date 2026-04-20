@@ -31,6 +31,7 @@ import org.apache.hudi.common.util.ValidationUtils;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.storage.StoragePathInfo;
 
+import org.apache.avro.Schema;
 import org.apache.avro.file.DataFileReader;
 import org.apache.avro.file.DataFileStream;
 import org.apache.avro.file.DataFileWriter;
@@ -126,7 +127,7 @@ public class TimelineMetadataUtils {
 
   public static <T extends SpecificRecordBase> T deserializeAvroMetadataLegacy(byte[] bytes, Class<T> clazz)
       throws IOException {
-    DatumReader<GenericRecord> reader = new GenericDatumReader<>(SpecificData.getForClass(clazz).getSchema(clazz));
+    DatumReader<GenericRecord> reader = new GenericDatumReader<>(getSchemaForClass(clazz));
     FileReader<GenericRecord> fileReader = DataFileReader.openReader(new SeekableByteArrayInput(bytes), reader);
     ValidationUtils.checkArgument(fileReader.hasNext(), "Could not deserialize metadata of type " + clazz);
     return HoodieAvroUtils.convertToSpecificRecord(clazz, fileReader.next());
@@ -134,10 +135,18 @@ public class TimelineMetadataUtils {
 
   public static <T extends SpecificRecordBase> T deserializeAvroMetadata(InputStream inputStream, Class<T> clazz)
       throws IOException {
-    DatumReader<GenericRecord> reader = new GenericDatumReader<>(SpecificData.getForClass(clazz).getSchema(clazz));
+    DatumReader<GenericRecord> reader = new GenericDatumReader<>(getSchemaForClass(clazz));
     try (DataFileStream<GenericRecord> fileReader = new DataFileStream<>(inputStream, reader)) {
       ValidationUtils.checkArgument(fileReader.hasNext(), "Could not deserialize metadata of type " + clazz);
       return HoodieAvroUtils.convertToSpecificRecord(clazz, fileReader.next());
+    }
+  }
+
+  private static <T extends SpecificRecordBase> Schema getSchemaForClass(Class<T> clazz) {
+    try {
+      return (Schema) clazz.getField("SCHEMA$").get(null);
+    } catch (NoSuchFieldException | IllegalAccessException e) {
+      throw new RuntimeException("Cannot get schema for " + clazz.getName(), e);
     }
   }
 }

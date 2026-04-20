@@ -255,35 +255,35 @@ class TestHoodieAvroReaderContext {
 
   private static HoodieSchema getSkeletonSchema() {
     Schema skeletonDataSchema = Schema.createRecord("skeleton_full_schema", null, null, false);
-    Schema.Field skeletonField1 = new Schema.Field("skeleton_field_1", Schema.create(Schema.Type.STRING));
-    Schema.Field skeletonField2 = new Schema.Field("skeleton_field_2", Schema.create(Schema.Type.STRING));
-    Schema.Field skeletonField3 = new Schema.Field("skeleton_field_3", Schema.create(Schema.Type.INT));
+    Schema.Field skeletonField1 = new Schema.Field("skeleton_field_1", Schema.create(Schema.Type.STRING), null, null);
+    Schema.Field skeletonField2 = new Schema.Field("skeleton_field_2", Schema.create(Schema.Type.STRING), null, null);
+    Schema.Field skeletonField3 = new Schema.Field("skeleton_field_3", Schema.create(Schema.Type.INT), null, null);
     skeletonDataSchema.setFields(Arrays.asList(skeletonField1, skeletonField2, skeletonField3));
     return HoodieSchema.fromAvroSchema(skeletonDataSchema);
   }
 
   private static HoodieSchema getLimitedSkeletonSchema() {
     Schema skeletonDataSchema = Schema.createRecord("skeleton_limited_schema", null, null, false);
-    Schema.Field skeletonField2 = new Schema.Field("skeleton_field_2", Schema.create(Schema.Type.STRING));
+    Schema.Field skeletonField2 = new Schema.Field("skeleton_field_2", Schema.create(Schema.Type.STRING), null, null);
     skeletonDataSchema.setFields(Collections.singletonList(skeletonField2));
     return HoodieSchema.fromAvroSchema(skeletonDataSchema);
   }
 
   private static HoodieSchema getBaseSchema() {
     Schema baseDataSchema = Schema.createRecord("base_full_schema", null, null, false);
-    Schema.Field baseField1 = new Schema.Field("base_field_1", Schema.create(Schema.Type.STRING));
-    Schema.Field baseField2 = new Schema.Field("base_field_2", Schema.create(Schema.Type.STRING));
+    Schema.Field baseField1 = new Schema.Field("base_field_1", Schema.create(Schema.Type.STRING), null, null);
+    Schema.Field baseField2 = new Schema.Field("base_field_2", Schema.create(Schema.Type.STRING), null, null);
     Schema.Field baseField3 = new Schema.Field("base_field_3", Schema.createRecord("nested", null, null, false, Collections.singletonList(new Schema.Field("nested_field", Schema.create(
-        Schema.Type.DOUBLE)))));
+        Schema.Type.DOUBLE), null, null))), null, null);
     baseDataSchema.setFields(Arrays.asList(baseField1, baseField2, baseField3));
     return HoodieSchema.fromAvroSchema(baseDataSchema);
   }
 
   private static HoodieSchema getLimitedBaseSchema() {
     Schema baseDataSchema = Schema.createRecord("base_limited_schema", null, null, false);
-    Schema.Field baseField1 = new Schema.Field("base_field_1", Schema.create(Schema.Type.STRING));
+    Schema.Field baseField1 = new Schema.Field("base_field_1", Schema.create(Schema.Type.STRING), null, null);
     Schema.Field baseField3 = new Schema.Field("base_field_3", Schema.createRecord("nested", null, null, false,
-        Collections.singletonList(new Schema.Field("nested_field", Schema.create(Schema.Type.DOUBLE)))));
+        Collections.singletonList(new Schema.Field("nested_field", Schema.create(Schema.Type.DOUBLE), null, null))), null, null);
     baseDataSchema.setFields(Arrays.asList(baseField1, baseField3));
     return HoodieSchema.fromAvroSchema(baseDataSchema);
   }

@@ -22,7 +22,7 @@ import org.apache.hudi.common.schema.HoodieSchema.VectorLogicalType
 
 import org.apache.avro.{LogicalTypes, Schema}
 import org.apache.avro.Conversions.DecimalConversion
-import org.apache.avro.LogicalTypes.{LocalTimestampMicros, LocalTimestampMillis, TimestampMicros, TimestampMillis}
+import org.apache.avro.LogicalTypes.{TimestampMicros, TimestampMillis}
 import org.apache.avro.Schema.Type
 import org.apache.avro.Schema.Type._
 import org.apache.avro.generic.GenericData.{EnumSymbol, Fixed, Record}
@@ -230,9 +230,9 @@ private[sql] class AvroSerializer(rootCatalystType: DataType,
         // To keep consistent with TimestampType, if the Avro type is Long and it is not
         // logical type (the `null` case), output the TimestampNTZ as long value
         // in millisecond precision.
-        case null | _: LocalTimestampMillis => (getter, ordinal) =>
+        case lt if lt == null || lt.getName == "local-timestamp-millis" => (getter, ordinal) =>
           DateTimeUtils.microsToMillis(getter.getLong(ordinal))
-        case _: LocalTimestampMicros => (getter, ordinal) =>
+        case lt if lt.getName == "local-timestamp-micros" => (getter, ordinal) =>
           getter.getLong(ordinal)
         case other => throw new IncompatibleSchemaException(errorPrefix +
           s"SQL type ${TimestampNTZType.sql} cannot be converted to Avro logical type $other")

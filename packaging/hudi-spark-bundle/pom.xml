@@ -254,18 +254,6 @@
                   <shadedPattern>org.apache.hudi.org.apache.curator.</shadedPattern>
                 </relocation>
                 <relocation>
-                  <pattern>org.apache.parquet.avro.</pattern>
-                  <shadedPattern>org.apache.hudi.org.apache.parquet.avro.</shadedPattern>
-                </relocation>
-                <relocation>
-                  <pattern>org.apache.parquet.conf.</pattern>
-                  <shadedPattern>org.apache.hudi.org.apache.parquet.conf.</shadedPattern>
-                </relocation>
-                <relocation>
-                  <pattern>org.apache.parquet.schema.</pattern>
-                  <shadedPattern>org.apache.hudi.org.apache.parquet.schema.</shadedPattern>
-                </relocation>
-                <relocation>
                   <pattern>org.rocksdb.</pattern>
                   <shadedPattern>org.apache.hudi.org.rocksdb.</shadedPattern>
                 </relocation>

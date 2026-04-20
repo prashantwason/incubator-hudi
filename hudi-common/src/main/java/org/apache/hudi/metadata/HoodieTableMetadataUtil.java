@@ -2890,7 +2890,7 @@ public class HoodieTableMetadataUtil {
         .setTotalUncompressedSize(prevColumnStats.getTotalUncompressedSize() + newColumnStats.getTotalUncompressedSize())
         .setValueType(newColumnStats.getValueType())
         .setIsDeleted(newColumnStats.getIsDeleted());
-    if (newColumnStats.hasField(COLUMN_STATS_FIELD_IS_TIGHT_BOUND)) {
+    if (newColumnStats.getSchema().getField(COLUMN_STATS_FIELD_IS_TIGHT_BOUND) != null) {
       columnStatsBuilder.setIsTightBound(newColumnStats.getIsTightBound());
     }
     return columnStatsBuilder.build();

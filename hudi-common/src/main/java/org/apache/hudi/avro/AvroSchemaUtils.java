@@ -126,7 +126,7 @@ public class AvroSchemaUtils {
    */
   public static Schema asNullable(Schema schema) {
     List<String> filterCols = schema.getFields().stream()
-            .filter(f -> !f.schema().isNullable()).map(Schema.Field::name).collect(Collectors.toList());
+            .filter(f -> !isNullable(f.schema())).map(Schema.Field::name).collect(Collectors.toList());
     if (filterCols.isEmpty()) {
       return schema;
     }

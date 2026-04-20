@@ -155,7 +155,7 @@ public enum HoodieSchemaType {
       } else if (logicalType instanceof LogicalTypes.TimeMillis || logicalType instanceof LogicalTypes.TimeMicros) {
         return TIME;
       } else if (logicalType instanceof LogicalTypes.TimestampMillis || logicalType instanceof LogicalTypes.TimestampMicros
-          || logicalType instanceof LogicalTypes.LocalTimestampMillis || logicalType instanceof LogicalTypes.LocalTimestampMicros) {
+          || "local-timestamp-millis".equals(logicalType.getName()) || "local-timestamp-micros".equals(logicalType.getName())) {
         return TIMESTAMP;
       } else if (logicalType instanceof LogicalTypes.Date) {
         return DATE;

@@ -177,7 +177,7 @@ public abstract class BaseTestCommitMetadataSerDe {
 
     // Set other metadata fields
     metadata.setStartRollbackTime("002");
-    metadata.setTimeTakenInMillis(100);
+    metadata.setTimeTakenInMillis(100L);
     metadata.setTotalFilesDeleted(1);
     metadata.setCommitsRollback(Arrays.asList("111", "222"));
 
@@ -229,7 +229,7 @@ public abstract class BaseTestCommitMetadataSerDe {
     // Serialize and deserialize
     Option<byte[]> serialized = Option.of(new byte[]{});
     Exception ex = assertThrows(IOException.class, () -> serDe.deserialize(instant, new ByteArrayInputStream(serialized.get()), () -> false, HoodieRollbackMetadata.class));
-    assertEquals("Not an Avro data file.", ex.getCause().getMessage());
+    assertTrue(ex.getCause().getMessage().contains("Not a data file") || ex.getCause().getMessage().contains("Not an Avro data file"));
   }
 
   @Test
@@ -243,7 +243,7 @@ public abstract class BaseTestCommitMetadataSerDe {
     Exception ex = assertThrows(IOException.class, () -> serDe.deserialize(instant, new ByteArrayInputStream(serialized.get()), () -> false, HoodieCommitMetadata.class));
 
     if (serDe instanceof CommitMetadataSerDeV2) {
-      assertEquals("Not an Avro data file.", ex.getCause().getMessage());
+      assertTrue(ex.getCause().getMessage().contains("Not a data file") || ex.getCause().getMessage().contains("Not an Avro data file"));
     } else {
       assertTrue(ex.getCause().getMessage().startsWith("No content to map due to end-of-input"));
     }

@@ -18,6 +18,7 @@
 
 package org.apache.hudi.avro;
 
+import org.apache.avro.Conversion;
 import org.apache.avro.Conversions;
 import org.apache.avro.Schema;
 import org.apache.avro.UnresolvedUnionException;
@@ -43,12 +44,23 @@ public class ConvertingGenericData extends GenericData {
   private static final TimeConversions.TimeMicrosConversion TIME_MICROS_CONVERSION = new TimeConversions.TimeMicrosConversion();
   private static final TimeConversions.TimestampMicrosConversion TIMESTAMP_MICROS_CONVERSION = new TimeConversions.TimestampMicrosConversion();
 
-  private static final TimeConversions.TimestampMillisConversion TIMESTAMP_MILLIS_CONVERSION = new TimeConversions.TimestampMillisConversion();
-  private static final TimeConversions.TimeMillisConversion TIME_MILLIS_CONVERSION = new TimeConversions.TimeMillisConversion();
-  private static final TimeConversions.LocalTimestampMillisConversion LOCAL_TIMESTAMP_MILLIS_CONVERSION = new TimeConversions.LocalTimestampMillisConversion();
-  private static final TimeConversions.LocalTimestampMicrosConversion LOCAL_TIMESTAMP_MICROS_CONVERSION = new TimeConversions.LocalTimestampMicrosConversion();
+  // NOTE: These conversions were introduced in Avro 1.10 and are absent in Avro 1.8.2.
+  // Loaded reflectively so this class compiles and runs against both versions.
+  private static final Conversion<?> TIMESTAMP_MILLIS_CONVERSION = loadConversion("org.apache.avro.data.TimeConversions$TimestampMillisConversion");
+  private static final Conversion<?> TIME_MILLIS_CONVERSION = loadConversion("org.apache.avro.data.TimeConversions$TimeMillisConversion");
+  private static final Conversion<?> LOCAL_TIMESTAMP_MILLIS_CONVERSION = loadConversion("org.apache.avro.data.TimeConversions$LocalTimestampMillisConversion");
+  private static final Conversion<?> LOCAL_TIMESTAMP_MICROS_CONVERSION = loadConversion("org.apache.avro.data.TimeConversions$LocalTimestampMicrosConversion");
 
   public static final GenericData INSTANCE = new ConvertingGenericData();
+
+  @SuppressWarnings("unchecked")
+  private static Conversion<?> loadConversion(String className) {
+    try {
+      return (Conversion<?>) Class.forName(className).newInstance();
+    } catch (Exception | NoClassDefFoundError e) {
+      return null;
+    }
+  }
 
   private ConvertingGenericData() {
     addLogicalTypeConversion(DECIMAL_CONVERSION);
@@ -56,11 +68,11 @@ public class ConvertingGenericData extends GenericData {
     addLogicalTypeConversion(DATE_CONVERSION);
     addLogicalTypeConversion(TIME_MICROS_CONVERSION);
     addLogicalTypeConversion(TIMESTAMP_MICROS_CONVERSION);
-    // NOTE: Those are not supported in Avro 1.8.2
-    addLogicalTypeConversion(TIME_MILLIS_CONVERSION);
-    addLogicalTypeConversion(TIMESTAMP_MILLIS_CONVERSION);
-    addLogicalTypeConversion(LOCAL_TIMESTAMP_MILLIS_CONVERSION);
-    addLogicalTypeConversion(LOCAL_TIMESTAMP_MICROS_CONVERSION);
+    // NOTE: Those are not supported in Avro 1.8.2; added only when available at runtime
+    if (TIME_MILLIS_CONVERSION != null) addLogicalTypeConversion(TIME_MILLIS_CONVERSION);
+    if (TIMESTAMP_MILLIS_CONVERSION != null) addLogicalTypeConversion(TIMESTAMP_MILLIS_CONVERSION);
+    if (LOCAL_TIMESTAMP_MILLIS_CONVERSION != null) addLogicalTypeConversion(LOCAL_TIMESTAMP_MILLIS_CONVERSION);
+    if (LOCAL_TIMESTAMP_MICROS_CONVERSION != null) addLogicalTypeConversion(LOCAL_TIMESTAMP_MICROS_CONVERSION);
   }
 
   @Override
@@ -126,9 +138,9 @@ public class ConvertingGenericData extends GenericData {
         return isLong(datum)
             || TIME_MICROS_CONVERSION.getConvertedType().isInstance(datum)
             || TIMESTAMP_MICROS_CONVERSION.getConvertedType().isInstance(datum)
-            || TIMESTAMP_MILLIS_CONVERSION.getConvertedType().isInstance(datum)
-            || LOCAL_TIMESTAMP_MICROS_CONVERSION.getConvertedType().isInstance(datum)
-            || LOCAL_TIMESTAMP_MILLIS_CONVERSION.getConvertedType().isInstance(datum);
+            || (TIMESTAMP_MILLIS_CONVERSION != null && TIMESTAMP_MILLIS_CONVERSION.getConvertedType().isInstance(datum))
+            || (LOCAL_TIMESTAMP_MICROS_CONVERSION != null && LOCAL_TIMESTAMP_MICROS_CONVERSION.getConvertedType().isInstance(datum))
+            || (LOCAL_TIMESTAMP_MILLIS_CONVERSION != null && LOCAL_TIMESTAMP_MILLIS_CONVERSION.getConvertedType().isInstance(datum));
       case FLOAT:
         return isFloat(datum);
       case DOUBLE:
