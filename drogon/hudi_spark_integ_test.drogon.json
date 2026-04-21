@@ -56,7 +56,8 @@
       "spark.hoodie.datasource.read.file.index.list.file.statuses.using.ro.path.filter": "${RO_PATH_FILTER_ENABLED}",
       "spark.plugins": "org.apache.spark.sql.hudi.HoodieSparkPlugin",
       "spark.livy.spark.binary-type": "PARQUET_13",
-      "spark.sql.hive.metastore.sharedPrefixes": "org.apache.hudi"
+      "spark.sql.hive.metastore.sharedPrefixes": "org.apache.hudi",
+      "spark.hoodie.datasource.hive_sync.use_spark_catalog": "false"
     }
   },
   "build": {
