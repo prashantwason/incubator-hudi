@@ -380,19 +380,19 @@
       <groupId>org.apache.calcite</groupId>
       <artifactId>calcite-core</artifactId>
       <version>1.10.0</version>
-      <scope>${spark.bundle.hive.scope}</scope>
+      <scope>compile</scope>
     </dependency>
     <dependency>
       <groupId>org.apache.calcite</groupId>
       <artifactId>calcite-linq4j</artifactId>
       <version>1.10.0</version>
-      <scope>${spark.bundle.hive.scope}</scope>
+      <scope>compile</scope>
     </dependency>
     <dependency>
       <groupId>org.apache.calcite.avatica</groupId>
       <artifactId>avatica</artifactId>
       <version>1.8.0</version>
-      <scope>${spark.bundle.hive.scope}</scope>
+      <scope>compile</scope>
     </dependency>
 
     <!-- zookeeper -->
