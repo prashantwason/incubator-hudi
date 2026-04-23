@@ -1137,16 +1137,41 @@ public class HoodieTableConfig extends HoodieConfig {
 
   /**
    * Read the database name.
+   *
+   * Workaround: if the database property is unset but the table-name property is the qualified
+   * "db.table" form (e.g. some legacy hoodie.properties), derive the database from that prefix.
    */
   public String getDatabaseName() {
-    return getString(DATABASE_NAME);
+    String rawDb = getString(DATABASE_NAME);
+    if (rawDb != null && !rawDb.isEmpty()) {
+      return rawDb;
+    }
+    String rawName = getString(NAME);
+    if (rawName != null) {
+      int idx = rawName.indexOf('.');
+      if (idx > 0) {
+        return rawName.substring(0, idx);
+      }
+    }
+    return rawDb;
   }
 
   /**
    * Read the table name.
+   *
+   * Workaround: if the database property is unset and the stored table-name property is the
+   * qualified "db.table" form, return only the table portion so callers get the bare name.
    */
   public String getTableName() {
-    return getString(NAME);
+    String rawName = getString(NAME);
+    String rawDb = getString(DATABASE_NAME);
+    if ((rawDb == null || rawDb.isEmpty()) && rawName != null) {
+      int idx = rawName.indexOf('.');
+      if (idx > 0) {
+        return rawName.substring(idx + 1);
+      }
+    }
+    return rawName;
   }
 
   /**
