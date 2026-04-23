@@ -105,7 +105,12 @@ public enum MetadataPartitionType {
       return new HoodieMetadataPayload(newer.key, newer.type, combineFileSystemMetadata(older, newer));
     }
   },
-  COLUMN_STATS(HoodieTableMetadataUtil.PARTITION_NAME_COLUMN_STATS, "col-stats-", 3) {
+  // NOTE: PLEASE READ CAREFULLY
+  // The Record Index was developed internally at Uber around the same time the Column Stats was developed in OSS. So the recordType values for these
+  // two differ in OSS and Uber. We have to maintain the Uber internal values to prevent having to delete the MDT Record Index during update. Hence,
+  // the recordType values here for COLUMN_STATS and RECORD_INDEX are swapped relative to OSS (OSS uses COLUMN_STATS=3, RECORD_INDEX=5).
+  // Its best to not change these values in future unless there is a strong reason to read open source created datasets with Uber internal HUDI releases.
+  COLUMN_STATS(HoodieTableMetadataUtil.PARTITION_NAME_COLUMN_STATS, "col-stats-", 5) {
     @Override
     public boolean isMetadataPartitionEnabled(HoodieMetadataConfig metadataConfig, HoodieTableConfig tableConfig) {
       return metadataConfig.isColumnStatsIndexEnabled();
@@ -158,7 +163,7 @@ public enum MetadataPartitionType {
       return new HoodieMetadataPayload(newer.key, newer.bloomFilterMetadata);
     }
   },
-  RECORD_INDEX(HoodieTableMetadataUtil.PARTITION_NAME_RECORD_INDEX, "record-index-", 5) {
+  RECORD_INDEX(HoodieTableMetadataUtil.PARTITION_NAME_RECORD_INDEX, "record-index-", 3) {
     @Override
     public boolean isMetadataPartitionEnabled(HoodieMetadataConfig metadataConfig, HoodieTableConfig tableConfig) {
       return metadataConfig.isGlobalRecordLevelIndexEnabled() || metadataConfig.isRecordLevelIndexEnabled();
@@ -171,13 +176,20 @@ public enum MetadataPartitionType {
       if (recordIndexRecord.getSchema().getField(RECORD_INDEX_FIELD_POSITION) != null) {
         recordIndexPosition = recordIndexRecord.get(RECORD_INDEX_FIELD_POSITION);
       }
+      // NOTE: The following null checks support reading older Uber 0.10/0.14 RI records where these fields may be absent.
+      // The fileId and fileIdEncoding fields were added later, so existing on-disk RI records written by older Uber Hudi
+      // releases may not have them. Defaulting to "" / 0 keeps those records readable without requiring an RI rebuild.
+      Object fieldValue = recordIndexRecord.get(RECORD_INDEX_FIELD_FILEID);
+      final String fileID = fieldValue != null ? fieldValue.toString() : "";
+      fieldValue = recordIndexRecord.get(RECORD_INDEX_FIELD_FILEID_ENCODING);
+      final int fileIDEncoding = fieldValue != null ? Integer.parseInt(fieldValue.toString()) : 0;
       payload.recordIndexMetadata = new HoodieRecordIndexInfo(recordIndexRecord.get(RECORD_INDEX_FIELD_PARTITION).toString(),
           Long.parseLong(recordIndexRecord.get(RECORD_INDEX_FIELD_FILEID_HIGH_BITS).toString()),
           Long.parseLong(recordIndexRecord.get(RECORD_INDEX_FIELD_FILEID_LOW_BITS).toString()),
           Integer.parseInt(recordIndexRecord.get(RECORD_INDEX_FIELD_FILE_INDEX).toString()),
-          recordIndexRecord.get(RECORD_INDEX_FIELD_FILEID).toString(),
+          fileID,
           Long.parseLong(recordIndexRecord.get(RECORD_INDEX_FIELD_INSTANT_TIME).toString()),
-          Integer.parseInt(recordIndexRecord.get(RECORD_INDEX_FIELD_FILEID_ENCODING).toString()),
+          fileIDEncoding,
           recordIndexPosition != null ? Long.parseLong(recordIndexPosition.toString()) : null);
     }
   },

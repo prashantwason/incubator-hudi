@@ -463,7 +463,7 @@
                    "name": "HoodieRecordIndexInfo",
                     "fields": [
                         {
-                            "name": "partitionName",
+                            "name": "partition",
                             "type": [
                                 "null",
                                 "string"

@@ -2442,7 +2442,7 @@ public class HoodieTableMetadataUtil {
    */
   public static HoodieRecordGlobalLocation getLocationFromRecordIndexInfo(HoodieRecordIndexInfo recordIndexInfo) {
     return getLocationFromRecordIndexInfo(
-        recordIndexInfo.getPartitionName(), recordIndexInfo.getFileIdEncoding(),
+        recordIndexInfo.getPartition(), recordIndexInfo.getFileIdEncoding(),
         recordIndexInfo.getFileIdHighBits(), recordIndexInfo.getFileIdLowBits(),
         recordIndexInfo.getFileIndex(), recordIndexInfo.getFileId(),
         recordIndexInfo.getInstantTime());

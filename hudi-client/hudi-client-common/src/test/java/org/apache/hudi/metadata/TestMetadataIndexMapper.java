@@ -76,7 +76,7 @@ public class TestMetadataIndexMapper extends HoodieCommonTestHarness {
       assertEquals(MetadataPartitionType.RECORD_INDEX.getPartitionPath(), record.getKey().getPartitionPath());
       HoodieRecordIndexInfo recordIndexInfo = record.getData().recordIndexMetadata;
       assertNotNull(recordIndexInfo);
-      assertTrue(StringUtils.nonEmpty(recordIndexInfo.getPartitionName()));
+      assertTrue(StringUtils.nonEmpty(recordIndexInfo.getPartition()));
       assertNotNull(recordIndexInfo.getFileIdHighBits());
       assertNotNull(recordIndexInfo.getFileIdLowBits());
     });

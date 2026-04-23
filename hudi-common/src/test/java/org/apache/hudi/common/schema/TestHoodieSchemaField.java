@@ -201,7 +201,7 @@ public class TestHoodieSchemaField {
     assertEquals(Schema.Type.STRING, avroField.schema().getType());
     assertEquals("Test field", avroField.doc());
     assertEquals("default", avroField.defaultVal());
-    assertTrue(avroField.defaultValue() != null);
+    assertTrue(avroField.defaultVal() != null);
 
     // Create new Hudi field from Avro field and verify round-trip
     HoodieSchemaField roundTripField = new HoodieSchemaField(avroField);

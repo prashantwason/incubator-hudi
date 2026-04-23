@@ -161,7 +161,7 @@ public class HoodieMetadataPayload implements HoodieRecordPayload<HoodieMetadata
   /**
    * HoodieMetadata record index payload field ids
    */
-  public static final String RECORD_INDEX_FIELD_PARTITION = "partitionName";
+  public static final String RECORD_INDEX_FIELD_PARTITION = "partition";
   public static final String RECORD_INDEX_FIELD_FILEID_HIGH_BITS = "fileIdHighBits";
   public static final String RECORD_INDEX_FIELD_FILEID_LOW_BITS = "fileIdLowBits";
   public static final String RECORD_INDEX_FIELD_FILE_INDEX = "fileIndex";
@@ -743,7 +743,7 @@ public class HoodieMetadataPayload implements HoodieRecordPayload<HoodieMetadata
   }
 
   public String getDataPartition() {
-    return recordIndexMetadata.getPartitionName();
+    return recordIndexMetadata.getPartition();
   }
 
   public boolean isDeleted() {
