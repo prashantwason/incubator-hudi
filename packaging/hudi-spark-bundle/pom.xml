@@ -88,6 +88,7 @@
                   <include>org.apache.hudi:hudi-sync-common</include>
                   <include>org.apache.hudi:hudi-hadoop-mr</include>
                   <include>org.apache.hudi:hudi-timeline-service</include>
+                  <include>org.apache.hudi:hudi-uber</include>
 
                   <include>javax.servlet:javax.servlet-api</include>
                   <include>com.beust:jcommander</include>
