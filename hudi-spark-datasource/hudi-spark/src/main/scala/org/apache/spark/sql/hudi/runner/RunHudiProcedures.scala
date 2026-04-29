@@ -17,7 +17,7 @@
 
 package org.apache.spark.sql.hudi.runner
 
-import org.apache.hudi.common.table.{HoodieTableConfig, HoodieTableMetaClient}
+import org.apache.hudi.common.table.{HoodieTableConfig, HoodieTableMetaClient, HoodieTableVersion}
 import org.apache.hudi.hadoop.fs.HadoopFSUtils
 
 import org.apache.hadoop.fs.Path
@@ -94,11 +94,94 @@ class RunHudiProcedures extends RunOperationsBase {
   }
 
   def testHudiUpgradeOrDowngradeProcedure(): Unit = {
-    throw new UnsupportedOperationException("Not implemented yet")
+    val database = "rawdatatmp"
+    val tableName = "hudi_trips_cow_test_upgrade_downgrade_procedure"
+    val basePath = getBasePath(tableName)
+    cleanup(tableName, basePath)
+    createInserts(database, tableName, SaveMode.Overwrite, isHudiTable = true)
+
+    val storageConf = HadoopFSUtils.getStorageConfWithCopy(spark.sparkContext.hadoopConfiguration)
+    var metaClient = HoodieTableMetaClient.builder().setBasePath(basePath).setConf(storageConf).build()
+    val initialVersion = metaClient.getTableConfig.getTableVersion
+    log.info(s"Initial table version: $initialVersion")
+    assert(initialVersion == HoodieTableVersion.current(),
+      s"Expected initial table version ${HoodieTableVersion.current()} but got $initialVersion")
+
+    // Downgrade to the previous major (EIGHT == 1.0).
+    val downgradeRows = spark.sql(
+      s"call downgrade_table(table => '$database.$tableName', to_version => 'EIGHT')").collect()
+    assert(downgradeRows.length == 1 && downgradeRows(0).getBoolean(0),
+      s"downgrade_table did not return success row, got ${downgradeRows.toSeq}")
+    metaClient = HoodieTableMetaClient.reload(metaClient)
+    assert(metaClient.getTableConfig.getTableVersion == HoodieTableVersion.EIGHT,
+      s"Expected table version EIGHT after downgrade but got ${metaClient.getTableConfig.getTableVersion}")
+
+    // Upgrade back to the current version.
+    val targetVersion = HoodieTableVersion.current().name()
+    val upgradeRows = spark.sql(
+      s"call upgrade_table(table => '$database.$tableName', to_version => '$targetVersion')").collect()
+    assert(upgradeRows.length == 1 && upgradeRows(0).getBoolean(0),
+      s"upgrade_table did not return success row, got ${upgradeRows.toSeq}")
+    metaClient = HoodieTableMetaClient.reload(metaClient)
+    assert(metaClient.getTableConfig.getTableVersion == HoodieTableVersion.current(),
+      s"Expected table version ${HoodieTableVersion.current()} after upgrade but got ${metaClient.getTableConfig.getTableVersion}")
+    log.info("Upgrade/Downgrade procedure test executed successfully")
   }
 
   def testCompactionProcedure(): Unit = {
-    throw new UnsupportedOperationException("Not implemented yet")
+    val database = "rawdatatmp"
+    val tableName = "hudi_trips_mor_test_run_compaction_procedure"
+    val basePath = getBasePath(tableName)
+    cleanup(tableName, basePath)
+
+    // Disable inline compaction so the run_compaction procedure drives it explicitly.
+    spark.conf.set("hoodie.compact.inline", "false")
+    spark.conf.set("hoodie.compact.schedule.inline", "false")
+    try {
+      spark.sql(
+        s"""
+           |CREATE TABLE $database.$tableName (
+           |  id INT,
+           |  name STRING,
+           |  price DOUBLE,
+           |  ts BIGINT
+           |) USING hudi
+           |TBLPROPERTIES (
+           |  type = 'mor',
+           |  primaryKey = 'id',
+           |  preCombineField = 'ts'
+           |)
+           |LOCATION '$basePath'
+           |""".stripMargin)
+
+      spark.sql(
+        s"""INSERT INTO $database.$tableName VALUES
+           |(1, 'a1', 10.0, 1000),
+           |(2, 'a2', 20.0, 2000)""".stripMargin)
+      // Updates against MOR generate log files that compaction will roll up.
+      for (i <- 1 to 3) {
+        spark.sql(s"UPDATE $database.$tableName SET price = price + $i WHERE id = 1")
+      }
+
+      val scheduleResult = spark.sql(
+        s"call run_compaction(op => 'schedule', table => '$database.$tableName')").collect()
+      assert(scheduleResult.length == 1,
+        s"Expected exactly 1 scheduled compaction instant but got ${scheduleResult.length}")
+      val scheduledTs = scheduleResult(0).getString(0)
+      log.info(s"Scheduled compaction instant: $scheduledTs")
+
+      val runResult = spark.sql(
+        s"call run_compaction(op => 'run', table => '$database.$tableName', timestamp => $scheduledTs)").collect()
+      assert(runResult.length == 1, s"Expected 1 run row but got ${runResult.length}")
+      val state = runResult(0).getString(2)
+      assert(state == "COMPLETED", s"Expected compaction state COMPLETED but got $state")
+
+      runSqlQueryWithAsserts(database, tableName, fullScan = true, expectedVal = 2)
+      log.info("Compaction procedure test executed successfully")
+    } finally {
+      spark.conf.unset("hoodie.compact.inline")
+      spark.conf.unset("hoodie.compact.schedule.inline")
+    }
   }
 
   def testHudiRepairOverwritePropsProcedure(): Unit = {

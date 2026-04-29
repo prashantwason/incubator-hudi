@@ -74,11 +74,4 @@ class RunNonHoodiePartitionsTest extends RunOperationsBase {
     log.info("Row count seen : " + rowCount)
     assert(rowCount > 0, "Row count should be greater than 0")
   }
-
-  // TODO: Port HoodieHiveMetastoreUtils.getAllPartitionPaths to v1.2 if needed
-  def testHoodieAndNonHoodiePartitionsFromHms(): Unit = {
-    throw new UnsupportedOperationException(
-      "Not implemented: testHoodieAndNonHoodiePartitionsFromHms not yet ported to v1.2 - " +
-      "requires HoodieHiveMetastoreUtils which is not available in this version")
-  }
 }

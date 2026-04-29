@@ -57,15 +57,107 @@ class RunHudiCRUDOperations extends RunOperationsBase {
   }
 
   def testHudiInsertSqlCommand(): Unit = {
-    throw new UnsupportedOperationException("Not implemented yet")
+    val database = "rawdatatmp"
+    val tableName = "hudi_trips_cow_test_insert_sql"
+    val basePath = getBasePath(tableName)
+    cleanup(tableName, basePath)
+
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$tableName (
+         |  id INT,
+         |  name STRING,
+         |  price DOUBLE,
+         |  ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (
+         |  type = 'cow',
+         |  primaryKey = 'id',
+         |  preCombineField = 'ts'
+         |)
+         |LOCATION '$basePath'
+         |""".stripMargin)
+    assert(tableExists(database, tableName))
+
+    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'rider1', 10.0, 1000)")
+    spark.sql(
+      s"""INSERT INTO $database.$tableName VALUES
+         |(2, 'rider2', 20.0, 2000),
+         |(3, 'rider3', 30.0, 3000)""".stripMargin)
+    runSqlQueryWithAsserts(database, tableName, fullScan = true, expectedVal = 3)
+    log.info("INSERT INTO SQL test executed successfully")
   }
 
   def testHudiUpdateSqlCommand(): Unit = {
-    throw new UnsupportedOperationException("Not implemented yet")
+    val database = "rawdatatmp"
+    val tableName = "hudi_trips_cow_test_update_sql"
+    val basePath = getBasePath(tableName)
+    cleanup(tableName, basePath)
+
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$tableName (
+         |  id INT,
+         |  name STRING,
+         |  price DOUBLE,
+         |  ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (
+         |  type = 'cow',
+         |  primaryKey = 'id',
+         |  preCombineField = 'ts'
+         |)
+         |LOCATION '$basePath'
+         |""".stripMargin)
+    spark.sql(
+      s"""INSERT INTO $database.$tableName VALUES
+         |(1, 'rider1', 10.0, 1000),
+         |(2, 'rider2', 20.0, 2000)""".stripMargin)
+
+    spark.sql(s"UPDATE $database.$tableName SET price = 99.0, ts = 5000 WHERE id = 1")
+
+    val updated = spark.sql(s"SELECT price FROM $database.$tableName WHERE id = 1").collect()
+    assert(updated.length == 1, s"Expected exactly 1 row for id=1 but got ${updated.length}")
+    val updatedPrice = updated(0).getDouble(0)
+    assert(updatedPrice == 99.0, s"Expected price 99.0 after UPDATE but got $updatedPrice")
+    runSqlQueryWithAsserts(database, tableName, fullScan = true, expectedVal = 2)
+    log.info("UPDATE SQL test executed successfully")
   }
 
   def testHudiDeleteSqlCommand(): Unit = {
-    throw new UnsupportedOperationException("Not implemented yet")
+    val database = "rawdatatmp"
+    val tableName = "hudi_trips_cow_test_delete_sql"
+    val basePath = getBasePath(tableName)
+    cleanup(tableName, basePath)
+
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$tableName (
+         |  id INT,
+         |  name STRING,
+         |  price DOUBLE,
+         |  ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (
+         |  type = 'cow',
+         |  primaryKey = 'id',
+         |  preCombineField = 'ts'
+         |)
+         |LOCATION '$basePath'
+         |""".stripMargin)
+    spark.sql(
+      s"""INSERT INTO $database.$tableName VALUES
+         |(1, 'rider1', 10.0, 1000),
+         |(2, 'rider2', 20.0, 2000),
+         |(3, 'rider3', 30.0, 3000)""".stripMargin)
+
+    spark.sql(s"DELETE FROM $database.$tableName WHERE id = 2")
+
+    val survivors = spark.sql(s"SELECT id FROM $database.$tableName ORDER BY id")
+      .collect().map(_.getInt(0)).toSeq
+    assert(survivors == Seq(1, 3), s"Expected ids Seq(1, 3) after DELETE but got $survivors")
+    runSqlQueryWithAsserts(database, tableName, fullScan = true, expectedVal = 2)
+    log.info("DELETE SQL test executed successfully")
   }
 
   def testInsertOverwriteWithSourceHudi(): Unit = {
