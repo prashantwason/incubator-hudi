@@ -33,6 +33,7 @@ import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.StringUtils;
 import org.apache.hudi.common.util.VisibleForTesting;
 import org.apache.hudi.common.util.collection.Pair;
+import org.apache.hudi.config.HoodieUberConfigStore;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.exception.HoodieIOException;
 import org.apache.hudi.exception.HoodieUpgradeDowngradeException;
@@ -105,6 +106,10 @@ public class StreamerCheckpointUtils {
     if (hasCheckpointOverride && isHoodieIncSource) {
       HoodieTableVersion writeTableVersion = HoodieTableVersion.fromVersionCode(ConfigUtils.getIntWithAltKeys(props, HoodieWriteConfig.WRITE_TABLE_VERSION));
       HoodieWriteConfig config = HoodieWriteConfig.newBuilder().withPath(streamerConfig.targetBasePath).withProps(props).build();
+      // Apply HoodieUberConfigStore overrides before reading autoUpgrade(); cluster-enforced
+      // settings (e.g. hoodie.write.auto.upgrade) must take effect before this gating decision.
+      config = HoodieUberConfigStore.applyConfigStore(
+          metaClient.getStorageConf().unwrapAs(org.apache.hadoop.conf.Configuration.class), config);
       if (config.autoUpgrade() && needsUpgradeOrDowngrade(metaClient, config, writeTableVersion)) {
         throw new HoodieUpgradeDowngradeException(
             String.format("When upgrade/downgrade is happening, please avoid setting --checkpoint option and --ignore-checkpoint for your delta streamers."

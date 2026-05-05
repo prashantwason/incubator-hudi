@@ -28,6 +28,7 @@ import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.timeline.HoodieInstant;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.VisibleForTesting;
+import org.apache.hudi.config.HoodieUberConfigStore;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieIndexException;
@@ -256,6 +257,10 @@ public class HoodieIndexer {
   private HoodieMetadataConfig getHoodieMetadataConfig() {
     props.setProperty(HoodieWriteConfig.BASE_PATH.key(), cfg.basePath);
     HoodieWriteConfig dataTableWriteConfig = HoodieWriteConfig.newBuilder().withProps(props).build();
+    // Apply HoodieUberConfigStore overrides before reading getMetadataConfig(); the cluster's
+    // enforced configs include MDT settings (e.g. hoodie.metadata.dir.filter.regex) that the
+    // indexer needs to see when planning partition types.
+    dataTableWriteConfig = HoodieUberConfigStore.applyConfigStore(jsc.hadoopConfiguration(), dataTableWriteConfig);
     return dataTableWriteConfig.getMetadataConfig();
   }
 

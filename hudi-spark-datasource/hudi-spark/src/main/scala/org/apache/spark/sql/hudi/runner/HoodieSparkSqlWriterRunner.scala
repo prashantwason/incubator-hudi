@@ -193,7 +193,8 @@ object HoodieSparkSqlWriterRunner {
     "hudi-schema-evolution" -> classOf[RunSchemaEvolutionTest].getName,
     "hudi-error-handling" -> classOf[RunErrorHandlingTests].getName,
     "hudi-table-ddl" -> classOf[RunHudiTableDDLOperations].getName,
-    "hudi-legacy-table-compat" -> classOf[RunLegacyTableCompatTests].getName
+    "hudi-legacy-table-compat" -> classOf[RunLegacyTableCompatTests].getName,
+    "hudi-index-ddl" -> classOf[RunHudiIndexDDL].getName
   )
 
   private def isNotImplemented(e: Exception): Boolean = {

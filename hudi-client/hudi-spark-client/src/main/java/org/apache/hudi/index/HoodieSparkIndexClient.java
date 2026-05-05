@@ -35,6 +35,7 @@ import org.apache.hudi.common.table.TableSchemaResolver;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.StringUtils;
 import org.apache.hudi.common.util.ValidationUtils;
+import org.apache.hudi.config.HoodieUberConfigStore;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieIndexException;
@@ -217,6 +218,13 @@ public class HoodieSparkIndexClient extends BaseHoodieIndexClient {
           .withEngineType(EngineType.SPARK)
           .withProps(configs)
           .build();
+      // Apply HoodieUberConfigStore overrides (lock provider, MDT settings, etc.) before any
+      // read on the config. The same overlay is applied later inside BaseHoodieClient.<init>,
+      // but the validation below runs first and reads getLockProviderClass(), so we need the
+      // overlay materialized here.
+      localWriteConfig = HoodieUberConfigStore.applyConfigStore(
+          engineContextOpt.get().getStorageConf().unwrapAs(org.apache.hadoop.conf.Configuration.class),
+          localWriteConfig);
       // Validate if a lock provide class is set properly.
       if (localWriteConfig.getWriteConcurrencyMode().supportsMultiWriter() && StringUtils.isNullOrEmpty(localWriteConfig.getLockProviderClass())) {
         throw new IllegalArgumentException(
