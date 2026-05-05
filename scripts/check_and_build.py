@@ -45,7 +45,8 @@ if pkg == HUDI_SPARK_HBASE_BUNDLE:
 build_jar = hudi_jar not in dir
 if build_jar:
     print(f'Building {hudi_jar}', flush=True)
-    subprocess.run(['mvn', 'clean', 'package', '-DskipTests', '-Drat.skip=true', '-pl', pkg, '-am'])
+    result = subprocess.run(['mvn', 'clean', 'package', '-DskipTests', '-Drat.skip=true', '-Dspark3.3', '-Dflink1.18', '-pl', pkg, '-am'])
+    sys.exit(result.returncode)
 else:
     print(f'Skip building {hudi_jar}')
 
