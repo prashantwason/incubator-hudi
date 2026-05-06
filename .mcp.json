@@ -1,0 +1,31 @@
+{
+  "mcpServers": {
+    "spark_sense": {
+      "url": "http://localhost:5436/spark_sense/mcp",
+      "headers": {
+        "RPC-Caller": "claude",
+        "RPC-Service": "mcp-gateway"
+      }
+    },
+    "engwiki": {
+      "command": "aifx",
+      "args": [
+        "mcp",
+        "run",
+        "--install",
+        "engwiki"
+      ],
+      "type": "stdio"
+    },
+    "code-mcp": {
+      "command": "aifx",
+      "args": [
+        "mcp",
+        "run",
+        "--install",
+        "code-mcp"
+      ],
+      "type": "stdio"
+    }
+  }
+}
