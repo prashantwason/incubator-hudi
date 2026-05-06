@@ -192,7 +192,8 @@ object HoodieSparkSqlWriterRunner {
     "hudi-random-production-sqls" -> classOf[RunRandomProductionSQLsTest].getName,
     "hudi-schema-evolution" -> classOf[RunSchemaEvolutionTest].getName,
     "hudi-error-handling" -> classOf[RunErrorHandlingTests].getName,
-    "hudi-table-ddl" -> classOf[RunHudiTableDDLOperations].getName
+    "hudi-table-ddl" -> classOf[RunHudiTableDDLOperations].getName,
+    "hudi-legacy-table-compat" -> classOf[RunLegacyTableCompatTests].getName
   )
 
   private def isNotImplemented(e: Exception): Boolean = {

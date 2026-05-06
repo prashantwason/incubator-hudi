@@ -25,6 +25,7 @@ import org.apache.hudi.common.table.HoodieTableConfig;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.HoodieTableVersion;
 import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.testutils.HoodieClientTestBase;
 import org.apache.hudi.util.JavaScalaConverters;
 
@@ -32,11 +33,15 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.Properties;
 
+import static org.apache.hudi.common.testutils.HoodieTestUtils.RAW_TRIPS_TEST_NAME;
 import static org.apache.hudi.common.testutils.HoodieTestUtils.getMetaClientBuilder;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TestHoodieWriterUtils extends HoodieClientTestBase {
@@ -158,5 +163,140 @@ class TestHoodieWriterUtils extends HoodieClientTestBase {
 
     String payloadClass = "com.example.CustomPayload";
     assertTrue(HoodieWriterUtils.shouldIgnorePayloadValidation(payloadClass, config));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Fix 1: writer-side qualified `db.table` for hoodie.table.name should be
+  // treated as equivalent to the on-disk pair (hoodie.database.name, hoodie.table.name).
+  // ---------------------------------------------------------------------------
+
+  @Test
+  void validateTableConfig_qualifiedTableName_acceptedWhenSplitMatchesOnDisk() throws IOException {
+    HoodieTableMetaClient metaClient = getMetaClientBuilder(HoodieTableType.COPY_ON_WRITE, new Properties(), "db1")
+        .initTable(storageConf, tempDir.resolve("qualifiedNameOk").toString());
+    HoodieTableConfig tableConfig = metaClient.getTableConfig();
+
+    TypedProperties writerParams = TypedProperties.copy(tableConfig.getProps());
+    writerParams.put(HoodieTableConfig.NAME.key(), "db1." + RAW_TRIPS_TEST_NAME);
+
+    Assertions.assertDoesNotThrow(() -> HoodieWriterUtils.validateTableConfig(
+        sparkSession,
+        JavaScalaConverters.convertJavaPropertiesToScalaMap(writerParams),
+        tableConfig));
+  }
+
+  @Test
+  void validateTableConfig_qualifiedTableName_rejectedWhenDbPrefixMismatches() throws IOException {
+    HoodieTableMetaClient metaClient = getMetaClientBuilder(HoodieTableType.COPY_ON_WRITE, new Properties(), "db1")
+        .initTable(storageConf, tempDir.resolve("qualifiedNameWrongDb").toString());
+    HoodieTableConfig tableConfig = metaClient.getTableConfig();
+
+    TypedProperties writerParams = TypedProperties.copy(tableConfig.getProps());
+    writerParams.put(HoodieTableConfig.NAME.key(), "db2." + RAW_TRIPS_TEST_NAME);
+
+    HoodieException ex = assertThrows(HoodieException.class, () -> HoodieWriterUtils.validateTableConfig(
+        sparkSession,
+        JavaScalaConverters.convertJavaPropertiesToScalaMap(writerParams),
+        tableConfig));
+    assertTrue(ex.getMessage().contains(HoodieTableConfig.NAME.key()),
+        "Expected exception to mention hoodie.table.name; was: " + ex.getMessage());
+  }
+
+  @Test
+  void validateTableConfig_qualifiedTableName_rejectedWhenTableSuffixMismatches() throws IOException {
+    HoodieTableMetaClient metaClient = getMetaClientBuilder(HoodieTableType.COPY_ON_WRITE, new Properties(), "db1")
+        .initTable(storageConf, tempDir.resolve("qualifiedNameWrongTable").toString());
+    HoodieTableConfig tableConfig = metaClient.getTableConfig();
+
+    TypedProperties writerParams = TypedProperties.copy(tableConfig.getProps());
+    writerParams.put(HoodieTableConfig.NAME.key(), "db1.some_other_table");
+
+    HoodieException ex = assertThrows(HoodieException.class, () -> HoodieWriterUtils.validateTableConfig(
+        sparkSession,
+        JavaScalaConverters.convertJavaPropertiesToScalaMap(writerParams),
+        tableConfig));
+    assertTrue(ex.getMessage().contains(HoodieTableConfig.NAME.key()),
+        "Expected exception to mention hoodie.table.name; was: " + ex.getMessage());
+  }
+
+  // ---------------------------------------------------------------------------
+  // Fix 2a: when on-disk hoodie.table.recordkey.fields is unset and the writer
+  // supplies a non-empty recordkey, log a WARN instead of throwing.
+  // ---------------------------------------------------------------------------
+
+  @Test
+  void validateTableConfig_nullOnDiskRecordKey_warnsButDoesNotThrow() throws IOException {
+    HoodieTableMetaClient metaClient = getMetaClientBuilder(HoodieTableType.COPY_ON_WRITE, new Properties(), "")
+        .initTable(storageConf, tempDir.resolve("nullRecordKeyWarn").toString());
+    HoodieTableConfig tableConfig = metaClient.getTableConfig();
+    // Simulate a legacy table whose hoodie.properties never persisted recordkey.fields.
+    tableConfig.getProps().remove(HoodieTableConfig.RECORDKEY_FIELDS.key());
+    assertTrue(tableConfig.getInt(HoodieTableConfig.VERSION) > 1,
+        "test precondition: table version must be > 1");
+
+    TypedProperties writerParams = TypedProperties.copy(tableConfig.getProps());
+    writerParams.put("hoodie.datasource.write.recordkey.field", "unique_key");
+
+    // No metaClient passed -> WARN-only, no backfill, no throw.
+    Assertions.assertDoesNotThrow(() -> HoodieWriterUtils.validateTableConfig(
+        sparkSession,
+        JavaScalaConverters.convertJavaPropertiesToScalaMap(writerParams),
+        tableConfig));
+  }
+
+  @Test
+  void validateTableConfig_mismatchedNonNullRecordKeys_stillThrows() throws IOException {
+    HoodieTableMetaClient metaClient = getMetaClientBuilder(HoodieTableType.COPY_ON_WRITE, new Properties(), "")
+        .initTable(storageConf, tempDir.resolve("recordKeyMismatch").toString());
+    HoodieTableConfig tableConfig = metaClient.getTableConfig();
+    tableConfig.getProps().setProperty(HoodieTableConfig.RECORDKEY_FIELDS.key(), "k_on_disk");
+
+    TypedProperties writerParams = TypedProperties.copy(tableConfig.getProps());
+    writerParams.put("hoodie.datasource.write.recordkey.field", "k_writer");
+
+    HoodieException ex = assertThrows(HoodieException.class, () -> HoodieWriterUtils.validateTableConfig(
+        sparkSession,
+        JavaScalaConverters.convertJavaPropertiesToScalaMap(writerParams),
+        tableConfig));
+    assertTrue(ex.getMessage().contains("RecordKey"),
+        "Expected exception to mention RecordKey; was: " + ex.getMessage());
+  }
+
+  // ---------------------------------------------------------------------------
+  // Fix 2b: when a metaClient is provided AND on-disk recordkey is unset, the
+  // writer's value is persisted to hoodie.properties via HoodieTableConfig.update.
+  // ---------------------------------------------------------------------------
+
+  @Test
+  void validateTableConfig_nullOnDiskRecordKey_backfillsWhenMetaClientProvided() throws IOException {
+    HoodieTableMetaClient metaClient = getMetaClientBuilder(HoodieTableType.COPY_ON_WRITE, new Properties(), "")
+        .initTable(storageConf, tempDir.resolve("nullRecordKeyBackfill").toString());
+
+    // Strip recordkey.fields from on-disk hoodie.properties so this resembles the
+    // legacy 0.14 SparkSQL CREATE TABLE state we're trying to heal.
+    HoodieTableConfig.delete(metaClient.getStorage(), metaClient.getMetaPath(),
+        Collections.singleton(HoodieTableConfig.RECORDKEY_FIELDS.key()));
+    metaClient.reloadTableConfig();
+    HoodieTableConfig tableConfig = metaClient.getTableConfig();
+    Assertions.assertNull(tableConfig.getString(HoodieTableConfig.RECORDKEY_FIELDS),
+        "test precondition: recordkey.fields must be unset on disk before validate is invoked");
+    assertTrue(tableConfig.getInt(HoodieTableConfig.VERSION) > 1,
+        "test precondition: table version must be > 1");
+
+    TypedProperties writerParams = TypedProperties.copy(tableConfig.getProps());
+    writerParams.put("hoodie.datasource.write.recordkey.field", "unique_key");
+
+    Assertions.assertDoesNotThrow(() -> HoodieWriterUtils.validateTableConfig(
+        sparkSession,
+        JavaScalaConverters.convertJavaPropertiesToScalaMap(writerParams),
+        tableConfig,
+        false,
+        metaClient));
+
+    // Reload from disk and verify the recordkey was persisted.
+    metaClient.reloadTableConfig();
+    String persisted = metaClient.getTableConfig().getString(HoodieTableConfig.RECORDKEY_FIELDS);
+    assertNotNull(persisted, "recordkey.fields should have been backfilled to hoodie.properties");
+    assertEquals("unique_key", persisted);
   }
 }

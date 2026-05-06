@@ -24,7 +24,7 @@ import org.apache.hudi.common.config.{DFSPropertiesConfiguration, HoodieCommonCo
 import org.apache.hudi.common.config.HoodieMetadataConfig.ENABLE
 import org.apache.hudi.common.config.RecordMergeMode.CUSTOM
 import org.apache.hudi.common.model.{DefaultHoodieRecordPayload, HoodieRecord, OverwriteWithLatestAvroPayload, WriteOperationType}
-import org.apache.hudi.common.table.{HoodieTableConfig, HoodieTableVersion}
+import org.apache.hudi.common.table.{HoodieTableConfig, HoodieTableMetaClient, HoodieTableVersion}
 import org.apache.hudi.common.util.StringUtils
 import org.apache.hudi.common.util.StringUtils.isNullOrEmpty
 import org.apache.hudi.config.HoodieWriteConfig
@@ -177,6 +177,23 @@ object HoodieWriterUtils {
     ignoreConfig = ignoreConfig || (key.equals(PAYLOAD_CLASS_NAME.key()) && shouldIgnorePayloadValidation(value, tableConfig))
     // If hoodie.database.name is empty, ignore validation.
     ignoreConfig = ignoreConfig || (key.equals(HoodieTableConfig.DATABASE_NAME.key()) && isNullOrEmpty(getStringFromTableConfigWithAlternatives(tableConfig, key)))
+    // If the writer-side hoodie.table.name is supplied as the qualified "db.table" form
+    // (legacy convention used by some writers), treat it as equivalent to the on-disk
+    // pair (hoodie.database.name, hoodie.table.name) when the split decomposition matches.
+    // The on-disk shape is always bare-name + separate database written by HoodieCatalogTable;
+    // older writers that pass "db.table" should not trip the conflict check.
+    ignoreConfig = ignoreConfig || (key.equals(HoodieTableConfig.NAME.key()) && {
+      val idx = value.indexOf('.')
+      if (idx <= 0) {
+        false
+      } else {
+        val writerDb = value.substring(0, idx)
+        val writerTable = value.substring(idx + 1)
+        val onDiskTable = getStringFromTableConfigWithAlternatives(tableConfig, HoodieTableConfig.NAME.key)
+        val onDiskDb = getStringFromTableConfigWithAlternatives(tableConfig, HoodieTableConfig.DATABASE_NAME.key)
+        writerTable == onDiskTable && (isNullOrEmpty(onDiskDb) || writerDb == onDiskDb)
+      }
+    })
     ignoreConfig
   }
 
@@ -223,7 +240,7 @@ object HoodieWriterUtils {
 
   def validateTableConfig(spark: SparkSession, params: Map[String, String],
                           tableConfig: HoodieConfig): Unit = {
-    validateTableConfig(spark, params, tableConfig, false)
+    validateTableConfig(spark, params, tableConfig, isOverWriteMode = false, metaClient = null)
   }
 
   /**
@@ -254,10 +271,29 @@ object HoodieWriterUtils {
   }
 
   /**
-   * Detects conflicts between new parameters and existing table configurations
+   * Detects conflicts between new parameters and existing table configurations.
+   *
+   * Backwards-compatible overload for callers that do not have a [[HoodieTableMetaClient]]
+   * in scope; the recordkey-fields backfill described on the 5-arg overload below is skipped
+   * (the missing on-disk recordkey is logged as a WARN but no on-disk write occurs).
    */
   def validateTableConfig(spark: SparkSession, params: Map[String, String],
                           tableConfig: HoodieConfig, isOverWriteMode: Boolean): Unit = {
+    validateTableConfig(spark, params, tableConfig, isOverWriteMode, metaClient = null)
+  }
+
+  /**
+   * Detects conflicts between new parameters and existing table configurations.
+   *
+   * When `metaClient` is non-null and the on-disk `hoodie.table.recordkey.fields` is unset
+   * while the writer supplies a non-empty recordkey, the writer's value is persisted to
+   * `hoodie.properties` via [[HoodieTableConfig.update]]. Hudi record keys are an immutable
+   * table property, so this auto-heal is safe: any concurrent writer that disagrees on the
+   * recordkey is still rejected by the "both non-null mismatch" branch below.
+   */
+  def validateTableConfig(spark: SparkSession, params: Map[String, String],
+                          tableConfig: HoodieConfig, isOverWriteMode: Boolean,
+                          metaClient: HoodieTableMetaClient): Unit = {
     // If Overwrite is set as save mode, we don't need to do table config validation.
     if (!isOverWriteMode) {
       val resolver = spark.sessionState.conf.resolver
@@ -276,12 +312,24 @@ object HoodieWriterUtils {
         val datasourceRecordKey = params.getOrElse(RECORDKEY_FIELD.key(), null)
         val tableConfigRecordKey = tableConfig.getString(HoodieTableConfig.RECORDKEY_FIELDS)
         if (tableConfig.contains(HoodieTableConfig.VERSION) && tableConfig.getInt(HoodieTableConfig.VERSION) > 1 ) {
-          if ((null != datasourceRecordKey && null != tableConfigRecordKey
-            && datasourceRecordKey != tableConfigRecordKey) || (null != datasourceRecordKey && datasourceRecordKey.nonEmpty
-            && tableConfigRecordKey == null)) {
-            // if both are non null, they should match.
-            // if incoming record key is non empty, table config should also be non empty.
+          if (null != datasourceRecordKey && null != tableConfigRecordKey
+              && datasourceRecordKey != tableConfigRecordKey) {
+            // Both sides claim a recordkey and disagree — real conflict, must fail.
             diffConfigs.append(s"RecordKey:\t$datasourceRecordKey\t$tableConfigRecordKey\n")
+          } else if (null != datasourceRecordKey && datasourceRecordKey.nonEmpty
+              && tableConfigRecordKey == null) {
+            // Legacy table where hoodie.table.recordkey.fields was never persisted
+            // (e.g. created via Hudi 0.14 SparkSQL `CREATE TABLE ... USING HUDI` without
+            // a 'primaryKey' TBLPROPERTY). Backfill if a metaClient is available so the
+            // table config matches the writer's contract going forward.
+            log.warn(s"hoodie.table.recordkey.fields is unset in on-disk hoodie.properties; " +
+                     s"using writer-supplied value '$datasourceRecordKey'.")
+            if (metaClient != null) {
+              val updates = new java.util.Properties()
+              updates.setProperty(HoodieTableConfig.RECORDKEY_FIELDS.key, datasourceRecordKey)
+              HoodieTableConfig.update(metaClient.getStorage, metaClient.getMetaPath, updates)
+              log.warn(s"Backfilled hoodie.table.recordkey.fields=$datasourceRecordKey at ${metaClient.getMetaPath}")
+            }
           }
         }
 
