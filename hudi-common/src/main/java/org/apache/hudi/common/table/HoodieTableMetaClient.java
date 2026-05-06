@@ -204,10 +204,22 @@ public class HoodieTableMetaClient implements Serializable {
       checkArgument(layoutVersion.get().compareTo(tableConfigVersion.get()) >= 0,
           "Layout Version defined in hoodie properties has higher version (" + tableConfigVersion.get()
               + ") than the one passed in config (" + layoutVersion.get() + ")");
-    } else if (layoutVersion.isEmpty() && tableConfigVersion.isEmpty()) {
-      throw new TableNotFoundException("Table does not exist");
+      this.timelineLayoutVersion = layoutVersion.get();
+    } else if (layoutVersion.isPresent()) {
+      this.timelineLayoutVersion = layoutVersion.get();
+    } else if (tableConfigVersion.isPresent()) {
+      this.timelineLayoutVersion = tableConfigVersion.get();
+    } else {
+      // 0.14-compat: legacy tables created before hoodie.timeline.layout.version became a required
+      // hoodie.properties field have neither value present. In 0.14 the Builder defaulted
+      // layoutVersion to CURR_LAYOUT_VERSION (= LAYOUT_VERSION_1 at the time), so reads succeeded
+      // and used v1. The strict throw added in HUDI-8548 (1.x) misreads this as "table missing"
+      // and rejects them. Restore back-compat by defaulting to LAYOUT_VERSION_1, the layout these
+      // legacy tables were actually using.
+      this.timelineLayoutVersion = TimelineLayoutVersion.LAYOUT_VERSION_1;
+      LOG.warn("hoodie.properties at " + metaPath + " has no hoodie.timeline.layout.version; "
+          + "defaulting to LAYOUT_VERSION_1 (0.14 compat).");
     }
-    this.timelineLayoutVersion = layoutVersion.orElseGet(tableConfigVersion::get);
     this.tableFormat = tableConfig.getTableFormat(timelineLayoutVersion);
     this.timelineLayout = TimelineLayout.fromVersion(timelineLayoutVersion);
     this.timelinePath = timelineLayout.getTimelinePathProvider().getTimelinePath(tableConfig, this.basePath);

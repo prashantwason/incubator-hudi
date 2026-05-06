@@ -396,6 +396,15 @@ class RunRandomProductionSQLsTest extends RunOperationsBase {
     spark.sql(sqlStr)
     assert(tableExists(database, partitionedTableName))
     val basepath = spark.sessionState.catalog.externalCatalog.getTable(database, partitionedTableName).location.toString
+    // Guard the assertion below: we want this test to exercise the "no .hoodie/ directory at all"
+    // path in fetchConfigs (ConfigUtils#fetchConfigs throws TableNotFoundException directly when
+    // !storage.exists(metaPath)), NOT the layout-version fallback in HoodieTableMetaClient that
+    // 0.14-compat introduces. If .hoodie/ ever exists here, the next build() would skip the
+    // intended path and the assertion below would silently change meaning.
+    val basepathHoodieDir = new Path(basepath, ".hoodie")
+    val basepathFs = basepathHoodieDir.getFileSystem(spark.sparkContext.hadoopConfiguration)
+    assert(!basepathFs.exists(basepathHoodieDir),
+      s"Test precondition failed: $basepathHoodieDir should not exist on a fresh empty Hive table")
     try {
       HoodieTableMetaClient.builder().setBasePath(basepath).setConf(HadoopFSUtils.getStorageConfWithCopy(spark.sparkContext.hadoopConfiguration)).build()
       throw new AssertionError("Expecting TableNotFoundException but metaClient is created successfully")
@@ -431,7 +440,11 @@ class RunRandomProductionSQLsTest extends RunOperationsBase {
       .option(DataSourceWriteOptions.OPERATION.key(), DataSourceWriteOptions.INSERT_OVERWRITE_OPERATION_OPT_VAL)
 
       .option(HiveSyncConfigHolder.HIVE_SYNC_ENABLED.key(), "true")
-      .option(HiveSyncConfigHolder.HIVE_SYNC_MODE.key(), "HIVEQL")
+      // HMS instead of HIVEQL: HIVEQL opens a separate HiveCLI session to ALTER TABLE ADD
+      // PARTITION, which writes to HMS but leaves Spark's cached Hive client stale on the
+      // read side. HMS sync goes through SparkCatalogMetaStoreClient (when use_spark_catalog
+      // is on) and shares the catalog client, so the post-write SELECT sees the new partitions.
+      .option(HiveSyncConfigHolder.HIVE_SYNC_MODE.key(), "HMS")
       .option(HoodieSyncConfig.META_SYNC_DATABASE_NAME.key(), database)
       .option(HoodieSyncConfig.META_SYNC_TABLE_NAME.key(), partitionedTableName)
       .option(HoodieSyncConfig.META_SYNC_PARTITION_FIELDS.key(), "datestr")

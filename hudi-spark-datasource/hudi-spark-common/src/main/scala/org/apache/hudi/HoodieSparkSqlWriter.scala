@@ -866,8 +866,19 @@ class HoodieSparkSqlWriterInternal {
                               operation: WriteOperationType, fs: FileSystem): Unit = {
     if (mode == SaveMode.Append && tableExists) {
       val existingTableName = tableConfig.getTableName
+      // Mirror the legacy-table workaround in HoodieTableConfig.getTableName: if the caller
+      // passed a qualified "<db>.<table>" form and tableConfig has a database, strip the prefix
+      // before comparing so writers using the qualified form still match the bare on-disk name.
+      val existingDbName = tableConfig.getDatabaseName
+      val effectiveTableName =
+        if (existingDbName != null && !existingDbName.isEmpty
+          && tableName != null && tableName.startsWith(existingDbName + ".")) {
+          tableName.substring(existingDbName.length + 1)
+        } else {
+          tableName
+        }
       val resolver = spark.sessionState.conf.resolver
-      if (!resolver(existingTableName, tableName)) {
+      if (!resolver(existingTableName, effectiveTableName)) {
         throw new HoodieException(s"hoodie table with name $existingTableName already exists at $tablePath," +
           s" can not append data to the table with another name $tableName.")
       }
