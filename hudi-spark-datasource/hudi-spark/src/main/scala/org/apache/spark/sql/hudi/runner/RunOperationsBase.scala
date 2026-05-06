@@ -123,7 +123,8 @@ trait RunOperationsBase {
                        optionsMap :mutable.Map[String, String]): Unit = {
     inputDF.write.format("hudi").
       options(QuickstartUtils.getQuickstartWriteConfigs).
-      option(HoodieTableConfig.NAME.key(), database + "." + tableName).
+      option(HoodieTableConfig.NAME.key(), tableName).
+      option(HoodieTableConfig.DATABASE_NAME.key(), database).
       option(RECORDKEY_FIELD.key(), "uuid").
       option(PARTITIONPATH_FIELD.key(), "partitionpath").
       option(PRECOMBINE_FIELD.key(), "ts").
