@@ -49,6 +49,8 @@ import org.apache.flink.table.functions.BuiltInFunctionDefinitions;
 import org.apache.flink.table.types.DataType;
 import org.apache.hadoop.fs.Path;
 import org.hamcrest.CoreMatchers;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.ThrowingSupplier;
 import org.junit.jupiter.api.io.TempDir;
@@ -67,6 +69,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.TimeZone;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -85,6 +88,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @Slf4j
 public class TestHoodieTableSource {
+
+  // testBucketPruningSpecialKeyDataType hashes a string built from java.sql.Timestamp.toString(),
+  // which formats in the JVM default timezone. Pin to UTC for deterministic bucket IDs across
+  // developer machines (CI runs UTC by default).
+  private static TimeZone savedDefaultTimeZone;
+
+  @BeforeAll
+  static void setupTimeZone() {
+    savedDefaultTimeZone = TimeZone.getDefault();
+    TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
+  }
+
+  @AfterAll
+  static void restoreTimeZone() {
+    TimeZone.setDefault(savedDefaultTimeZone);
+  }
 
   private Configuration conf;
 

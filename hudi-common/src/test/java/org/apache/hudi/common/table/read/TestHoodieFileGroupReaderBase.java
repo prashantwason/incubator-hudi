@@ -67,6 +67,7 @@ import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.IndexedRecord;
+import org.apache.avro.util.Utf8;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -904,8 +905,47 @@ public abstract class TestHoodieFileGroupReaderBase<T> {
     for (String key : actualMap.keySet()) {
       GenericRecord expectedRecord = expectedMap.get(key);
       GenericRecord actualRecord = actualMap.get(key);
-      assertEquals(expectedRecord, actualRecord);
+      // Normalize Avro STRING carrier (Utf8 vs java.lang.String) before comparing.
+      // Avro 1.8.2's generic decoder defaults STRING to Utf8 while Hudi's test-data
+      // generators populate java.lang.String, and Utf8.equals(String) is always false.
+      assertEquals(normalizeStrings(expectedRecord), normalizeStrings(actualRecord));
     }
+  }
+
+  /**
+   * Recursively converts every Avro {@link Utf8} occurrence inside a value tree to {@link String}
+   * (record fields, list elements, and map keys/values). Pass-through for everything else.
+   */
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  private static Object normalizeStrings(Object value) {
+    if (value instanceof Utf8) {
+      return value.toString();
+    }
+    if (value instanceof IndexedRecord) {
+      IndexedRecord src = (IndexedRecord) value;
+      GenericData.Record dst = new GenericData.Record(src.getSchema());
+      for (Schema.Field f : src.getSchema().getFields()) {
+        dst.put(f.pos(), normalizeStrings(src.get(f.pos())));
+      }
+      return dst;
+    }
+    if (value instanceof List) {
+      List<Object> src = (List<Object>) value;
+      List<Object> dst = new ArrayList<>(src.size());
+      for (Object e : src) {
+        dst.add(normalizeStrings(e));
+      }
+      return dst;
+    }
+    if (value instanceof Map) {
+      Map<Object, Object> src = (Map<Object, Object>) value;
+      Map<Object, Object> dst = new HashMap<>(src.size());
+      for (Map.Entry<Object, Object> e : src.entrySet()) {
+        dst.put(normalizeStrings(e.getKey()), normalizeStrings(e.getValue()));
+      }
+      return dst;
+    }
+    return value;
   }
 
   protected void validateOutputFromFileGroupReader(StorageConfiguration<?> storageConf,
