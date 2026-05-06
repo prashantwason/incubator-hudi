@@ -230,7 +230,12 @@ public class TestHoodieShadowPipeline extends HoodieToolsFunctionalTest {
 
     HoodieTableMetaClient destMc = buildMetaClient(destPath);
     assertEquals(HoodieTableType.COPY_ON_WRITE, destMc.getTableConfig().getTableType());
-    assertEquals("test_db.dataset_copy_shadow", destMc.getTableConfig().getTableName());
+    // After commit 41287e6e ("Workaround: derive database/table name from qualified
+    // hoodie.table.name"), HoodieTableConfig splits a qualified hoodie.table.name when
+    // hoodie.database.name is unset, so getTableName() returns the bare table portion
+    // and getDatabaseName() returns the prefix.
+    assertEquals("dataset_copy_shadow", destMc.getTableConfig().getTableName());
+    assertEquals("test_db", destMc.getTableConfig().getDatabaseName());
     // reuseHoodiePropertiesFileFromSrc=true copies partition field from source
     assertEquals("partition_path",
         String.join(",", destMc.getTableConfig().getPartitionFields().get()));
@@ -289,7 +294,8 @@ public class TestHoodieShadowPipeline extends HoodieToolsFunctionalTest {
     runPipeline(cfg);
 
     HoodieTableMetaClient destMc = buildMetaClient(destPath);
-    assertEquals("test_db.my_custom_table", destMc.getTableConfig().getTableName());
+    assertEquals("my_custom_table", destMc.getTableConfig().getTableName());
+    assertEquals("test_db", destMc.getTableConfig().getDatabaseName());
   }
 
   @Test

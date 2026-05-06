@@ -300,7 +300,9 @@ public class TestSparkSortAndSizeClustering extends HoodieSparkClientTestHarness
           Conversions.DecimalConversion decimalConversions = new Conversions.DecimalConversion();
           GenericFixed genericFixed = decimalConversions.toFixed(bigDecimal, decimalSchema.toAvroSchema(), LogicalTypes.decimal(10, 6));
           record.put("decimal_field", genericFixed);
-          record.put("date_nullable_field", random.nextBoolean() ? null : LocalDate.now().minusDays(random.nextInt(3)));
+          // [UBER] Avro 1.8.2 (post avro downgrade in commit 417cf017a3) has no built-in LocalDate <-> int conversion,
+          // so put the underlying int (epoch days) directly to avoid AvroRuntimeException: Unknown datum type LocalDate.
+          record.put("date_nullable_field", random.nextBoolean() ? null : (int) LocalDate.now().minusDays(random.nextInt(3)).toEpochDay());
           record.put("timestamp_millis_field", ts);
           record.put("timestamp_micros_nullable_field", random.nextBoolean() ? null : ts * 1000);
           record.put("timestamp_local_millis_nullable_field", random.nextBoolean() ? null : ts);
