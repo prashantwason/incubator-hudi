@@ -24,6 +24,8 @@ import org.apache.hudi.common.table.{HoodieTableMetaClient, TableSchemaResolver}
 import org.apache.hudi.common.util.{Option => HOption}
 import org.apache.hudi.hadoop.fs.HadoopFSUtils
 
+import org.apache.hadoop.fs.Path
+import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.hudi.HoodieSqlCommonUtils
 import org.slf4j.LoggerFactory
@@ -32,12 +34,15 @@ import scala.collection.JavaConverters._
 import scala.util.Try
 
 /**
- * Integration tests for Hudi Table DDL commands. Two coverage areas:
+ * Integration tests for Hudi Table DDL commands. Coverage areas:
  *
  *   1. SHOW PARTITIONS (ShowHoodieTablePartitionsCommand) — 7 scenarios.
  *   2. ALTER TABLE — 48 scenarios covering ADD COLUMNS, CHANGE COLUMN,
  *      RENAME COLUMN, RENAME TO, ADD PARTITION, DROP PARTITION across
  *      COW + MOR.
+ *   3. CREATE TABLE / CREATE TABLE LIKE / CREATE TABLE AS SELECT (CTAS),
+ *      DROP TABLE, TRUNCATE TABLE, MSCK REPAIR TABLE — positive and
+ *      negative scenarios across managed/external and COW/MOR.
  *
  * Each command's behavior is exercised end-to-end against the integ env's
  * HMS-backed catalog and HDFS, then asserted across three independent
@@ -1246,5 +1251,847 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
       throw new AssertionError(
         s"Expected message to contain one of ${candidates.mkString("[", ",", "]")} for SQL [$sql], got: $full")
     }
+  }
+
+  // ===========================================================================
+  // CREATE / DROP / TRUNCATE / CTAS / MSCK REPAIR coverage (merged from PR #131)
+  // ===========================================================================
+  // ===========================================================================
+  // CREATE TABLE
+  // ===========================================================================
+
+  /** CREATE TABLE without LOCATION creates a managed COW table; SHOW TABLES lists it. */
+  def testCreateManagedCowTable(): Unit = {
+    val tableName = "hudi_ddl_create_managed_cow"
+    cleanup(tableName, getBasePath(tableName))
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$tableName (
+         |  id INT, name STRING, price DOUBLE, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |""".stripMargin)
+    assert(tableExists(database, tableName), s"$database.$tableName should exist")
+    assert(spark.sql(s"SELECT * FROM $database.$tableName").count() == 0)
+  }
+
+  /** CREATE TABLE without LOCATION for MOR creates the base table (ro/rt only appear after first write). */
+  def testCreateManagedMorTable(): Unit = {
+    val tableName = "hudi_ddl_create_managed_mor"
+    cleanup(tableName, getBasePath(tableName))
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$tableName (
+         |  id INT, name STRING, price DOUBLE, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'mor', primaryKey = 'id', preCombineField = 'ts')
+         |""".stripMargin)
+    assert(tableExists(database, tableName), s"$database.$tableName should exist")
+  }
+
+  /** CREATE EXTERNAL TABLE with LOCATION + PARTITIONED BY (COW). */
+  def testCreateExternalCowTablePartitioned(): Unit = {
+    val tableName = "hudi_ddl_create_external_cow_partitioned"
+    val basePath = getBasePath(tableName)
+    cleanup(tableName, basePath)
+    spark.sql(
+      s"""
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |  id INT, name STRING, price DOUBLE, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |PARTITIONED BY (datestr string)
+         |LOCATION '$basePath'
+         |""".stripMargin)
+    assert(tableExists(database, tableName), s"$database.$tableName should exist")
+  }
+
+  /**
+   * CREATE EXTERNAL TABLE for MOR. After first write, the _ro and _rt views must
+   * appear in the catalog (HoodieCatalog auto-creation via HMS sync).
+   */
+  def testCreateExternalMorTablePartitionedRoRtViews(): Unit = {
+    val tableName = "hudi_ddl_create_external_mor_partitioned"
+    val basePath = getBasePath(tableName)
+    cleanup(tableName, basePath)
+    cleanup(s"${tableName}_ro", basePath)
+    cleanup(s"${tableName}_rt", basePath)
+    spark.sql(
+      s"""
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |  id INT, name STRING, price DOUBLE, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'mor', primaryKey = 'id', preCombineField = 'ts')
+         |PARTITIONED BY (datestr string)
+         |LOCATION '$basePath'
+         |""".stripMargin)
+    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 10.0, 1000, '2025-01-01')")
+    assert(tableExists(database, tableName))
+    assert(tableExists(database, s"${tableName}_ro"), s"_ro view should be auto-created for MOR")
+    assert(tableExists(database, s"${tableName}_rt"), s"_rt view should be auto-created for MOR")
+  }
+
+  /** CREATE TABLE IF NOT EXISTS creates the table when it is absent. */
+  def testCreateTableIfNotExistsWhenAbsent(): Unit = {
+    val tableName = "hudi_ddl_create_if_not_exists_absent"
+    cleanup(tableName, getBasePath(tableName))
+    spark.sql(
+      s"""
+         |CREATE TABLE IF NOT EXISTS $database.$tableName (
+         |  id INT, name STRING, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |""".stripMargin)
+    assert(tableExists(database, tableName))
+  }
+
+  /** CREATE TABLE IF NOT EXISTS is a no-op when the table already exists. */
+  def testCreateTableIfNotExistsWhenPresent(): Unit = {
+    val tableName = "hudi_ddl_create_if_not_exists_present"
+    cleanup(tableName, getBasePath(tableName))
+    val ddl =
+      s"""
+         |CREATE TABLE IF NOT EXISTS $database.$tableName (
+         |  id INT, name STRING, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |""".stripMargin
+    spark.sql(ddl)
+    assert(tableExists(database, tableName))
+    spark.sql(ddl)
+    assert(tableExists(database, tableName))
+  }
+
+  /** CREATE TABLE with composite primary key + multi-field partitioning (ComplexKeyGenerator). */
+  def testCreateTableWithComplexKeyGenerator(): Unit = {
+    val tableName = "hudi_ddl_create_complex_keygen"
+    val basePath = getBasePath(tableName)
+    cleanup(tableName, basePath)
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$tableName (
+         |  id INT, region STRING, name STRING, price DOUBLE, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (
+         |  type = 'cow',
+         |  primaryKey = 'id,region',
+         |  preCombineField = 'ts'
+         |)
+         |PARTITIONED BY (datestr string, hour string)
+         |LOCATION '$basePath'
+         |""".stripMargin)
+    assert(tableExists(database, tableName))
+    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'us', 'r1', 10.0, 1000, '2025-01-01', '00')")
+    assert(spark.sql(s"SELECT * FROM $database.$tableName").count() == 1)
+  }
+
+  /** CREATE TABLE with COMMENT propagates the comment into the catalog metadata. */
+  def testCreateTableWithComment(): Unit = {
+    val tableName = "hudi_ddl_create_with_comment"
+    cleanup(tableName, getBasePath(tableName))
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$tableName (
+         |  id INT COMMENT 'row id', name STRING COMMENT 'rider name', ts BIGINT
+         |) USING hudi
+         |COMMENT 'integ test table for DDL coverage'
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |""".stripMargin)
+    val md = spark.sessionState.catalog.getTableMetadata(
+      new TableIdentifier(tableName, Some(database)))
+    assert(md.comment.contains("integ test table for DDL coverage"),
+      s"expected table comment to be set, got: ${md.comment}")
+  }
+
+  /** CREATE TABLE without IF NOT EXISTS on an existing identifier must throw. */
+  def testCreateTableThrowsWhenAlreadyExists(): Unit = {
+    val tableName = "hudi_ddl_create_already_exists"
+    cleanup(tableName, getBasePath(tableName))
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$tableName (
+         |  id INT, name STRING, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |""".stripMargin)
+    assertThrowsContaining("already exists") {
+      spark.sql(
+        s"""
+           |CREATE TABLE $database.$tableName (
+           |  id INT, name STRING, ts BIGINT
+           |) USING hudi
+           |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+           |""".stripMargin)
+    }
+  }
+
+  // ===========================================================================
+  // CREATE TABLE LIKE
+  // ===========================================================================
+
+  /** CREATE TABLE LIKE clones a managed Hudi source into a new managed Hudi table. */
+  def testCreateTableLikeFromHudiManagedToManaged(): Unit = {
+    val src = "hudi_ddl_ctl_src_managed"
+    val tgt = "hudi_ddl_ctl_tgt_managed"
+    cleanup(src, getBasePath(src))
+    cleanup(tgt, getBasePath(tgt))
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$src (
+         |  id INT, name STRING, price DOUBLE, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |""".stripMargin)
+    spark.sql(s"CREATE TABLE $database.$tgt LIKE $database.$src USING hudi")
+    assert(tableExists(database, tgt))
+    assert(spark.sql(s"SELECT * FROM $database.$tgt").count() == 0)
+  }
+
+  /** CREATE TABLE LIKE with explicit LOCATION produces an external table at that path. */
+  def testCreateTableLikeFromHudiToExternalWithLocation(): Unit = {
+    val src = "hudi_ddl_ctl_src_for_external"
+    val tgt = "hudi_ddl_ctl_tgt_external"
+    val tgtPath = getBasePath(tgt)
+    cleanup(src, getBasePath(src))
+    cleanup(tgt, tgtPath)
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$src (
+         |  id INT, name STRING, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |""".stripMargin)
+    spark.sql(s"CREATE TABLE $database.$tgt LIKE $database.$src USING hudi LOCATION '$tgtPath'")
+    assert(tableExists(database, tgt))
+    val md = spark.sessionState.catalog.getTableMetadata(
+      new TableIdentifier(tgt, Some(database)))
+    assert(md.location.toString.contains(tgt), s"expected location to contain $tgt; got ${md.location}")
+  }
+
+  /**
+   * CREATE TABLE LIKE from a non-Hudi (Hive) source: target inherits source schema but is
+   * registered as a Hudi table when USING hudi is specified.
+   */
+  def testCreateTableLikeFromHiveSource(): Unit = {
+    val src = "hudi_ddl_ctl_src_hive"
+    val tgt = "hudi_ddl_ctl_tgt_from_hive"
+    val srcPath = getBasePath(src)
+    cleanup(src, srcPath)
+    cleanup(tgt, getBasePath(tgt))
+    createHiveTestTable(database, src, srcPath, isPartitionedDataset = true, includeHoodieMetafields = false)
+    spark.sql(s"CREATE TABLE $database.$tgt LIKE $database.$src USING hudi")
+    assert(tableExists(database, tgt))
+  }
+
+  /** CREATE TABLE LIKE IF NOT EXISTS is a no-op when the target already exists. */
+  def testCreateTableLikeIfNotExistsWhenPresent(): Unit = {
+    val src = "hudi_ddl_ctl_src_for_ifne"
+    val tgt = "hudi_ddl_ctl_tgt_ifne_present"
+    cleanup(src, getBasePath(src))
+    cleanup(tgt, getBasePath(tgt))
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$src (
+         |  id INT, name STRING, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |""".stripMargin)
+    spark.sql(s"CREATE TABLE $database.$tgt LIKE $database.$src USING hudi")
+    spark.sql(s"CREATE TABLE IF NOT EXISTS $database.$tgt LIKE $database.$src USING hudi")
+    assert(tableExists(database, tgt))
+  }
+
+  /** CREATE TABLE LIKE without IF NOT EXISTS on an existing target must throw. */
+  def testCreateTableLikeThrowsWhenTargetExists(): Unit = {
+    val src = "hudi_ddl_ctl_src_for_existing_tgt"
+    val tgt = "hudi_ddl_ctl_tgt_already_exists"
+    cleanup(src, getBasePath(src))
+    cleanup(tgt, getBasePath(tgt))
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$src (
+         |  id INT, name STRING, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |""".stripMargin)
+    spark.sql(s"CREATE TABLE $database.$tgt LIKE $database.$src USING hudi")
+    assertThrowsContaining("already exists") {
+      spark.sql(s"CREATE TABLE $database.$tgt LIKE $database.$src USING hudi")
+    }
+  }
+
+  /** CREATE TABLE LIKE referencing a non-existent source must throw. */
+  def testCreateTableLikeThrowsWhenSourceMissing(): Unit = {
+    val src = "hudi_ddl_ctl_src_does_not_exist"
+    val tgt = "hudi_ddl_ctl_tgt_no_src"
+    cleanup(src, getBasePath(src))
+    cleanup(tgt, getBasePath(tgt))
+    assertThrowsContaining(src) {
+      spark.sql(s"CREATE TABLE $database.$tgt LIKE $database.$src USING hudi")
+    }
+  }
+
+  // ===========================================================================
+  // CREATE TABLE AS SELECT (CTAS)
+  // ===========================================================================
+
+  /** CTAS for a COW table populated from a Hudi source materialises the rows. */
+  def testCtasCowFromHudiSource(): Unit = {
+    val src = "hudi_ddl_ctas_src_cow"
+    val tgt = "hudi_ddl_ctas_tgt_cow"
+    cleanup(src, getBasePath(src))
+    cleanup(tgt, getBasePath(tgt))
+    createInserts(database, src, SaveMode.Overwrite, isHudiTable = true)
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$tgt USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'uuid', preCombineField = 'ts')
+         |AS SELECT * FROM $database.$src
+         |""".stripMargin)
+    assert(tableExists(database, tgt))
+    assert(spark.sql(s"SELECT * FROM $database.$tgt").count() == 20)
+  }
+
+  /** CTAS for a MOR table creates the base table plus the _ro and _rt views. */
+  def testCtasMorFromHudiSourceCreatesRoRt(): Unit = {
+    val src = "hudi_ddl_ctas_src_mor"
+    val tgt = "hudi_ddl_ctas_tgt_mor"
+    cleanup(src, getBasePath(src))
+    cleanup(tgt, getBasePath(tgt))
+    cleanup(s"${tgt}_ro", getBasePath(tgt))
+    cleanup(s"${tgt}_rt", getBasePath(tgt))
+    createInserts(database, src, SaveMode.Overwrite, isHudiTable = true)
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$tgt USING hudi
+         |TBLPROPERTIES (type = 'mor', primaryKey = 'uuid', preCombineField = 'ts')
+         |AS SELECT * FROM $database.$src
+         |""".stripMargin)
+    assert(tableExists(database, tgt))
+    assert(tableExists(database, s"${tgt}_ro"), s"_ro view should be auto-created for MOR CTAS")
+    assert(tableExists(database, s"${tgt}_rt"), s"_rt view should be auto-created for MOR CTAS")
+  }
+
+  /** CTAS sourcing rows from a non-Hudi (Hive) table. */
+  def testCtasFromHiveSource(): Unit = {
+    val src = "hudi_ddl_ctas_src_hive"
+    val tgt = "hudi_ddl_ctas_tgt_from_hive"
+    cleanup(src, getBasePath(src))
+    cleanup(tgt, getBasePath(tgt))
+    createInserts(database, src, SaveMode.Overwrite, isHudiTable = false)
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$tgt USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'uuid', preCombineField = 'ts')
+         |AS SELECT * FROM $database.$src
+         |""".stripMargin)
+    assert(tableExists(database, tgt))
+    assert(spark.sql(s"SELECT * FROM $database.$tgt").count() == 20)
+  }
+
+  /** CTAS with an explicit PARTITIONED BY clause produces a partitioned target table. */
+  def testCtasWithExplicitPartitionBy(): Unit = {
+    val src = "hudi_ddl_ctas_src_for_partition"
+    val tgt = "hudi_ddl_ctas_tgt_partitioned"
+    cleanup(src, getBasePath(src))
+    cleanup(tgt, getBasePath(tgt))
+    createInserts(database, src, SaveMode.Overwrite, isHudiTable = true)
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$tgt USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'uuid', preCombineField = 'ts')
+         |PARTITIONED BY (partitionpath)
+         |AS SELECT * FROM $database.$src
+         |""".stripMargin)
+    assert(tableExists(database, tgt))
+    val md = spark.sessionState.catalog.getTableMetadata(
+      new TableIdentifier(tgt, Some(database)))
+    assert(md.partitionColumnNames.contains("partitionpath"),
+      s"expected partition columns to contain 'partitionpath'; got ${md.partitionColumnNames}")
+  }
+
+  /**
+   * CTAS without an explicit primaryKey relies on Hudi's auto record-key generation
+   * (uuid-based). The resulting table must still be queryable with the expected row count.
+   */
+  def testCtasWithAutoRecordKeyGen(): Unit = {
+    val src = "hudi_ddl_ctas_src_auto_key"
+    val tgt = "hudi_ddl_ctas_tgt_auto_key"
+    cleanup(src, getBasePath(src))
+    cleanup(tgt, getBasePath(tgt))
+    createInserts(database, src, SaveMode.Overwrite, isHudiTable = true)
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$tgt USING hudi
+         |TBLPROPERTIES (type = 'cow', preCombineField = 'ts')
+         |AS SELECT * FROM $database.$src
+         |""".stripMargin)
+    assert(tableExists(database, tgt))
+    assert(spark.sql(s"SELECT * FROM $database.$tgt").count() == 20)
+  }
+
+  /**
+   * CTAS with TBLPROPERTIES that include keys Hudi must filter (e.g. table format internals);
+   * the table must still be created and the user-supplied properties must round-trip.
+   */
+  def testCtasWithTblpropertiesFiltered(): Unit = {
+    val src = "hudi_ddl_ctas_src_props"
+    val tgt = "hudi_ddl_ctas_tgt_props"
+    cleanup(src, getBasePath(src))
+    cleanup(tgt, getBasePath(tgt))
+    createInserts(database, src, SaveMode.Overwrite, isHudiTable = true)
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$tgt USING hudi
+         |TBLPROPERTIES (
+         |  type = 'cow',
+         |  primaryKey = 'uuid',
+         |  preCombineField = 'ts',
+         |  'user.business.unit' = 'rides'
+         |)
+         |AS SELECT * FROM $database.$src
+         |""".stripMargin)
+    val md = spark.sessionState.catalog.getTableMetadata(
+      new TableIdentifier(tgt, Some(database)))
+    assert(md.properties.get("user.business.unit").contains("rides"),
+      s"user property did not round-trip; got ${md.properties}")
+  }
+
+  /** CTAS that defines a COW table with hoodie.compact.inline=true must be rejected. */
+  def testCtasThrowsOnCowWithCompactionEnabled(): Unit = {
+    val tgt = "hudi_ddl_ctas_cow_with_compaction"
+    cleanup(tgt, getBasePath(tgt))
+    assertThrowsContaining("Compaction is not supported on a CopyOnWrite table") {
+      spark.sql(
+        s"""
+           |CREATE TABLE $database.$tgt USING hudi
+           |TBLPROPERTIES (
+           |  type = 'cow',
+           |  primaryKey = 'id',
+           |  hoodie.compact.inline = 'true'
+           |)
+           |AS SELECT 1 AS id, 'a1' AS name, 10 AS price, 1000 AS ts
+           |""".stripMargin)
+    }
+  }
+
+  // ===========================================================================
+  // DROP TABLE
+  // ===========================================================================
+
+  /** DROP TABLE on a managed table removes the catalog entry and (for Hudi managed) the data. */
+  def testDropManagedTable(): Unit = {
+    val tableName = "hudi_ddl_drop_managed"
+    cleanup(tableName, getBasePath(tableName))
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$tableName (
+         |  id INT, name STRING, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |""".stripMargin)
+    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000)")
+    assert(tableExists(database, tableName))
+    spark.sql(s"DROP TABLE $database.$tableName")
+    assert(!tableExists(database, tableName))
+  }
+
+  /** DROP TABLE on an EXTERNAL table removes the catalog entry but preserves the data on disk. */
+  def testDropExternalTablePreservesData(): Unit = {
+    val tableName = "hudi_ddl_drop_external"
+    val basePath = getBasePath(tableName)
+    cleanup(tableName, basePath)
+    spark.sql(
+      s"""
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |  id INT, name STRING, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |LOCATION '$basePath'
+         |""".stripMargin)
+    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000)")
+    spark.sql(s"DROP TABLE $database.$tableName")
+    assert(!tableExists(database, tableName))
+    val fs = new Path(basePath).getFileSystem(spark.sparkContext.hadoopConfiguration)
+    assert(fs.exists(new Path(basePath, ".hoodie")),
+      s"data at $basePath should be preserved after DROP on external table")
+    // Cleanup leftover data from this test
+    fs.delete(new Path(basePath), true)
+  }
+
+  /** DROP TABLE with PURGE on a MOR table also drops the auto-created _ro and _rt views. */
+  def testDropMorTableDropsRoRt(): Unit = {
+    val tableName = "hudi_ddl_drop_mor_with_ro_rt"
+    val basePath = getBasePath(tableName)
+    cleanup(tableName, basePath)
+    cleanup(s"${tableName}_ro", basePath)
+    cleanup(s"${tableName}_rt", basePath)
+    spark.sql(
+      s"""
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |  id INT, name STRING, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'mor', primaryKey = 'id', preCombineField = 'ts')
+         |LOCATION '$basePath'
+         |""".stripMargin)
+    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000)")
+    assert(tableExists(database, s"${tableName}_ro"))
+    assert(tableExists(database, s"${tableName}_rt"))
+    spark.sql(s"DROP TABLE $database.$tableName PURGE")
+    assert(!tableExists(database, tableName))
+    assert(!tableExists(database, s"${tableName}_ro"), s"_ro view should be dropped with base table")
+    assert(!tableExists(database, s"${tableName}_rt"), s"_rt view should be dropped with base table")
+  }
+
+  /** DROP TABLE IF EXISTS succeeds when the table is present. */
+  def testDropTableIfExistsWhenPresent(): Unit = {
+    val tableName = "hudi_ddl_drop_if_exists_present"
+    cleanup(tableName, getBasePath(tableName))
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$tableName (
+         |  id INT, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |""".stripMargin)
+    spark.sql(s"DROP TABLE IF EXISTS $database.$tableName")
+    assert(!tableExists(database, tableName))
+  }
+
+  /** DROP TABLE IF EXISTS is a no-op when the table is absent. */
+  def testDropTableIfExistsWhenAbsent(): Unit = {
+    val tableName = "hudi_ddl_drop_if_exists_absent"
+    cleanup(tableName, getBasePath(tableName))
+    spark.sql(s"DROP TABLE IF EXISTS $database.$tableName")
+    assert(!tableExists(database, tableName))
+  }
+
+  /** DROP TABLE PURGE on an external table removes data on disk in addition to the catalog entry. */
+  def testDropTableWithPurge(): Unit = {
+    val tableName = "hudi_ddl_drop_with_purge"
+    val basePath = getBasePath(tableName)
+    cleanup(tableName, basePath)
+    spark.sql(
+      s"""
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |  id INT, name STRING, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |LOCATION '$basePath'
+         |""".stripMargin)
+    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000)")
+    spark.sql(s"DROP TABLE $database.$tableName PURGE")
+    assert(!tableExists(database, tableName))
+    val fs = new Path(basePath).getFileSystem(spark.sparkContext.hadoopConfiguration)
+    assert(!fs.exists(new Path(basePath, ".hoodie")),
+      s"PURGE should remove on-disk data at $basePath")
+  }
+
+  /** DROP TABLE without IF EXISTS on a non-existent table must throw. */
+  def testDropTableThrowsWhenAbsent(): Unit = {
+    val tableName = "hudi_ddl_drop_absent_throws"
+    cleanup(tableName, getBasePath(tableName))
+    assertThrowsContaining(tableName) {
+      spark.sql(s"DROP TABLE $database.$tableName")
+    }
+  }
+
+  /**
+   * DROP on an EXTERNAL table whose data path was removed out-of-band should still
+   * succeed (the catalog entry is dropped; missing data is tolerated).
+   */
+  def testDropExternalTableWithLostPath(): Unit = {
+    val tableName = "hudi_ddl_drop_external_lost_path"
+    val basePath = getBasePath(tableName)
+    cleanup(tableName, basePath)
+    spark.sql(
+      s"""
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |  id INT, name STRING, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |LOCATION '$basePath'
+         |""".stripMargin)
+    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000)")
+    val fs = new Path(basePath).getFileSystem(spark.sparkContext.hadoopConfiguration)
+    fs.delete(new Path(basePath), true)
+    spark.sql(s"DROP TABLE $database.$tableName")
+    assert(!tableExists(database, tableName))
+  }
+
+  /**
+   * DROP on a MOR table whose data path was removed out-of-band still drops the base
+   * table's catalog entry. Note: `DropHoodieTableCommand` only enters its RO/RT-cleanup
+   * branch when `hoodieCatalogTable.hoodieTableExists` is true; with the path gone
+   * that's false, so the `_ro`/`_rt` views are not auto-dropped. We clean them up
+   * explicitly here to leave the catalog tidy.
+   */
+  def testDropMorTableWithLostPath(): Unit = {
+    val tableName = "hudi_ddl_drop_mor_lost_path"
+    val basePath = getBasePath(tableName)
+    cleanup(tableName, basePath)
+    cleanup(s"${tableName}_ro", basePath)
+    cleanup(s"${tableName}_rt", basePath)
+    spark.sql(
+      s"""
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |  id INT, name STRING, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'mor', primaryKey = 'id', preCombineField = 'ts')
+         |LOCATION '$basePath'
+         |""".stripMargin)
+    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000)")
+    val fs = new Path(basePath).getFileSystem(spark.sparkContext.hadoopConfiguration)
+    fs.delete(new Path(basePath), true)
+    spark.sql(s"DROP TABLE $database.$tableName PURGE")
+    assert(!tableExists(database, tableName))
+    spark.sql(s"DROP TABLE IF EXISTS $database.${tableName}_ro")
+    spark.sql(s"DROP TABLE IF EXISTS $database.${tableName}_rt")
+  }
+
+  // ===========================================================================
+  // TRUNCATE TABLE
+  // ===========================================================================
+
+  /** TRUNCATE on a non-partitioned table empties the data and preserves the schema. */
+  def testTruncateNonPartitionedTable(): Unit = {
+    val tableName = "hudi_ddl_truncate_nonpartitioned"
+    cleanup(tableName, getBasePath(tableName))
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$tableName (
+         |  id INT, name STRING, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |""".stripMargin)
+    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000), (2, 'r2', 2000)")
+    assert(spark.sql(s"SELECT * FROM $database.$tableName").count() == 2)
+    spark.sql(s"TRUNCATE TABLE $database.$tableName")
+    assert(tableExists(database, tableName))
+    assert(spark.sql(s"SELECT * FROM $database.$tableName").count() == 0)
+  }
+
+  /** TRUNCATE without a PARTITION clause on a partitioned table empties all partitions. */
+  def testTruncatePartitionedTableAllPartitions(): Unit = {
+    val tableName = "hudi_ddl_truncate_partitioned_all"
+    val basePath = getBasePath(tableName)
+    cleanup(tableName, basePath)
+    spark.sql(
+      s"""
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |  id INT, name STRING, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |PARTITIONED BY (datestr string)
+         |LOCATION '$basePath'
+         |""".stripMargin)
+    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000, '2025-01-01')")
+    spark.sql(s"INSERT INTO $database.$tableName VALUES (2, 'r2', 2000, '2025-01-02')")
+    assert(spark.sql(s"SELECT * FROM $database.$tableName").count() == 2)
+    spark.sql(s"TRUNCATE TABLE $database.$tableName")
+    assert(spark.sql(s"SELECT * FROM $database.$tableName").count() == 0)
+  }
+
+  /** TRUNCATE TABLE ... PARTITION (k=v) drops only the specified partition's data. */
+  def testTruncatePartitionedTableSinglePartition(): Unit = {
+    val tableName = "hudi_ddl_truncate_partition_single"
+    val basePath = getBasePath(tableName)
+    cleanup(tableName, basePath)
+    spark.sql(
+      s"""
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |  id INT, name STRING, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |PARTITIONED BY (datestr string)
+         |LOCATION '$basePath'
+         |""".stripMargin)
+    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000, '2025-01-01')")
+    spark.sql(s"INSERT INTO $database.$tableName VALUES (2, 'r2', 2000, '2025-01-02')")
+    spark.sql(s"TRUNCATE TABLE $database.$tableName PARTITION (datestr = '2025-01-01')")
+    val remaining = spark.sql(s"SELECT * FROM $database.$tableName").count()
+    assert(remaining == 1, s"expected 1 row remaining after partition truncate, got $remaining")
+  }
+
+  /** TRUNCATE on multiple partitions issued sequentially clears each one independently. */
+  def testTruncatePartitionedTableMultiplePartitions(): Unit = {
+    val tableName = "hudi_ddl_truncate_partition_multi"
+    val basePath = getBasePath(tableName)
+    cleanup(tableName, basePath)
+    spark.sql(
+      s"""
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |  id INT, name STRING, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |PARTITIONED BY (datestr string)
+         |LOCATION '$basePath'
+         |""".stripMargin)
+    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000, '2025-01-01')")
+    spark.sql(s"INSERT INTO $database.$tableName VALUES (2, 'r2', 2000, '2025-01-02')")
+    spark.sql(s"INSERT INTO $database.$tableName VALUES (3, 'r3', 3000, '2025-01-03')")
+    spark.sql(s"TRUNCATE TABLE $database.$tableName PARTITION (datestr = '2025-01-01')")
+    spark.sql(s"TRUNCATE TABLE $database.$tableName PARTITION (datestr = '2025-01-02')")
+    val remaining = spark.sql(s"SELECT * FROM $database.$tableName").count()
+    assert(remaining == 1, s"expected 1 row remaining (datestr=2025-01-03), got $remaining")
+  }
+
+  /** TRUNCATE on an EXTERNAL Hudi table empties data but leaves the catalog entry. */
+  def testTruncateExternalTable(): Unit = {
+    val tableName = "hudi_ddl_truncate_external"
+    val basePath = getBasePath(tableName)
+    cleanup(tableName, basePath)
+    spark.sql(
+      s"""
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |  id INT, name STRING, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |LOCATION '$basePath'
+         |""".stripMargin)
+    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000), (2, 'r2', 2000)")
+    spark.sql(s"TRUNCATE TABLE $database.$tableName")
+    assert(tableExists(database, tableName))
+    assert(spark.sql(s"SELECT * FROM $database.$tableName").count() == 0)
+  }
+
+  /** TRUNCATE on a MOR table clears base files and log files across file groups. */
+  def testTruncateMorTable(): Unit = {
+    val tableName = "hudi_ddl_truncate_mor"
+    val basePath = getBasePath(tableName)
+    cleanup(tableName, basePath)
+    cleanup(s"${tableName}_ro", basePath)
+    cleanup(s"${tableName}_rt", basePath)
+    spark.sql(
+      s"""
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |  id INT, name STRING, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'mor', primaryKey = 'id', preCombineField = 'ts')
+         |LOCATION '$basePath'
+         |""".stripMargin)
+    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000), (2, 'r2', 2000)")
+    spark.sql(s"TRUNCATE TABLE $database.$tableName")
+    assert(tableExists(database, tableName))
+    assert(spark.sql(s"SELECT * FROM $database.$tableName").count() == 0)
+  }
+
+  /** TRUNCATE TABLE on a non-existent table must throw. */
+  def testTruncateThrowsOnNonExistent(): Unit = {
+    val tableName = "hudi_ddl_truncate_absent"
+    cleanup(tableName, getBasePath(tableName))
+    assertThrowsContaining(tableName) {
+      spark.sql(s"TRUNCATE TABLE $database.$tableName")
+    }
+  }
+
+  /** TRUNCATE ... PARTITION on a non-partitioned table must throw. */
+  def testTruncatePartitionThrowsOnNonPartitionedTable(): Unit = {
+    val tableName = "hudi_ddl_truncate_partition_on_nonpart"
+    cleanup(tableName, getBasePath(tableName))
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$tableName (
+         |  id INT, name STRING, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |""".stripMargin)
+    assertThrowsContaining("not partitioned") {
+      spark.sql(s"TRUNCATE TABLE $database.$tableName PARTITION (datestr = '2025-01-01')")
+    }
+  }
+
+  // ===========================================================================
+  // MSCK REPAIR TABLE
+  // ===========================================================================
+
+  /**
+   * MSCK REPAIR on an external partitioned table after writes is idempotent and surfaces
+   * all on-disk partitions in the HMS catalog. Note: scenarios that require dropping a
+   * partition entry from HMS *without* removing the on-disk data are not covered here:
+   * Hudi's `ALTER TABLE … DROP PARTITION` removes both data and catalog entry, and the
+   * Uber Spark fork's `SessionCatalog.dropPartitions` signature differs from upstream
+   * (so `MSCK REPAIR TABLE … SYNC PARTITIONS` raises NoSuchMethodError at runtime).
+   */
+  def testMsckRepairExternalTableSyncsAddedFiles(): Unit = {
+    val tableName = "hudi_ddl_repair_syncs_added"
+    val basePath = getBasePath(tableName)
+    cleanup(tableName, basePath)
+    // Bootstrap the table with one partition via a Hudi write
+    spark.sql(
+      s"""
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |  id INT, name STRING, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |PARTITIONED BY (datestr string)
+         |LOCATION '$basePath'
+         |""".stripMargin)
+    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000, '2025-01-01')")
+    spark.sql(s"INSERT INTO $database.$tableName VALUES (2, 'r2', 2000, '2025-01-02')")
+    spark.sql(s"MSCK REPAIR TABLE $database.$tableName")
+    val partitions = spark.sql(s"SHOW PARTITIONS $database.$tableName").count()
+    assert(partitions == 2, s"expected 2 partitions after REPAIR, got $partitions")
+  }
+
+  /** MSCK REPAIR on a non-existent table must throw. */
+  def testMsckRepairThrowsOnNonExistent(): Unit = {
+    val tableName = "hudi_ddl_repair_absent"
+    cleanup(tableName, getBasePath(tableName))
+    assertThrowsContaining(tableName) {
+      spark.sql(s"MSCK REPAIR TABLE $database.$tableName")
+    }
+  }
+
+  /** MSCK REPAIR on a non-partitioned table must throw (HoodieAnalysisException). */
+  def testMsckRepairThrowsOnNonPartitionedTable(): Unit = {
+    val tableName = "hudi_ddl_repair_nonpartitioned"
+    cleanup(tableName, getBasePath(tableName))
+    spark.sql(
+      s"""
+         |CREATE TABLE $database.$tableName (
+         |  id INT, name STRING, ts BIGINT
+         |) USING hudi
+         |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
+         |""".stripMargin)
+    assertThrowsContaining("only works on partitioned tables") {
+      spark.sql(s"MSCK REPAIR TABLE $database.$tableName")
+    }
+  }
+
+
+  /**
+   * Runs `thunk` and asserts that it throws an exception whose message (or any cause's
+   * message) contains `msgFragment`. Matches the try/catch + assert pattern used elsewhere
+   * in this runner (e.g. RunHudiCRUDOperations.insertOverwriteToHudiDataset) but avoids
+   * duplicating the boilerplate across ~10 negative tests.
+   */
+  private def assertThrowsContaining(msgFragment: String)(thunk: => Unit): Unit = {
+    var thrown: Option[Throwable] = None
+    try {
+      thunk
+    } catch {
+      case e: Throwable => thrown = Some(e)
+    }
+    thrown match {
+      case None =>
+        throw new AssertionError(
+          s"Expected exception with message containing '$msgFragment' but none was thrown")
+      case Some(e) =>
+        val msg = collectMessages(e)
+        assert(msg.contains(msgFragment),
+          s"Expected exception message to contain '$msgFragment' but got: '$msg'")
+        log.info(s"Expected exception ${e.getClass.getSimpleName} thrown with message containing '$msgFragment'")
+    }
+  }
+
+  private def collectMessages(t: Throwable): String = {
+    val sb = new StringBuilder
+    var cur: Throwable = t
+    while (cur != null) {
+      if (cur.getMessage != null) sb.append(cur.getMessage).append(" | ")
+      cur = cur.getCause
+    }
+    sb.toString
   }
 }
