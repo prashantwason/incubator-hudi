@@ -29,6 +29,8 @@ import org.apache.hudi.sync.common.HoodieSyncConfig
 import org.apache.spark.sql.{Encoders, SaveMode}
 import org.slf4j.LoggerFactory
 
+import java.util.{Collections, Properties}
+
 import scala.collection.JavaConverters._
 
 /**
@@ -240,5 +242,59 @@ class RunLegacyTableCompatTests extends RunOperationsBase {
     } finally {
       cleanup(tableName, basePath)
     }
+  }
+
+  /**
+   * handleSaveModes — legacy-fixture variant. The other tests reach the qualified-name branch
+   * by *passing* the qualified `hoodie.table.name` at write time against a 1.x-shaped on-disk
+   * file (NAME=bare, DATABASE_NAME=set). This test instead mutates the on-disk
+   * `.hoodie/hoodie.properties` to the actual 0.14 shape (NAME=db.table, no DATABASE_NAME)
+   * before the Append, so `tableConfig.getTableName()` returns the bare form via the
+   * HoodieTableConfig workaround and `handleSaveModes` is the validator that fires.
+   *
+   * Without the strip-prefix fix in `handleSaveModes`, this Append throws
+   * "hoodie table with name <bare> already exists ... can not append data ... with another
+   * name <db>.<bare>" — the failure shape seen on tables that were originally created by
+   * Hudi 0.14 (rather than created by 1.x and written-to with a qualified name).
+   */
+  def testAppendOnPreSeededLegacyProperties(): Unit = {
+    val tableName = "legacy_seeded_compat"
+    val basePath = getBasePath(tableName)
+    cleanup(tableName, basePath)
+
+    try {
+      createHudiTableViaSql(tableName, basePath, includePrimaryKey = true)
+      rewriteHoodiePropertiesAsLegacy(basePath, qualifiedName = s"$database.$tableName")
+
+      val mutatedTableConfig = buildMetaClient(basePath).getTableConfig
+      val rawName = mutatedTableConfig.getString(HoodieTableConfig.NAME)
+      val rawDb = mutatedTableConfig.getString(HoodieTableConfig.DATABASE_NAME)
+      log.info(s"On-disk after mutation — hoodie.table.name=$rawName, hoodie.database.name=$rawDb")
+      assert(rawName == s"$database.$tableName",
+        s"on-disk hoodie.table.name should be the qualified form '$database.$tableName', was: $rawName")
+      assert(rawDb == null || rawDb.isEmpty,
+        s"on-disk hoodie.database.name should be unset (legacy 0.14 shape), was: $rawDb")
+
+      appendViaDataSource(tableName, basePath, recordKeyField = "uuid")
+      runDataFrameReaderWithAsserts(database, tableName, expectedVal = 20)
+      log.info("PASSED: Append succeeded against pre-seeded legacy hoodie.properties shape")
+    } finally {
+      cleanup(tableName, basePath)
+    }
+  }
+
+  /**
+   * Mutate `<basePath>/.hoodie/hoodie.properties` to the on-disk shape Hudi 0.14 wrote:
+   * `hoodie.table.name=<db>.<table>` (qualified) and no `hoodie.database.name`. The checksum
+   * is recomputed by `HoodieTableConfig.updateAndDeleteProps`, so the file remains internally
+   * consistent for subsequent reads.
+   */
+  private def rewriteHoodiePropertiesAsLegacy(basePath: String, qualifiedName: String): Unit = {
+    val metaClient = buildMetaClient(basePath)
+    val updates = new Properties()
+    updates.setProperty(HoodieTableConfig.NAME.key(), qualifiedName)
+    val deletes = Collections.singleton(HoodieTableConfig.DATABASE_NAME.key())
+    HoodieTableConfig.updateAndDeleteProps(metaClient.getStorage, metaClient.getMetaPath, updates, deletes)
+    log.info(s"Rewrote $basePath/.hoodie/hoodie.properties: NAME=$qualifiedName, removed DATABASE_NAME")
   }
 }
