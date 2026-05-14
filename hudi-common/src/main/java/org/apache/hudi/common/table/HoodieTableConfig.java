@@ -481,6 +481,58 @@ public class HoodieTableConfig extends HoodieConfig {
     } catch (IOException e) {
       throw new HoodieIOException("Could not load properties from " + propertyPath, e);
     }
+    applyIngestionTableHackFix(metaPath);
+  }
+
+  /**
+   * HACK FIX: certain ingestion tables in the {@code rawdata}, {@code rawdata_user},
+   * {@code secure_rawdata}, and {@code secure_rawdata_user} namespaces are missing
+   * partition-related configs in their persisted {@code hoodie.properties} on this
+   * Hudi version. Inject the known-good defaults at load time so downstream code
+   * can resolve partition fields, the partition value extractor, and the
+   * drop-partition-columns flag without tripping. Overwrites unconditionally —
+   * the persisted values for these tables are known to be wrong or missing, so
+   * any value found in the file is discarded.
+   *
+   * <p>Also splits {@code hoodie.table.name} on the first {@code .} to back-fill
+   * {@code hoodie.database.name}, which is otherwise empty for these tables and
+   * is needed by the table checksum and catalog lookups.
+   */
+  private static final java.util.Set<String> INGESTION_DATABASES =
+      new java.util.HashSet<>(java.util.Arrays.asList(
+          "rawdata", "rawdata_user", "secure_rawdata", "secure_rawdata_user"));
+
+  private void applyIngestionTableHackFix(StoragePath metaPath) {
+    // Only ingestion tables need the fix-up; everything else returns the persisted props unchanged.
+    String databaseName = getDatabaseName();
+    if (databaseName == null || !INGESTION_DATABASES.contains(databaseName)) {
+      return;
+    }
+
+    // Back-fill hoodie.database.name and trim hoodie.table.name: legacy ingestion writes stored the
+    // database in the table-name prop as "<db>.<table>" with hoodie.database.name unset; split on
+    // the first '.' so the persisted values match the canonical (database, table) shape.
+    String rawTableName = props.getProperty(NAME.key(), "");
+    int dot = rawTableName.indexOf('.');
+    if (dot > 0 && dot < rawTableName.length() - 1) {
+      props.setProperty(DATABASE_NAME.key(), rawTableName.substring(0, dot));
+      props.setProperty(NAME.key(), rawTableName.substring(dot + 1));
+    }
+
+    // Inject the partition-related table configs that the legacy writers omitted. These tables
+    // are partitioned on disk as `<base>/yyyy/MM/dd/`, so PARTITION_FIELDS=datestr plus the slash-
+    // encoded extractor and DROP_PARTITION_COLUMNS=true reproduce the schema the reader needs.
+    props.setProperty(PARTITION_FIELDS.key(), "datestr");
+    props.setProperty(DROP_PARTITION_COLUMNS.key(), "true");
+    props.setProperty(PARTITION_EXTRACTOR_CLASS.key(),
+        "org.apache.hudi.hive.SlashEncodedDayPartitionValueExtractor");
+
+    // Loud WARN so it's obvious in driver logs which tables tripped the inject path.
+    String basePath = (metaPath == null || metaPath.getParent() == null)
+        ? "" : metaPath.getParent().toString();
+    LOG.warn("Added configs to ingestion dataset {}.{} at {}: {}=datestr, {}=true, {}=org.apache.hudi.hive.SlashEncodedDayPartitionValueExtractor",
+        props.getProperty(DATABASE_NAME.key(), ""), props.getProperty(NAME.key(), ""), basePath,
+        PARTITION_FIELDS.key(), DROP_PARTITION_COLUMNS.key(), PARTITION_EXTRACTOR_CLASS.key());
   }
 
   private static Properties getOrderedPropertiesWithTableChecksum(Properties props) {
