@@ -533,6 +533,24 @@
       <artifactId>sqs</artifactId>
       <version>${aws.sdk.version}</version>
     </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>kinesis</artifactId>
+      <version>${aws.sdk.version}</version>
+    </dependency>
+    <!-- KPL de-aggregation: extracts user records from Kinesis Producer Library aggregated records -->
+    <dependency>
+      <groupId>com.amazonaws</groupId>
+      <artifactId>amazon-kinesis-deaggregator</artifactId>
+      <version>${aws.kinesis.aggregator.version}</version>
+      <exclusions>
+        <!-- Pulls aws-java-sdk-s3/sns with [1.10.5,) open range, causing Maven to walk every patch version -->
+        <exclusion>
+          <groupId>com.amazonaws</groupId>
+          <artifactId>aws-lambda-java-events</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
 
     <!-- Hive - Test -->
     <dependency>

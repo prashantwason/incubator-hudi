@@ -17,13 +17,14 @@
 
 # This script builds all required Hudi Docker images for Hadoop, Spark, and Hive components.
 # It detects the system architecture, sets up Docker build platform, and loops through image configs.
-# Usage: ./build_docker_images.sh [--hadoop-version <version>] [--spark-version <version>] [--hive-version <version>] [--version-tag <tag>]
+# Usage: ./build_docker_images.sh [--hadoop-version <version>] [--spark-version <version>] [--hive-version <version>] [--version-tag <tag>] [--multi-arch]
 
 # Default versions for Hadoop, Spark, and Hive
 HADOOP_VERSION="2.8.4"
 SPARK_VERSION="3.5.3"
 HIVE_VERSION="2.3.10"
 VERSION_TAG_ARG="" # Initialize to empty, will be set by command-line arg if provided
+MULTI_ARCH=false
 
 # Function to get Maven project version
 get_hudi_project_version() {
@@ -43,26 +44,32 @@ while [[ "$#" -gt 0 ]]; do
         --spark-version) SPARK_VERSION="$2"; shift ;;
         --hive-version) HIVE_VERSION="$2"; shift ;;
         --version-tag) VERSION_TAG_ARG="$2"; shift ;;
+        --multi-arch) MULTI_ARCH=true ;;
         *) echo "Unknown parameter passed: $1"; exit 1 ;;
     esac
     shift
 done
 
 # Detect system architecture and set Docker platform accordingly
-ARCHITECTURE=$(uname -m)
-case "$ARCHITECTURE" in
-  x86_64|amd64)
-    DOCKER_PLATFORM='linux/amd64'
-    ;;
-  aarch64|arm64)
-    DOCKER_PLATFORM='linux/arm64'
-    ;;
-  *)
-    echo "Unsupported architecture: $ARCHITECTURE"
-    exit 1
-    ;;
-esac
-export DOCKER_DEFAULT_PLATFORM="$DOCKER_PLATFORM"
+if [ "$MULTI_ARCH" = true ]; then
+  DOCKER_PLATFORM='linux/amd64,linux/arm64'
+  echo "Building multi-arch images (amd64 + arm64)"
+else
+  ARCHITECTURE=$(uname -m)
+  case "$ARCHITECTURE" in
+    x86_64|amd64)
+      DOCKER_PLATFORM='linux/amd64'
+      ;;
+    aarch64|arm64)
+      DOCKER_PLATFORM='linux/arm64'
+      ;;
+    *)
+      echo "Unsupported architecture: $ARCHITECTURE"
+      exit 1
+      ;;
+  esac
+  export DOCKER_DEFAULT_PLATFORM="$DOCKER_PLATFORM"
+fi
 export BUILDX_EXPERIMENTAL=1
 # Get the directory of this script for relative paths
 SCRIPT_DIR=$(cd $(dirname "$0") && pwd)
@@ -83,10 +90,21 @@ fi
 # Docker image tags
 LATEST_TAG="latest"
 DOCKER_CONTEXT_DIR="hoodie/hadoop"
+
+# Select Java base image based on Spark version (Spark 4.0+ requires Java 17)
+SPARK_MAJOR=$(echo "$SPARK_VERSION" | cut -d. -f1)
+if [ "$SPARK_MAJOR" -ge 4 ] 2>/dev/null; then
+  BASE_IMAGE_DIR="base_java17"
+  echo "Using Java 17 base image for Spark ${SPARK_VERSION}"
+else
+  BASE_IMAGE_DIR="base_java11"
+  echo "Using Java 11 base image for Spark ${SPARK_VERSION}"
+fi
+
 # List of images to build: "subdir|image_base_name"
 # Each entry: <subdir>|<image_base_name>
 DOCKER_IMAGES=(
-  "base_java11|apachehudi/hudi-hadoop_${HADOOP_VERSION}-base"
+  "${BASE_IMAGE_DIR}|apachehudi/hudi-hadoop_${HADOOP_VERSION}-base"
   "datanode|apachehudi/hudi-hadoop_${HADOOP_VERSION}-datanode"
   "historyserver|apachehudi/hudi-hadoop_${HADOOP_VERSION}-history"
   "hive_base|apachehudi/hudi-hadoop_${HADOOP_VERSION}-hive_${HIVE_VERSION}"
@@ -105,13 +123,24 @@ for IMAGE_CONFIG in "${DOCKER_IMAGES[@]}"; do
   TAG_VERSIONED="$IMAGE_BASE:$VERSION_TAG"
   echo "Building $IMAGE_CONTEXT as $TAG_LATEST and $TAG_VERSIONED"
   # Build the Docker image with both latest and versioned tags
-  if ! docker build \
-    --build-arg HADOOP_VERSION=${HADOOP_VERSION} \
-    --build-arg SPARK_VERSION=${SPARK_VERSION} \
-    --build-arg HIVE_VERSION=${HIVE_VERSION} \
-    "$IMAGE_CONTEXT" -t "$TAG_LATEST" -t "$TAG_VERSIONED"; then
-    echo "Error: Failed to build docker image for $IMAGE_CONTEXT"
-    exit 1
+  if [ "$MULTI_ARCH" = true ]; then
+    if ! docker buildx build --platform "$DOCKER_PLATFORM" --push \
+      --build-arg HADOOP_VERSION=${HADOOP_VERSION} \
+      --build-arg SPARK_VERSION=${SPARK_VERSION} \
+      --build-arg HIVE_VERSION=${HIVE_VERSION} \
+      "$IMAGE_CONTEXT" -t "$TAG_LATEST" -t "$TAG_VERSIONED"; then
+      echo "Error: Failed to build docker image for $IMAGE_CONTEXT"
+      exit 1
+    fi
+  else
+    if ! docker build \
+      --build-arg HADOOP_VERSION=${HADOOP_VERSION} \
+      --build-arg SPARK_VERSION=${SPARK_VERSION} \
+      --build-arg HIVE_VERSION=${HIVE_VERSION} \
+      "$IMAGE_CONTEXT" -t "$TAG_LATEST" -t "$TAG_VERSIONED"; then
+      echo "Error: Failed to build docker image for $IMAGE_CONTEXT"
+      exit 1
+    fi
   fi
 done
 

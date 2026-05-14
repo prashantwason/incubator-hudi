@@ -139,6 +139,7 @@
     <prometheus.version>0.16.0</prometheus.version>
     <aws.sdk.httpclient.version>4.5.13</aws.sdk.httpclient.version>
     <aws.sdk.httpcore.version>4.4.13</aws.sdk.httpcore.version>
+    <aws.kinesis.aggregator.version>1.0.3</aws.kinesis.aggregator.version>
     <httpcore.version>4.4.16</httpcore.version>
     <httpclient.version>4.5.14</httpclient.version>
     <spark.version>${spark3.version}</spark.version>
@@ -244,8 +245,8 @@
     <spring.shell.version>2.1.1</spring.shell.version>
     <snappy.version>1.1.10.7</snappy.version>
     <arrow.version>18.3.0</arrow.version>
-    <lance.version>1.0.2</lance.version>
-    <lance.spark.connector.version>0.0.15</lance.spark.connector.version>
+    <lance.version>4.0.0</lance.version>
+    <lance.spark.connector.version>0.4.0</lance.spark.connector.version>
     <lance.spark.artifact>lance-spark-3.5_${scala.binary.version}</lance.spark.artifact>
     <lance.skip.tests>false</lance.skip.tests>
     <!-- The following properties are only used for Jacoco coverage report aggregation -->
@@ -985,12 +986,12 @@
       </dependency>
       <!-- Lance Spark for Arrow conversion -->
       <dependency>
-        <groupId>com.lancedb</groupId>
+        <groupId>org.lance</groupId>
         <artifactId>${lance.spark.artifact}</artifactId>
         <version>${lance.spark.connector.version}</version>
         <exclusions>
           <exclusion>
-            <groupId>com.lancedb</groupId>
+            <groupId>org.lance</groupId>
             <artifactId>lance-core</artifactId>
           </exclusion>
         </exclusions>

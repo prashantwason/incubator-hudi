@@ -109,6 +109,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.apache.hudi.common.config.HoodieMemoryConfig.DEFAULT_MIN_MEMORY_FOR_SPILLABLE_MAP_IN_BYTES;
@@ -298,6 +299,14 @@ public class HoodieWriteConfig extends HoodieConfig {
       .markAdvanced()
       .withDocumentation("Enables a more efficient mechanism for rollbacks based on the marker files generated "
           + "during the writes. Turned on by default.");
+
+  public static final ConfigProperty<String> ROLLBACK_AVOID_DUPLICATE_PLAN = ConfigProperty
+      .key("hoodie.rollback.avoid.duplicate.plan")
+      .defaultValue("false")
+      .markAdvanced()
+      .withDocumentation("When enabled in multi-writer mode, before scheduling a new rollback plan, the writer reloads "
+          + "the timeline under lock to check if another writer already scheduled one for the same failed commit. "
+          + "This avoids duplicate rollback instants and uses heartbeats to ensure only one writer executes the rollback at a time.");
 
   public static final ConfigProperty<String> FAIL_JOB_ON_DUPLICATE_DATA_FILE_DETECTION = ConfigProperty
       .key("hoodie.fail.job.on.duplicate.data.file.detection")
@@ -752,6 +761,28 @@ public class HoodieWriteConfig extends HoodieConfig {
       .markAdvanced()
       .withDocumentation("Whether to allow generation of empty commits, even if no data was written in the commit. "
           + "It's useful in cases where extra metadata needs to be published regardless e.g tracking source offsets when ingesting data");
+
+  public static final ConfigProperty<String> ROLLING_METADATA_KEYS = ConfigProperty
+      .key("hoodie.write.rolling.metadata.keys")
+      .defaultValue("")
+      .markAdvanced()
+      .sinceVersion("1.2.0")
+      .withDocumentation("Comma-separated list of extra metadata keys that should be automatically carried forward "
+          + "to every new commit. These keys will be read from recent commit metadata and included in new commits, "
+          + "ensuring they remain accessible without walking the timeline or worrying about archival. "
+          + "This is useful for tracking checkpoint information (e.g., Kafka offsets, Flink checkpoints) or any metadata "
+          + "that needs to persist across commits. New values override old ones. Only applies to data table commits.");
+
+  public static final ConfigProperty<Integer> ROLLING_METADATA_TIMELINE_LOOKBACK_COMMITS = ConfigProperty
+      .key("hoodie.write.rolling.metadata.timeline.lookback.commits")
+      .defaultValue(10)
+      .markAdvanced()
+      .sinceVersion("1.2.0")
+      .withDocumentation("Maximum number of completed commits to walk back in the timeline when searching for "
+          + "rolling metadata keys. If a rolling metadata key is not found in the latest commit, the system will "
+          + "walk back up to this many commits to find the most recent value. This ensures rolling metadata is "
+          + "preserved even if some commits don't update all keys. Higher values provide more resilience but may "
+          + "impact performance. Only applies when hoodie.write.rolling.metadata.keys is configured.");
 
   public static final ConfigProperty<Boolean> ALLOW_OPERATION_METADATA_FIELD = ConfigProperty
       .key("hoodie.allow.operation.metadata.field")
@@ -1578,6 +1609,10 @@ public class HoodieWriteConfig extends HoodieConfig {
     return getBoolean(ROLLBACK_USING_MARKERS_ENABLE);
   }
 
+  public boolean shouldAvoidDuplicateRollbackPlan() {
+    return getBoolean(ROLLBACK_AVOID_DUPLICATE_PLAN) && getWriteConcurrencyMode().supportsMultiWriter();
+  }
+
   public boolean enableComplexKeygenValidation() {
     return getBoolean(ENABLE_COMPLEX_KEYGEN_VALIDATION);
   }
@@ -1842,6 +1877,10 @@ public class HoodieWriteConfig extends HoodieConfig {
     return getBoolean(HoodieCleanConfig.AUTO_CLEAN);
   }
 
+  public long getIntervalToCreateEmptyCleanHours() {
+    return getLong(HoodieCleanConfig.INTERVAL_TO_CREATE_EMPTY_CLEAN_HOURS);
+  }
+
   public boolean shouldArchiveBeyondSavepoint() {
     return getBooleanOrDefault(HoodieArchivalConfig.ARCHIVE_BEYOND_SAVEPOINT);
   }
@@ -1977,6 +2016,10 @@ public class HoodieWriteConfig extends HoodieConfig {
 
   public int getCommitArchivalBatchSize() {
     return getInt(HoodieArchivalConfig.COMMITS_ARCHIVAL_BATCH_SIZE);
+  }
+
+  public boolean shouldBlockArchivalOnCleanECTR() {
+    return getBoolean(HoodieArchivalConfig.BLOCK_ARCHIVAL_ON_LATEST_CLEAN_ECTR);
   }
 
   public Boolean shouldCleanBootstrapBaseFile() {
@@ -2882,6 +2925,21 @@ public class HoodieWriteConfig extends HoodieConfig {
     return getBooleanOrDefault(ALLOW_OPERATION_METADATA_FIELD);
   }
 
+  public Set<String> getRollingMetadataKeys() {
+    String keys = getString(ROLLING_METADATA_KEYS);
+    if (keys == null || keys.trim().isEmpty()) {
+      return Collections.emptySet();
+    }
+    return Arrays.stream(keys.split(","))
+        .map(String::trim)
+        .filter(s -> !s.isEmpty())
+        .collect(Collectors.toSet());
+  }
+
+  public int getRollingMetadataTimelineLookbackCommits() {
+    return getInt(ROLLING_METADATA_TIMELINE_LOOKBACK_COMMITS);
+  }
+
   public String getFileIdPrefixProviderClassName() {
     return getString(FILEID_PREFIX_PROVIDER_CLASS);
   }
@@ -3536,6 +3594,16 @@ public class HoodieWriteConfig extends HoodieConfig {
       return this;
     }
 
+    public Builder withRollingMetadataKeys(String keys) {
+      writeConfig.setValue(ROLLING_METADATA_KEYS, keys);
+      return this;
+    }
+
+    public Builder withRollingMetadataTimelineLookbackCommits(int lookbackCommits) {
+      writeConfig.setValue(ROLLING_METADATA_TIMELINE_LOOKBACK_COMMITS, String.valueOf(lookbackCommits));
+      return this;
+    }
+
     public Builder withApplicationId(String appId) {
       writeConfig.setValue(APPLICATION_ID, appId);
       return this;
@@ -3788,6 +3856,11 @@ public class HoodieWriteConfig extends HoodieConfig {
       checkArgument(!(inlineCompact && inlineCompactSchedule), String.format("Either of inline compaction (%s) or "
               + "schedule inline compaction (%s) can be enabled. Both can't be set to true at the same time. %s, %s", HoodieCompactionConfig.INLINE_COMPACT.key(),
           HoodieCompactionConfig.SCHEDULE_INLINE_COMPACT.key(), inlineCompact, inlineCompactSchedule));
+
+      int lookbackCommits = writeConfig.getInt(ROLLING_METADATA_TIMELINE_LOOKBACK_COMMITS);
+      checkArgument(lookbackCommits >= 0,
+          String.format("%s must be non-negative, but was %d",
+              ROLLING_METADATA_TIMELINE_LOOKBACK_COMMITS.key(), lookbackCommits));
     }
 
     public HoodieWriteConfig build() {
