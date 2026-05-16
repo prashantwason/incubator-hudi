@@ -103,6 +103,17 @@ public class AppendWriteFunction<I> extends AbstractStreamWriteFunction<I> {
     this.writerHelper.write((RowData) value);
   }
 
+  @Override
+  public void close() throws Exception {
+    try {
+      if (this.writerHelper != null) {
+        this.writerHelper.close();
+      }
+    } finally {
+      super.close();
+    }
+  }
+
   /**
    * End input action for batch source.
    */
