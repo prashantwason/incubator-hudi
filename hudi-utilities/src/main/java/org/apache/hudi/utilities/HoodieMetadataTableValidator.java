@@ -1243,7 +1243,7 @@ public class HoodieMetadataTableValidator implements Serializable {
         .option(DataSourceReadOptions.TIME_TRAVEL_AS_OF_INSTANT().key(),latestCompletedCommit)
         .load(getMetadataTableBasePath(basePath))
         .select("key")
-        .filter("type = 5")
+        .filter("type = " + MetadataPartitionType.RECORD_INDEX.getRecordType())
         .count();
 
     if (countKeyFromTable != countKeyFromRecordIndex) {
@@ -1364,9 +1364,9 @@ public class HoodieMetadataTableValidator implements Serializable {
     return sparkEngineContext.getSqlContext().read().format("hudi")
         .option(DataSourceReadOptions.TIME_TRAVEL_AS_OF_INSTANT().key(), latestCompletedCommit)
         .load(getMetadataTableBasePath(basePath))
-        .filter("type = 5")
+        .filter("type = " + MetadataPartitionType.RECORD_INDEX.getRecordType())
         .select(functions.col("key"),
-            functions.col("recordIndexMetadata.partitionName").as("partitionName"),
+            functions.col("recordIndexMetadata.partition").as("partitionName"),
             functions.col("recordIndexMetadata.fileIdHighBits").as("fileIdHighBits"),
             functions.col("recordIndexMetadata.fileIdLowBits").as("fileIdLowBits"),
             functions.col("recordIndexMetadata.fileIndex").as("fileIndex"),

@@ -268,6 +268,16 @@
                     <exclude>META-INF/*.RSA</exclude>
                     <exclude>META-INF/services/javax.*</exclude>
                     <exclude>META-INF/services/com.fasterxml.*</exclude>
+                    <!-- Kotlin scripting compiler plugin services from org.jetbrains.kotlin:*
+                         (pulled in transitively by mbknor-jackson-jsonschema). Useless in a
+                         Spark runtime and not relocated, so they bypass the "org.apache.hudi"
+                         service filter in CI's bundle validation. -->
+                    <exclude>META-INF/services/org.jetbrains.kotlin.*</exclude>
+                    <!-- Calcite JDBC Driver registrations (org.apache.calcite.jdbc.Driver,
+                         org.apache.calcite.avatica.remote.Driver) from calcite-core /
+                         calcite-avatica, pulled in via Hive. Auto-registering them via
+                         java.sql.Driver SPI in the bundle pollutes the user's DriverManager. -->
+                    <exclude>META-INF/services/java.sql.Driver</exclude>
                     <exclude>**/*.proto</exclude>
                     <exclude>*.avsc</exclude>
                   </excludes>

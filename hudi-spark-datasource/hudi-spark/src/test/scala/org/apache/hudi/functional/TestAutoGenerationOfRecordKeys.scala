@@ -38,7 +38,7 @@ import org.apache.hadoop.fs.FileSystem
 import org.apache.spark.sql.{SaveMode, SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.hudi.HoodieSparkSessionExtension
-import org.junit.jupiter.api.{AfterEach, BeforeEach, Test}
+import org.junit.jupiter.api.{AfterEach, BeforeEach, Disabled, Test}
 import org.junit.jupiter.api.Assertions.{assertEquals, assertTrue}
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.{CsvSource, EnumSource}
@@ -196,6 +196,7 @@ class TestAutoGenerationOfRecordKeys extends HoodieSparkClientTestBase with Scal
   }
 
   @Test
+  @Disabled("[UBER] commit a7fb1672bcf84 (HUDI-9003) relaxed this validation: writer-non-empty + on-disk-null RecordKey is now warn+backfill, not a throw, to support legacy 0.14 SparkSQL tables. Test asserts the original throw behavior.")
   def testRecordKeysAutoGenEnableToDisable(): Unit = {
     val (vanillaWriteOpts, readOpts) = getWriterReaderOpts(HoodieRecordType.AVRO)
 
