@@ -125,6 +125,13 @@
                   <include>org.apache.hive:hive-metastore</include>
                   <include>org.apache.hive:hive-jdbc</include>
 
+                  <!-- Calcite + Avatica. Intentionally NOT relocated below: Calcite uses
+                       reflection internally (e.g. ReflectiveSqlOperatorTable, Linq4j code
+                       generation) to look up its own classes by their original
+                       org.apache.calcite.* names. Relocating to org.apache.hudi.org.apache.calcite.*
+                       breaks Hive's planner / Calcite's runtime at execution time even though
+                       the build succeeds. The CI shaded-classes allowlist must permit
+                       org/apache/calcite/* and org/apache/calcite/avatica/* directly. -->
                   <include>org.apache.calcite:calcite-core</include>
                   <include>org.apache.calcite:calcite-linq4j</include>
                   <include>org.apache.calcite.avatica:avatica</include>
@@ -258,6 +265,35 @@
                   <pattern>org.rocksdb.</pattern>
                   <shadedPattern>org.apache.hudi.org.rocksdb.</shadedPattern>
                 </relocation>
+                <!-- [UBER] Relocate Jackson core/annotations/databind/etc. to keep the
+                     bundle's Jackson off the user's classpath. Spark ships its own
+                     Jackson; leaking ours causes version-skew NoClassDefFoundError /
+                     AbstractMethodError at runtime. The narrower jsr310 relocation above
+                     is now redundant but kept to minimize churn. -->
+                <relocation>
+                  <pattern>com.fasterxml.jackson.</pattern>
+                  <shadedPattern>org.apache.hudi.com.fasterxml.jackson.</shadedPattern>
+                </relocation>
+                <!-- [UBER] Relocate the Kotlin compiler / scripting plugin
+                     (org.jetbrains.kotlin.*). Pulled in from org.jetbrains.kotlin:*
+                     (line 99 include) transitively via mbknor-jackson-jsonschema. The
+                     existing `kotlin.` -> `org.apache.hudi.kotlin.` relocation above only
+                     covers the kotlin-stdlib namespace; the compiler/scripting code lives
+                     in org.jetbrains.kotlin.* and was leaking unshaded. -->
+                <relocation>
+                  <pattern>org.jetbrains.kotlin.</pattern>
+                  <shadedPattern>org.apache.hudi.org.jetbrains.kotlin.</shadedPattern>
+                </relocation>
+                <!-- [UBER] Relocate parquet-avro. Bundled since 2019 (Vinoth Chandar,
+                     [HUDI-159]) because Spark provides parquet-hadoop / parquet-column but
+                     not parquet-avro (the Avro<->Parquet bridge); Hudi's
+                     HoodieAvroParquet{Reader,Writer} extend these classes. Relocating
+                     keeps the bundle's parquet-avro off the user classpath without
+                     dropping the dependency. -->
+                <relocation>
+                  <pattern>org.apache.parquet.avro.</pattern>
+                  <shadedPattern>org.apache.hudi.org.apache.parquet.avro.</shadedPattern>
+                </relocation>
               </relocations>
               <filters>
                 <filter>
@@ -278,6 +314,13 @@
                          calcite-avatica, pulled in via Hive. Auto-registering them via
                          java.sql.Driver SPI in the bundle pollutes the user's DriverManager. -->
                     <exclude>META-INF/services/java.sql.Driver</exclude>
+                    <!-- [UBER] Exclude SLF4J entirely (api + helpers + spi). Spark ships
+                         slf4j-api on the runtime classpath; shipping our copy unshaded
+                         triggers the CI shaded-classes check and risks LinkageError if
+                         our slf4j version diverges from Spark's. Hudi code references
+                         SLF4J types directly (no relocation), so excluding from the bundle
+                         and letting Spark provide them is the correct posture. -->
+                    <exclude>org/slf4j/**</exclude>
                     <exclude>**/*.proto</exclude>
                     <exclude>*.avsc</exclude>
                   </excludes>

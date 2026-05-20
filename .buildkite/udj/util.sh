@@ -33,12 +33,33 @@ check_jars_correctness()
   fi
   echo "Validation for unwanted avsc files is successful."
 
-  RES=$(jar tf "$SPARK_BUNDLE" | grep '\.class$' | grep -v -E '^(org/apache/hudi/|com/uber/hoodie|org/apache/spark|shaded|META-INF/versions|org/apache/parquet/Hoodie)' | wc -l || true)
+  # Allowlist for the shaded-classes check:
+  #   org/apache/hudi/             -- Hudi + shaded-under-Hudi
+  #   com/uber/hoodie/             -- Legacy Uber Hudi 0.10 namespace (still has live
+  #                                   classes, e.g. com.uber.hoodie.hadoop.HoodieInputFormat)
+  #   com/uber/hudi/               -- Current Uber-internal Hudi tools (hudi-uber module)
+  #   org/apache/spark             -- Spark-provided
+  #   shaded                       -- generic shade prefix
+  #   META-INF/versions            -- Java 9+ multi-release JAR
+  #   org/apache/parquet/Hoodie    -- Hudi extensions to parquet (HoodieAvroParquet*)
+  #   org/apache/parquet/schema/(Hoodie|Schema|Original|Logical)
+  #                                -- Hudi-authored extensions placed in parquet packages
+  #                                   to access package-private internals (SchemaRepair,
+  #                                   OriginalTypeParquetAdapter, LogicalTypeParquetAdapter)
+  #   org/apache/parquet/conf/Parquet
+  #                                -- Hudi's ParquetConfiguration extension, same reason
+  #   org/apache/calcite/          -- Intentionally NOT shaded: Calcite uses reflection
+  #                                   internally (Linq4j codegen, ReflectiveSqlOperatorTable)
+  #                                   and relocating its classes breaks Hive/Calcite runtime
+  #                                   even though the build succeeds. See the matching
+  #                                   comment block in packaging/hudi-spark-bundle/pom.xml.
+  SHADED_ALLOWED='^(org/apache/hudi/|com/uber/hoodie/|com/uber/hudi/|org/apache/spark|shaded|META-INF/versions|org/apache/parquet/(Hoodie|schema/(Hoodie|Schema|Original|Logical)|conf/Parquet)|org/apache/calcite/)'
+  RES=$(jar tf "$SPARK_BUNDLE" | grep '\.class$' | grep -v -E "$SHADED_ALLOWED" | wc -l || true)
   if [ "$RES" -ne 0 ]
   then
     echo "Validation for shading classes in spark bundle failed."
     echo "$RES classes are not shaded"
-    jar tf "$SPARK_BUNDLE" | grep '\.class$' | grep -v -E '^(org/apache/hudi/|com/uber/hoodie|org/apache/spark|shaded|META-INF/versions|org/apache/parquet/Hoodie)'
+    jar tf "$SPARK_BUNDLE" | grep '\.class$' | grep -v -E "$SHADED_ALLOWED"
     return 1
   fi
   echo "Validation for shading classes in spark bundle is successful."
