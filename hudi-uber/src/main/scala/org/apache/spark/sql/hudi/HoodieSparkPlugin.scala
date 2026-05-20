@@ -72,6 +72,12 @@ private class HoodieSparkDriverPlugin extends DriverPlugin with Logging{
       conf.set(useROPathFilterClassForFilteringKey, "true")
     }
 
+    val partitionValueExtractorOnReadKey = s"spark.${DataSourceReadOptions.USE_PARTITION_VALUE_EXTRACTOR_ON_READ.key}"
+    if (!conf.contains(partitionValueExtractorOnReadKey)) {
+      logInfo(s"PartitionValueExtractor on read config is not provided so injecting configuration: $partitionValueExtractorOnReadKey = true")
+      conf.set(partitionValueExtractorOnReadKey, "true")
+    }
+
     val reconcileSchemaKey = s"spark.${HoodieCommonConfig.RECONCILE_SCHEMA.key()}"
     if (!conf.contains(reconcileSchemaKey)) {
       val reconcileSchemaVal = "true"
