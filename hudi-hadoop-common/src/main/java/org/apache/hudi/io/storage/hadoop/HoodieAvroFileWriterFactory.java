@@ -45,18 +45,39 @@ import org.apache.hudi.storage.StoragePath;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.avro.Schema;
 import org.apache.orc.CompressionKind;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.apache.parquet.schema.MessageType;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.apache.hudi.common.config.HoodieStorageConfig.HFILE_WRITER_TO_ALLOW_DUPLICATES;
 import static org.apache.parquet.avro.HoodieAvroParquetSchemaConverter.getAvroSchemaConverter;
 
 public class HoodieAvroFileWriterFactory extends HoodieFileWriterFactory {
+
+  /**
+   * Cached resolution of which constructor variant a given HoodieAvroWriteSupport class exposes.
+   * Keyed by FQN. Reflection results don't change for the lifetime of the JVM, so this is safe
+   * to share statically and avoids paying the {@link ReflectionUtils#hasConstructor} cost for
+   * every Parquet file the factory creates.
+   */
+  private static final ConcurrentHashMap<String, CtorVariant> WRITE_SUPPORT_CTOR_CACHE = new ConcurrentHashMap<>();
+
+  private enum CtorVariant {
+    /** Modern (MessageType, HoodieSchema, Option&lt;BloomFilter&gt;, Properties). */
+    NEW,
+    /** Legacy (MessageType, Schema, Option&lt;BloomFilter&gt;, Map&lt;String,String&gt;) for pre-HoodieSchema subclasses. */
+    LEGACY,
+    /** Class exposes neither recognized constructor. */
+    UNSUPPORTED
+  }
 
   public HoodieAvroFileWriterFactory(HoodieStorage storage) {
     super(storage);
@@ -139,9 +160,65 @@ public class HoodieAvroFileWriterFactory extends HoodieFileWriterFactory {
                                                            StorageConfiguration storageConf,
                                                            boolean enableBloomFilter) {
     Option<BloomFilter> filter = enableBloomFilter ? Option.of(createBloomFilter(config)) : Option.empty();
-    return (HoodieAvroWriteSupport) ReflectionUtils.loadClass(
-        config.getStringOrDefault(HoodieStorageConfig.HOODIE_AVRO_WRITE_SUPPORT_CLASS),
-        new Class<?>[] {MessageType.class, HoodieSchema.class, Option.class, Properties.class},
-        getAvroSchemaConverter((Configuration) storageConf.unwrapAs(Configuration.class)).convert(schema), schema, filter, config.getProps());
+    String writeSupportClass = config.getStringOrDefault(HoodieStorageConfig.HOODIE_AVRO_WRITE_SUPPORT_CLASS);
+    MessageType parquetSchema = getAvroSchemaConverter(
+        (Configuration) storageConf.unwrapAs(Configuration.class)).convert(schema);
+
+    CtorVariant variant = WRITE_SUPPORT_CTOR_CACHE.computeIfAbsent(writeSupportClass,
+        HoodieAvroFileWriterFactory::resolveCtorVariant);
+
+    switch (variant) {
+      case NEW:
+        // Preferred (current) ctor: (MessageType, HoodieSchema, Option<BloomFilter>, Properties)
+        try {
+          return (HoodieAvroWriteSupport) ReflectionUtils.loadClass(
+              writeSupportClass, NEW_CTOR_SIGNATURE,
+              parquetSchema, schema, filter, config.getProps());
+        } catch (Throwable t) {
+          throw new HoodieException("Failed to instantiate WriteSupport class " + writeSupportClass
+              + " via the (MessageType, HoodieSchema, Option<BloomFilter>, Properties) constructor", t);
+        }
+      case LEGACY:
+        // Legacy ctor used by pre-HoodieSchema external subclasses (e.g. external crypto write-support
+        // subclasses): (MessageType, Schema, Option, Map<String,String>).
+        try {
+          return (HoodieAvroWriteSupport) ReflectionUtils.loadClass(
+              writeSupportClass, LEGACY_CTOR_SIGNATURE,
+              parquetSchema, schema.toAvroSchema(), filter, propertiesToMap(config.getProps()));
+        } catch (Throwable t) {
+          throw new HoodieException("Failed to instantiate WriteSupport class " + writeSupportClass
+              + " via the deprecated (MessageType, Schema, Option<BloomFilter>, Map<String,String>) constructor", t);
+        }
+      case UNSUPPORTED:
+      default:
+        throw new HoodieException("WriteSupport class " + writeSupportClass
+            + " does not expose a recognized constructor. Expected either "
+            + "(MessageType, HoodieSchema, Option<BloomFilter>, Properties) or "
+            + "(MessageType, Schema, Option<BloomFilter>, Map<String,String>).");
+    }
+  }
+
+  /** Signature of the preferred (current) HoodieAvroWriteSupport constructor. */
+  private static final Class<?>[] NEW_CTOR_SIGNATURE = {
+      MessageType.class, HoodieSchema.class, Option.class, Properties.class};
+  /** Signature of the deprecated 4-arg constructor retained for binary compat with external subclasses. */
+  private static final Class<?>[] LEGACY_CTOR_SIGNATURE = {
+      MessageType.class, Schema.class, Option.class, Map.class};
+
+  /** Probe a HoodieAvroWriteSupport class once to pick which constructor variant it exposes. */
+  private static CtorVariant resolveCtorVariant(String writeSupportClass) {
+    if (ReflectionUtils.hasConstructor(writeSupportClass, NEW_CTOR_SIGNATURE, true)) {
+      return CtorVariant.NEW;
+    }
+    if (ReflectionUtils.hasConstructor(writeSupportClass, LEGACY_CTOR_SIGNATURE, true)) {
+      return CtorVariant.LEGACY;
+    }
+    return CtorVariant.UNSUPPORTED;
+  }
+
+  private static Map<String, String> propertiesToMap(Properties props) {
+    Map<String, String> map = new HashMap<>(props.size());
+    props.stringPropertyNames().forEach(k -> map.put(k, props.getProperty(k)));
+    return map;
   }
 }
