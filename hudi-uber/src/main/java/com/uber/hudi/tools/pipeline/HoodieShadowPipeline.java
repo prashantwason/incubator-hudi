@@ -100,6 +100,7 @@ import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SQLContext;
+import org.apache.spark.sql.SparkSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.beust.jcommander.JCommander;
@@ -110,19 +111,33 @@ import static org.apache.hudi.hive.ddl.HiveSyncMode.HIVEQL;
 
 public class HoodieShadowPipeline {
   private static final Logger LOG = LoggerFactory.getLogger(HoodieShadowPipeline.class);
+  private SparkSession sparkSession;
 
   // Zookeeper connection URLs for various datacenters
   private static final String ZOOKEEPER_CONNECT_URL_DCA = "hudizk-coordinator.dca.uber.internal:2181";
   private static final String ZOOKEEPER_CONNECT_URL_PHX = "hudizk-coordinator.phx.uber.internal:2181";
 
-  private static void cleanDestination(String destPath, Configuration hadoopConf) throws IOException {
+  private SparkSession getOrCreateSparkSession() {
+    if (sparkSession == null) {
+      sparkSession = SparkSession.builder().enableHiveSupport().getOrCreate();
+    }
+    return sparkSession;
+  }
+
+  private static void cleanDestination(SparkSession sparkSession, HoodieShadowPipelineConfig cfg,
+                                       Configuration hadoopConf) {
     try {
-      LOG.info("Cleaning destination path " + destPath);
-      FileSystem fs = new Path(destPath).getFileSystem(hadoopConf);
-      fs.delete(new Path(destPath), true);
-    } catch (IOException e) {
-      LOG.error("Could not delete destination path " + destPath, e);
-      throw e;
+      LOG.info("Cleaning destination path " + cfg.destPath);
+      FileSystem fs = new Path(cfg.destPath).getFileSystem(hadoopConf);
+      sparkSession.sql("DROP TABLE IF EXISTS " + cfg.hiveDatabase + "." + cfg.hiveTable);
+      if (cfg.destTableType.equals(HoodieTableType.MERGE_ON_READ.name())) {
+        sparkSession.sql("DROP TABLE IF EXISTS " + cfg.hiveDatabase + "." + cfg.hiveTable + "_ro");
+        sparkSession.sql("DROP TABLE IF EXISTS " + cfg.hiveDatabase + "." + cfg.hiveTable + "_rt");
+      }
+      fs.delete(new Path(cfg.destPath), true);
+    } catch (Exception e) {
+      LOG.error("Could not clean dataset with path " + cfg.destPath + " and table " + cfg.hiveDatabase + "." + cfg.hiveTable, e);
+      throw new HoodieException("Could not clean dataset with path " + cfg.destPath + " and table " + cfg.hiveDatabase + "." + cfg.hiveTable, e);
     }
   }
 
@@ -556,10 +571,12 @@ public class HoodieShadowPipeline {
       System.exit(1);
     }
     LOG.info("Provided configs are " + cfg);
+    new HoodieShadowPipeline().run(cfg);
+  }
 
-    // Initialize spark context
+  private void run(HoodieShadowPipelineConfig cfg) throws Exception {
     JavaSparkContext jssc = UtilHelpers.buildSparkContext(
-        "HoodieShadowPipelineJob", "yarn", true, Collections.EMPTY_MAP);
+            "HoodieShadowPipelineJob", "yarn", true, Collections.EMPTY_MAP);
     Configuration hadoopConf = jssc.hadoopConfiguration();
 
     HoodieTableMetaClient srcMetaClient;
@@ -590,7 +607,7 @@ public class HoodieShadowPipeline {
       lockManager.lock();
 
       if (cfg.deleteDestPath) {
-        cleanDestination(cfg.destPath, hadoopConf);
+        cleanDestination(getOrCreateSparkSession(), cfg, hadoopConf);
       }
 
       // Load the properties supplied by the user
@@ -610,7 +627,9 @@ public class HoodieShadowPipeline {
         }
       } catch (TableNotFoundException e) {
         // Always clean before creating a new dataset to remove leftover files
-        cleanDestination(cfg.destPath, hadoopConf);
+        if (cfg.deleteDestPath) {
+          cleanDestination(getOrCreateSparkSession(), cfg, hadoopConf);
+        }
         destMetaClient = initializeDataset(jssc, cfg, srcMetaClient, props);
       }
 
