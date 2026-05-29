@@ -42,13 +42,17 @@ trait RunOperationsBase {
   private val BASE_PATH_CONST: String = "/user/hudi/integration_tests/"
   protected var spark: SparkSession = _
   protected var dataGen: DataGenerator = _
+  protected var database: String = _
   private val ENABLE_HIVE_SYNC: Boolean = true
   protected val TEST_PARTITIONS = Array("2025-01-01", "2025-01-02", "2025-01-03")
 
-  def initialize(sparkSession: SparkSession): Unit = {
+  def initialize(sparkSession: SparkSession, db: String): Unit = {
     spark = sparkSession
+    database = db
     cleanup()
   }
+
+  def getDatabase(): String = database
 
   def cleanup() : Unit = {
     // Reset data generator
@@ -78,13 +82,20 @@ trait RunOperationsBase {
   }
 
   def cleanup(tableName: String, basePath: String): Unit = {
-    val database = "rawdatatmp"
+    cleanup(tableName, basePath, false)
+  }
+
+  def cleanup(tableName: String, basePath: String, isMor: Boolean): Unit = {
     spark.sql(s"DROP TABLE IF EXISTS $database.$tableName")
     val tablePathObj = new Path(basePath)
     val fs = tablePathObj.getFileSystem(spark.sparkContext.hadoopConfiguration)
     //drop table is not dropping the data for hudi datasets.
     fs.delete(tablePathObj, true)
     log.info(s"Cleaned up table: $database.$tableName at path $basePath")
+    if (isMor) {
+      spark.sql(s"DROP TABLE IF EXISTS $database.${tableName}_rt")
+      spark.sql(s"DROP TABLE IF EXISTS $database.${tableName}_ro")
+    }
   }
 
   def createInserts(database: String, tableName: String, saveMode: SaveMode, isHudiTable: Boolean): Unit = {

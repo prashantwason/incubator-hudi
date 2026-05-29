@@ -29,7 +29,7 @@ class RunHudiHiveJoinSQLs extends RunOperationsBase {
   private val log = LoggerFactory.getLogger(getClass)
 
   def testJoinQueryOnHudiTables(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName1 = "hudi_trips_cow_test_join_query1"
     val tableName2 = "hudi_trips_cow_test_join_query2"
 
@@ -56,7 +56,7 @@ class RunHudiHiveJoinSQLs extends RunOperationsBase {
 
 
   def testJoinQueryOnHiveTables(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName1 = "hive_trips_cow_test_join_query3"
     val tableName2 = "hive_trips_cow_test_join_query4"
 
@@ -82,7 +82,7 @@ class RunHudiHiveJoinSQLs extends RunOperationsBase {
   }
 
   def testJoinQueryOnHudiAndHiveTables(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName1 = "hudi_trips_cow_test_join_query5"
     val tableName2 = "hive_trips_cow_test_join_query6"
 

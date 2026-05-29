@@ -30,7 +30,7 @@ class RunNonHoodiePartitionsTest extends RunOperationsBase {
   private val log = LoggerFactory.getLogger(getClass)
 
   def testReadingNonHoodiePartitions(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_non_hoodie_partition_table"
     val basepath = getBasePath(tableName)
     cleanup(tableName, basepath)

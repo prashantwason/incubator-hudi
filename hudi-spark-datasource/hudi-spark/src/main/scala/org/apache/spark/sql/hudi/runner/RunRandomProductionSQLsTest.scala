@@ -372,7 +372,7 @@ class RunRandomProductionSQLsTest extends RunOperationsBase {
   }
 
   def testRunInsertOverwriteOnHiveTable(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_insert_overwrite_test_new"
     cleanup(tableName, getBasePath(tableName))
     createInserts(database, tableName, SaveMode.Append, isHudiTable = false)
@@ -391,7 +391,7 @@ class RunRandomProductionSQLsTest extends RunOperationsBase {
    * Need to fix that.
    */
   def testProdSqlOnEmptyDataset(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val partitionedTableName = "hudi_trips_partitioned_empty_table"
 
     cleanup(partitionedTableName, getBasePath(partitionedTableName))
@@ -490,8 +490,37 @@ class RunRandomProductionSQLsTest extends RunOperationsBase {
     assert(rowCount == 9, "Row count should be 9")
   }
 
+  def testWrongNumberOfColumnsFound(): Unit = {
+    val database = getDatabase()
+    val targetTableName = "hudi_trips_wrong_number_of_columns_new"
+    cleanup(targetTableName, getBasePath(targetTableName))
+    val prodTable = "datachargebacks.piper_phx_metadata_latest"
+
+    // Initialize the target table with the same schema as the derived dataset
+    spark.sql(s"CREATE TABLE $database.$targetTableName LIKE $prodTable")
+
+    // Dump the existing derived dataset contents into the target dataset.
+    spark.sql(s"insert overwrite table $database.$targetTableName select * from $prodTable limit 20")
+    val df = spark.sql(s"select * from $database.$targetTableName")
+    df.show(20, false)
+    runSqlQueryWithAsserts(database, targetTableName, fullScan = true, 20)
+
+    // Now, let's overwrite the target table with the data from the rawdata dataset.
+    spark.sql(
+      s"""
+         |insert overwrite table $database.$targetTableName
+         |select * from rawdata_user.mysql_piper_piper5_pipeline_rows
+         |where datestr = '2025-06-11'
+         |limit 30
+         |""".stripMargin
+    )
+    val df2 = spark.sql(s"select * from $database.$targetTableName")
+    df2.show(30, false)
+    runSqlQueryWithAsserts(database, targetTableName, fullScan = true, 30)
+  }
+
   def testEmptyHudiPartitions(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_empty_partitions"
     val basepath = getBasePath(tableName)
     cleanup(tableName, basepath)
@@ -563,7 +592,7 @@ class RunRandomProductionSQLsTest extends RunOperationsBase {
 
   def testAdtechSqlNotReturningNewFields(): Unit = {
     //TODO: Commented this test need to fix it.
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_sync_as_datasource_test"
     val optionsMap = mutable.Map[String, String]()
     optionsMap += HiveSyncConfigHolder.HIVE_SYNC_AS_DATA_SOURCE_TABLE.key() -> "true"
@@ -614,7 +643,7 @@ class RunRandomProductionSQLsTest extends RunOperationsBase {
   }
 
   def testCustomPartitionedGeneratedDatasets(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val targetTableName = "hudi_trips_custom_partitioned_assets"
     cleanup(targetTableName, getBasePath(targetTableName))
 

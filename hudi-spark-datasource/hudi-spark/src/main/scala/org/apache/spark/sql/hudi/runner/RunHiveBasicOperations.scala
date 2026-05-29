@@ -24,7 +24,7 @@ class RunHiveBasicOperations extends RunOperationsBase {
   private val log = LoggerFactory.getLogger(getClass)
 
   def testHiveTableWrites(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hive_trips_cow_test_df_write"
     cleanup(tableName, getBasePath(tableName))
     createInserts(database, tableName, SaveMode.Overwrite, isHudiTable = false)
@@ -40,7 +40,7 @@ class RunHiveBasicOperations extends RunOperationsBase {
   }
 
   def testHiveTableRead(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hive_trips_cow_test_df_read"
     cleanup(tableName, getBasePath(tableName))
     createInserts(database, tableName, SaveMode.Overwrite, isHudiTable = false)
@@ -49,7 +49,7 @@ class RunHiveBasicOperations extends RunOperationsBase {
   }
 
   def testDropHiveTable(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hive_trips_cow_test_drop_table"
     cleanup(tableName, getBasePath(tableName))
     createInserts(database, tableName, SaveMode.Overwrite, isHudiTable = false)

@@ -33,7 +33,7 @@ class RunHudiCRUDOperations extends RunOperationsBase {
   private val log = LoggerFactory.getLogger(getClass)
 
   def testHudiCreateTableCommand(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_cow_using_new_syntax"
     cleanup(tableName, getBasePath(tableName))
     val sqlStr = readSqlFromResource("create_table_using_new_syntax.sql")
@@ -43,7 +43,7 @@ class RunHudiCRUDOperations extends RunOperationsBase {
   }
 
   def testNewHudiCreateSQLFromHudiSource(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val sourceTableName = "hudi_trips_cow_from_select_source"
     cleanup(sourceTableName, getBasePath(sourceTableName))
     val sqlStr = readSqlFromResource("create_table_from_select_statement.sql")
@@ -402,14 +402,14 @@ class RunHudiCRUDOperations extends RunOperationsBase {
     if (s == null || s.length <= max) s else s.substring(0, max) + "..."
 
   def testInsertOverwriteWithSourceHudi(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val sourceHudiTable = "hudi_trips_insert_overwrite_source"
     cleanup(sourceHudiTable, getBasePath(sourceHudiTable))
     testInsertOverwriteHelper(database, sourceHudiTable, isSourceHudiTable = true)
   }
 
   def testInsertOverwriteWithSourceHive(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val sourceHiveTable = "hive_trips_insert_overwrite_source"
     cleanup(sourceHiveTable, getBasePath(sourceHiveTable))
     testInsertOverwriteHelper(database, sourceHiveTable, isSourceHudiTable = false)
@@ -477,7 +477,7 @@ class RunHudiCRUDOperations extends RunOperationsBase {
   }
 
   def testSparkHoodieConfigPropagationDisablesMetadataTable(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_spark_config_propagation_test"
     val basePath = getBasePath(tableName)
     cleanup(tableName, basePath)
@@ -516,7 +516,7 @@ class RunHudiCRUDOperations extends RunOperationsBase {
   }
 
   def insertOverwriteToHudiDataset(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val sourceHudiTable = "hudi_trips_insert_overwrite_source2"
     cleanup(sourceHudiTable, getBasePath(sourceHudiTable))
     createInserts(database, sourceHudiTable, SaveMode.Overwrite, isHudiTable = true)

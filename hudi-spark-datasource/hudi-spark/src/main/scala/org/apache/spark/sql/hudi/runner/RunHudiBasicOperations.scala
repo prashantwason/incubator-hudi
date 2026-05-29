@@ -35,7 +35,7 @@ class RunHudiBasicOperations extends RunOperationsBase {
   private val log = LoggerFactory.getLogger(getClass)
 
   def testHudiDFInsertTable(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_cow_test_insert_table_v2"
     cleanup(tableName, getBasePath(tableName))
     createInserts(database, tableName, SaveMode.Overwrite, isHudiTable = true)
@@ -47,7 +47,7 @@ class RunHudiBasicOperations extends RunOperationsBase {
   }
 
   def testHudiDFUpsertTable(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_cow_test_upsert_table"
     cleanup(tableName, getBasePath(tableName))
     createInserts(database, tableName, SaveMode.Overwrite, isHudiTable = true)
@@ -67,7 +67,7 @@ class RunHudiBasicOperations extends RunOperationsBase {
   }
 
   def testHudiSqlQuery(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_cow_test_sql_query"
     cleanup(tableName, getBasePath(tableName))
     createInserts(database, tableName, SaveMode.Overwrite, isHudiTable = true)
@@ -76,7 +76,7 @@ class RunHudiBasicOperations extends RunOperationsBase {
   }
 
   def testHudiDFQuery(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_cow_test_df_read"
     cleanup(tableName, getBasePath(tableName))
     createInserts(database, tableName, SaveMode.Overwrite, isHudiTable = true)
@@ -85,7 +85,7 @@ class RunHudiBasicOperations extends RunOperationsBase {
   }
 
   def testRepeatedSQLQueriesOnHudiDataset(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_cow_test_repeated_sql"
     cleanup(tableName, getBasePath(tableName))
     createInserts(database, tableName, SaveMode.Overwrite, isHudiTable = true)
@@ -97,7 +97,7 @@ class RunHudiBasicOperations extends RunOperationsBase {
   }
 
   def testHudiDropTableCommand(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_cow_test_drop_table"
     cleanup(tableName, getBasePath(tableName))
     createInserts(database, tableName, SaveMode.Overwrite, isHudiTable = true)
@@ -137,7 +137,7 @@ class RunHudiBasicOperations extends RunOperationsBase {
     inputDf.show()
 
     // Write data into dataset and register into Hive Metastore
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_test_table"
     cleanup(tableName, getBasePath(tableName))
     inputDf.write
@@ -209,7 +209,7 @@ class RunHudiBasicOperations extends RunOperationsBase {
   }
 
   def testHudiCreateTableWithDataFrameAPI(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_cow_test_save_as_table"
     cleanup(tableName, getBasePath(tableName))
     val records = Seq(

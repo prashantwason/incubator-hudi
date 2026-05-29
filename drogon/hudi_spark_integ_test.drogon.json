@@ -24,7 +24,8 @@
     "proxyUser": "${proxy_user}",
     "args": [
       "--test-category", "${TEST_CATEGORY}",
-      "--test-name", "${TEST_NAME}"
+      "--test-name", "${TEST_NAME}",
+      "--db", "${DB}"
     ],
     "conf": {
       "spark.yarn.maxAppAttempts": "1",
@@ -86,6 +87,7 @@
     "FILE_INDEX_IMPLEMENTATION": "org.apache.hudi.HybridHoodieSparkSqlFileIndex",
     "RO_PATH_FILTER_ENABLED": "true",
     "TEST_CATEGORY": "",
-    "TEST_NAME": ""
+    "TEST_NAME": "",
+    "DB": "rawdatatmp"
   }
 }

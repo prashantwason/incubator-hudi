@@ -38,7 +38,7 @@ class RunSchemaEvolutionTest extends RunOperationsBase {
 
   def testAddColumns(): Unit = {
     val inputDf: DataFrame = generateSampleDf()
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_add_cloumns_test"
     val basePath = getBasePath(tableName)
     cleanup(tableName, basePath)
@@ -90,7 +90,7 @@ class RunSchemaEvolutionTest extends RunOperationsBase {
 
   def testChangingRequiredColumnAsNullable(): Unit = {
     val inputDf: DataFrame = generateSampleDf()
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_columns_nullability_test"
     val basePath = getBasePath(tableName)
     cleanup(tableName, basePath)
@@ -144,7 +144,7 @@ class RunSchemaEvolutionTest extends RunOperationsBase {
    */
   def testBlockingColumnDeletionUsingReconcile(): Unit = {
     var inputDf: DataFrame = generateSampleDf()
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_block_column_deletion_test"
     val basePath = getBasePath(tableName)
     cleanup(tableName, basePath)
@@ -220,7 +220,7 @@ class RunSchemaEvolutionTest extends RunOperationsBase {
 
   def testSparkSqlProviderConfigInHMS(): Unit = {
     val inputDf: DataFrame = generateSampleDf()
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_spark_sql_provider_test"
     val basePath = getBasePath(tableName)
     cleanup(tableName, basePath)

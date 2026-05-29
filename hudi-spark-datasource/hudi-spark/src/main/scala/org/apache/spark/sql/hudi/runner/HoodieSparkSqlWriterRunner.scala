@@ -46,6 +46,7 @@ object HoodieSparkSqlWriterRunner {
     log.info(s"Args: ${args.mkString(",")}")
     val category = args(1)   // Category name (e.g., "hudi", "hive")
     val testName = args(3)   // Specific test name (e.g., "testHudiDFInsertTable")
+    val db = args(5)         // Database name
 
     val jobTimer = HoodieTimer.start()
 
@@ -63,9 +64,9 @@ object HoodieSparkSqlWriterRunner {
 
     // Run tests
     if (testName.isEmpty) {
-      runAllTests(category)
+      runAllTests(category, db)
     } else {
-      runTest(category, testName)
+      runTest(category, testName, db)
     }
 
     log.info("Tests completed, flushing metrics.")
@@ -73,7 +74,7 @@ object HoodieSparkSqlWriterRunner {
     metrics.flush()
   }
 
-  def runAllTests(category: String): Unit = {
+  def runAllTests(category: String, db: String): Unit = {
     val className = classMapping.get(category)
       .getOrElse(throw new UnsupportedOperationException(s"Unsupported test category: $category"))
 
@@ -98,7 +99,7 @@ object HoodieSparkSqlWriterRunner {
       val timer = HoodieTimer.start()
       try {
         log.info(s"Running test: $category.$methodName")
-        executeTest(className, methodName, sparkSession)
+        executeTest(className, methodName, sparkSession, db)
         val durationInMs = timer.endTimer()
         log.info(s"Test $category.$methodName PASSED in $durationInMs ms")
         reportStatusMetrics(className, methodName, status = true)
@@ -120,7 +121,7 @@ object HoodieSparkSqlWriterRunner {
     }
   }
 
-  def runTest(category: String, testName: String): Unit = {
+  def runTest(category: String, testName: String, db: String): Unit = {
     val className = classMapping.get(category)
       .getOrElse(throw new UnsupportedOperationException(s"Unsupported test category: $category"))
 
@@ -129,7 +130,9 @@ object HoodieSparkSqlWriterRunner {
     var testException: Option[Exception] = None
 
     try {
-      executeTest(className, testName, sparkSession)
+      // Execute test with global session
+      executeTest(className, testName, sparkSession, db)
+
       status = true
     } catch {
       case e: Exception if isNotImplemented(e) =>
@@ -149,7 +152,7 @@ object HoodieSparkSqlWriterRunner {
     }
   }
 
-  private def executeTest(className: String, testName: String, sparkSession: SparkSession): Unit = {
+  private def executeTest(className: String, testName: String, sparkSession: SparkSession, db: String): Unit = {
     val runtimeUniverse = scala.reflect.runtime.universe
     val appClassLoader = getClass.getClassLoader
     val runtimeMirror = runtimeUniverse.runtimeMirror(appClassLoader)
@@ -165,7 +168,7 @@ object HoodieSparkSqlWriterRunner {
     // Initialize with global Spark session
     val initializeMethodSymbol = classSymbol.toType.member(runtimeUniverse.TermName("initialize")).asMethod
     val initializeMethodMirror = instanceMirror.reflectMethod(initializeMethodSymbol)
-    initializeMethodMirror(sparkSession)
+    initializeMethodMirror(sparkSession, db)
 
     // Reset thread context classloader to the app classloader.
     // Hive SQL operations (e.g., DROP TABLE in cleanup/initialize) set the thread's context

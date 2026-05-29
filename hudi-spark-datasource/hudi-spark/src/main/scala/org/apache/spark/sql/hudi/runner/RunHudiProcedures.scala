@@ -30,7 +30,7 @@ class RunHudiProcedures extends RunOperationsBase {
   private val log = LoggerFactory.getLogger(getClass)
 
   def testHudiShowCommitsProcedure(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_cow_test_show_commits_procedure"
 
     cleanup(tableName, getBasePath(tableName))
@@ -46,7 +46,7 @@ class RunHudiProcedures extends RunOperationsBase {
   }
 
   def testHudiCleanProcedure(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_cow_test_run_clean_procedure"
     cleanup(tableName, getBasePath(tableName))
     createInserts(database, tableName, SaveMode.Overwrite, isHudiTable = true)
@@ -60,7 +60,7 @@ class RunHudiProcedures extends RunOperationsBase {
   }
 
   def testHudiArchivalProcedure(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_cow_test_run_archival_procedure"
     cleanup(tableName, getBasePath(tableName))
     createInserts(database, tableName, SaveMode.Overwrite, isHudiTable = true)
@@ -76,7 +76,7 @@ class RunHudiProcedures extends RunOperationsBase {
   }
 
   def testHudiClusteringProcedure(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_cow_test_run_clustering_procedure"
     cleanup(tableName, getBasePath(tableName))
     createInserts(database, tableName, SaveMode.Overwrite, isHudiTable = true)
@@ -185,7 +185,7 @@ class RunHudiProcedures extends RunOperationsBase {
   }
 
   def testHudiRepairOverwritePropsProcedure(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_repair_overwrite_props_procedure"
     val newTableName = "hudi_trips_repair_overwrite_props_procedure_renamed"
     val tableBasePath = getBasePath(tableName)

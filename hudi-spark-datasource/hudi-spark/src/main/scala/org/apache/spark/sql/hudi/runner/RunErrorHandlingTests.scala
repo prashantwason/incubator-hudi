@@ -65,7 +65,7 @@ class RunErrorHandlingTests extends RunOperationsBase {
    * is invoked when inserting from a Hudi source into a Hudi target.
    */
   def testInsertIntoHudiFromHudiUnionWithInvalidColumn(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val sourceTable1 = "hudi_src_table_1"
     val sourceTable2 = "hudi_src_table_2"
     val targetTable = "hudi_target_table"
@@ -123,7 +123,7 @@ class RunErrorHandlingTests extends RunOperationsBase {
    * which showed many nested Union.output calls).
    */
   def testDeeplyNestedUnionWithInvalidColumn(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val sourceTable = "hudi_nested_union_src"
     val targetTable = "hudi_nested_union_target"
 
@@ -181,7 +181,7 @@ class RunErrorHandlingTests extends RunOperationsBase {
    * SELECT * triggers Star expansion which interacts with the ProducesHudiMetaFields extractor.
    */
   def testInsertWithSelectStarAndInvalidColumn(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val sourceTable = "hudi_star_src"
     val targetTable = "hudi_star_target"
 
@@ -225,7 +225,7 @@ class RunErrorHandlingTests extends RunOperationsBase {
    * improved error handling is triggered.
    */
   def testErrorMessageContainsColumnName(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_column_name_test"
     cleanup(tableName, getBasePath(tableName))
 
