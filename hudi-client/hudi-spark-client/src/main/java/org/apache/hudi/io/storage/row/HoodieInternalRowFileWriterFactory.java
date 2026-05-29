@@ -24,9 +24,13 @@ import org.apache.hudi.common.config.HoodieParquetConfig;
 import org.apache.hudi.common.config.HoodieStorageConfig;
 import org.apache.hudi.common.engine.LocalTaskContextSupplier;
 import org.apache.hudi.common.fs.FSUtils;
+import org.apache.hudi.common.config.HoodieConfig;
 import org.apache.hudi.common.util.Option;
+import org.apache.hudi.common.util.collection.Pair;
 import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.io.HoodieParquetConfigInjector;
 import org.apache.hudi.io.storage.HoodieSparkLanceWriter;
+import org.apache.hudi.storage.StorageConfiguration;
 import org.apache.hudi.storage.StoragePath;
 import org.apache.hudi.storage.hadoop.HadoopStorageConfiguration;
 import org.apache.hudi.table.HoodieTable;
@@ -79,8 +83,13 @@ public class HoodieInternalRowFileWriterFactory {
                                                                              Option<BloomFilter> bloomFilterOpt
   )
       throws IOException {
+    Pair<StorageConfiguration, HoodieConfig> injectedConfigs =
+        HoodieParquetConfigInjector.applyConfigInjector(path, table.getStorageConf(), writeConfig);
+    Configuration hadoopConf = (Configuration) injectedConfigs.getLeft().unwrapCopy();
+    HoodieConfig injectedWriteConfig = injectedConfigs.getRight();
+
     HoodieRowParquetWriteSupport writeSupport = HoodieRowParquetWriteSupport
-        .getHoodieRowParquetWriteSupport((Configuration) table.getStorageConf().unwrap(), structType, bloomFilterOpt, writeConfig);
+        .getHoodieRowParquetWriteSupport(hadoopConf, structType, bloomFilterOpt, injectedWriteConfig);
 
     return new HoodieInternalRowParquetWriter(
         path,
