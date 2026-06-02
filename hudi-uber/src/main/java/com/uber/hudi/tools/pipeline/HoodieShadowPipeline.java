@@ -296,13 +296,15 @@ public class HoodieShadowPipeline {
     if (!StringUtils.isNullOrEmpty(sourceCommitPattern)) {
       LOG.info("Source commit pattern " + sourceCommitPattern);
       List<FileStatus> commitFileStatuses = Stream.of(srcfs.globStatus(new Path(sourceCommitPattern)))
-          .filter(fileStatus -> {
-            // Extract timestamp from filename (e.g. "20230101120000.commit" -> "20230101120000")
-            String fileName = fileStatus.getPath().getName();
-            String timestamp = fileName.contains(".") ? fileName.substring(0, fileName.indexOf(".")) : fileName;
-            return timestamp.compareTo(srcCommitTime) <= 0;
-          })
-          .collect(Collectors.toList());
+              // Skip atomic-rename temp files (e.g. <ts>.commit.requested.tmp) — HoodieInstant's
+              // state parser splits on '.' and throws IllegalArgumentException on "REQUESTED.TMP".
+              .filter(fileStatus -> !fileStatus.getPath().getName().endsWith(".tmp"))
+              .filter(fileStatus -> {
+                // Extract timestamp from filename (e.g. "20230101120000.commit" -> "20230101120000")
+                String fileName = fileStatus.getPath().getName();
+                String timestamp = fileName.contains(".") ? fileName.substring(0, fileName.indexOf(".")) : fileName;
+                return timestamp.compareTo(srcCommitTime) <= 0;
+          }).collect(Collectors.toList());
       sparkEngineContext.setJobStatus(HoodieShadowPipeline.class.getSimpleName(), "Copying commit files");
       List<String> commitFilesFailedToCopy = sparkEngineContext.parallelize(commitFileStatuses)
           .repartition(64)
