@@ -44,6 +44,8 @@ import org.apache.hudi.client.common.HoodieSparkEngineContext;
 import org.apache.hudi.client.transaction.lock.LockManager;
 import org.apache.hudi.client.transaction.lock.ZookeeperBasedLockProvider;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
+import org.apache.hudi.common.config.HoodieStorageConfig;
+import org.apache.hudi.common.config.SerializableConfiguration;
 import org.apache.hudi.common.config.TypedProperties;
 import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.model.HoodieBaseFile;
@@ -98,10 +100,8 @@ import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SQLContext;
-import org.apache.spark.util.SerializableConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import com.beust.jcommander.JCommander;
 
 import static org.apache.hudi.common.model.HoodieFailedWritesCleaningPolicy.LAZY;
@@ -420,6 +420,9 @@ public class HoodieShadowPipeline {
     propertiesMap.put(HoodieWriteConfig.PRECOMBINE_FIELD_NAME.key(), cfg.sourceOrderingField);
     propertiesMap.put(HoodieCleanConfig.AUTO_CLEAN.key(), "false");
     propertiesMap.put(HoodieArchivalConfig.AUTO_ARCHIVE.key(), "false");
+    if (cfg.allowDuplicatesInRecordIndex) {
+      propertiesMap.put(HoodieStorageConfig.HFILE_WRITER_TO_ALLOW_DUPLICATES.key(), "true");
+    }
 
     TableSchemaResolver schemaResolver = new TableSchemaResolver(metaClient);
     String schema = schemaResolver.getTableSchema(false).toString();
@@ -644,6 +647,10 @@ public class HoodieShadowPipeline {
 
       props.put(HoodieSyncConfig.META_SYNC_PARTITION_EXTRACTOR_CLASS.key(), cfg.partitionValueExtractorClass);
       props.put(DataSourceWriteOptions.HIVE_SKIP_RO_SUFFIX_FOR_READ_OPTIMIZED_TABLE().key(), "true");
+
+      if (cfg.allowDuplicatesInRecordIndex) {
+        props.put(HoodieStorageConfig.HFILE_WRITER_TO_ALLOW_DUPLICATES.key(), "true");
+      }
 
       // Metric config
       cfg.metricPrefix = cfg.metricPrefix.replace("{DC}", datacenter);

@@ -16,6 +16,7 @@
       "http://artifactory.uber.internal:4587/artifactory/libs-release-local/org/apache/spark/spark-avro_${SCALA_VERSION}/${SPARK_AVRO_VERSION}/spark-avro_${SCALA_VERSION}-${SPARK_AVRO_VERSION}.jar"
     ],
     "args": [
+      "--allow-duplicates-in-record-index", "${ALLOW_DUPLICATES_IN_RECORD_INDEX}",
       "--assume-date-partitioning", "${ASSUME_DATE_PARTITIONING}",
       "--base-file-format", "${BASE_FILE_FORMAT}",
       "--bootstrap-with-latest-base-files", "${BOOTSTRAP_WITH_LATEST_BASE_FILES}",
@@ -89,6 +90,7 @@
     "cd_enabled": true
   },
   "variables": {
+    "ALLOW_DUPLICATES_IN_RECORD_INDEX": "false",
     "ASSUME_DATE_PARTITIONING": "true",
     "AVRO_VERSION": "1.8.2-UBER",
     "BASE_FILE_FORMAT": "PARQUET",

@@ -169,6 +169,12 @@ public class HoodieShadowPipelineConfig implements Serializable {
       + " .hodie_partition_metadata file", arity = 1)
   public Boolean createPartitionMetafileWithoutSuffix = true;
 
+  @Parameter(names = {"--allow-duplicates-in-record-index"}, description = "Allow duplicate keys in the metadata table's"
+      + " record-index HFiles by setting hoodie.hfile.writer.allow.duplicates=true on the metadata write config."
+      + " Useful when bootstrapping shadow datasets whose source RLI contains duplicates that would otherwise abort"
+      + " the HFile writer.", arity = 1)
+  public Boolean allowDuplicatesInRecordIndex = false;
+
   @Override
   public String toString() {
     return "HoodieShadowPipelineConfig{"
@@ -205,6 +211,7 @@ public class HoodieShadowPipelineConfig implements Serializable {
         + ", keyGenerator='" + keyGenerator + '\''
         + ", enableDeltastreamerCheckpoint=" + enableDeltastreamerCheckpoint
         + ", create-partition-metafile-without-suffix=" + createPartitionMetafileWithoutSuffix
+        + ", allowDuplicatesInRecordIndex=" + allowDuplicatesInRecordIndex
         + '}';
   }
 }
