@@ -50,6 +50,8 @@ import org.apache.flink.api.common.functions.Partitioner;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.Configuration;
 
+import javax.annotation.Nullable;
+
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -154,16 +156,33 @@ public class OptionsResolver {
   }
 
   /**
-   * Return value of {@link FlinkOptions#RECORD_KEY_FIELD} if it was set,
-   * or throw exception otherwise.
+   * Return value of {@link FlinkOptions#RECORD_KEY_FIELD}, could be null if it is not set.
    */
+  @Nullable
   public static String getRecordKeyStr(Configuration conf) {
+    return conf.get(FlinkOptions.RECORD_KEY_FIELD);
+  }
+
+  /**
+   * Return the record keys as an array.
+   */
+  public static String[] getRecordKeys(Configuration conf) {
     final String recordKeyStr = conf.get(FlinkOptions.RECORD_KEY_FIELD);
-    ValidationUtils.checkArgument(
-        recordKeyStr != null,
-        "Primary key definition is required, use either PRIMARY KEY syntax or option '"
-            + FlinkOptions.RECORD_KEY_FIELD.key() + "' to specify.");
-    return recordKeyStr;
+    if (StringUtils.isNullOrEmpty(recordKeyStr)) {
+      return new String[]{};
+    }
+    return recordKeyStr.split(",");
+  }
+
+  /**
+   * Return the bucket index keys as an array.
+   */
+  public static String[] getBucketIndexKeys(Configuration conf) {
+    final String indexKeyStr = conf.get(FlinkOptions.INDEX_KEY_FIELD);
+    if (StringUtils.isNullOrEmpty(indexKeyStr)) {
+      return new String[]{};
+    }
+    return indexKeyStr.split(",");
   }
 
   /**
@@ -198,15 +217,23 @@ public class OptionsResolver {
   }
 
   /**
-   * Returns whether {@link org.apache.hudi.sink.partitioner.MinibatchBucketAssignFunction} should be used for bucket assigning.
+   * Returns whether partitioned record level index is used for bucket assigning.
    */
   public static boolean isRecordLevelIndex(Configuration conf) {
+    HoodieIndex.IndexType indexType = OptionsResolver.getIndexType(conf);
+    return indexType == HoodieIndex.IndexType.RECORD_LEVEL_INDEX;
+  }
+
+  /**
+   * Returns whether the table uses metadata-table record level index.
+   */
+  public static boolean isGlobalRecordLevelIndex(Configuration conf) {
     HoodieIndex.IndexType indexType = OptionsResolver.getIndexType(conf);
     return indexType == HoodieIndex.IndexType.GLOBAL_RECORD_LEVEL_INDEX;
   }
 
   public static boolean isRLIWithBootstrap(Configuration conf) {
-    return isRecordLevelIndex(conf) && conf.get(FlinkOptions.INDEX_BOOTSTRAP_ENABLED);
+    return isGlobalRecordLevelIndex(conf) && conf.get(FlinkOptions.INDEX_BOOTSTRAP_ENABLED);
   }
 
   /**
@@ -269,7 +296,7 @@ public class OptionsResolver {
    * @param conf The flink configuration.
    */
   public static boolean needsAsyncCompaction(Configuration conf) {
-    return OptionsResolver.isMorTable(conf) && conf.get(FlinkOptions.COMPACTION_ASYNC_ENABLED);
+    return OptionsResolver.isMorTable(conf) && areTableServicesEnabled(conf) && conf.get(FlinkOptions.COMPACTION_ASYNC_ENABLED);
   }
 
   /**
@@ -278,7 +305,7 @@ public class OptionsResolver {
    * @param conf The flink configuration.
    */
   public static boolean needsAsyncMetadataCompaction(Configuration conf) {
-    return isStreamingIndexWriteEnabled(conf) && conf.get(FlinkOptions.METADATA_COMPACTION_ASYNC_ENABLED);
+    return isStreamingIndexWriteEnabled(conf) && areTableServicesEnabled(conf) && conf.get(FlinkOptions.METADATA_COMPACTION_ASYNC_ENABLED);
   }
 
   /**
@@ -287,7 +314,7 @@ public class OptionsResolver {
    * @param conf The flink configuration.
    */
   public static boolean needsScheduleMdtCompaction(Configuration conf) {
-    return isStreamingIndexWriteEnabled(conf) && conf.get(FlinkOptions.METADATA_COMPACTION_SCHEDULE_ENABLED);
+    return isStreamingIndexWriteEnabled(conf) && areTableServicesEnabled(conf) && conf.get(FlinkOptions.METADATA_COMPACTION_SCHEDULE_ENABLED);
   }
 
   /**
@@ -297,7 +324,9 @@ public class OptionsResolver {
    */
   public static boolean needsScheduleCompaction(Configuration conf) {
     return OptionsResolver.isMorTable(conf)
-        && conf.get(FlinkOptions.COMPACTION_SCHEDULE_ENABLED) && !isAppendMode(conf);
+        && areTableServicesEnabled(conf)
+        && conf.get(FlinkOptions.COMPACTION_SCHEDULE_ENABLED)
+        && !isAppendMode(conf);
   }
 
   /**
@@ -306,7 +335,7 @@ public class OptionsResolver {
    * @param conf The flink configuration.
    */
   public static boolean needsAsyncClustering(Configuration conf) {
-    return isInsertOperation(conf) && conf.get(FlinkOptions.CLUSTERING_ASYNC_ENABLED);
+    return isInsertOperation(conf) && areTableServicesEnabled(conf) && conf.get(FlinkOptions.CLUSTERING_ASYNC_ENABLED);
   }
 
   /**
@@ -315,6 +344,9 @@ public class OptionsResolver {
    * @param conf The flink configuration.
    */
   public static boolean needsScheduleClustering(Configuration conf) {
+    if (!areTableServicesEnabled(conf)) {
+      return false;
+    }
     if (!conf.get(FlinkOptions.CLUSTERING_SCHEDULE_ENABLED)) {
       return false;
     }
@@ -459,7 +491,8 @@ public class OptionsResolver {
    */
   public static boolean isStreamingIndexWriteEnabled(Configuration conf) {
     return conf.get(FlinkOptions.METADATA_ENABLED)
-        && OptionsResolver.getIndexType(conf) == HoodieIndex.IndexType.GLOBAL_RECORD_LEVEL_INDEX
+        && (OptionsResolver.getIndexType(conf) == HoodieIndex.IndexType.GLOBAL_RECORD_LEVEL_INDEX
+        || OptionsResolver.getIndexType(conf) == HoodieIndex.IndexType.RECORD_LEVEL_INDEX)
         && WriteOperationType.streamingWritesToMetadataSupported(WriteOperationType.fromValue(conf.get(FlinkOptions.OPERATION)));
   }
 
@@ -521,6 +554,20 @@ public class OptionsResolver {
   }
 
   /**
+   * Returns whether the cleaning for failed writes is enabled as lazy.
+   */
+  public static boolean isLazyFailedWritesCleaning(Configuration conf) {
+    return needsAsyncCleaning(conf) && isLazyFailedWritesCleanPolicy(conf);
+  }
+
+  /**
+   * Returns whether there is need for async cleaning (planning & execution).
+   */
+  public static boolean needsAsyncCleaning(Configuration conf) {
+    return areTableServicesEnabled(conf);
+  }
+
+  /**
    * Returns whether Cleaner's failed writes policy is set to lazy
    */
   public static boolean isLazyFailedWritesCleanPolicy(Configuration conf) {
@@ -548,6 +595,13 @@ public class OptionsResolver {
    */
   public static boolean isBlockingInstantGeneration(Configuration conf) {
     return (isCowTable(conf) || conf.get(FlinkOptions.CDC_ENABLED)) && isUpsertOperation(conf);
+  }
+
+  /**
+   * Returns whether table services are enabled.
+   */
+  public static boolean areTableServicesEnabled(Configuration conf) {
+    return conf.get(FlinkOptions.TABLE_SERVICES_ENABLED);
   }
 
   /**

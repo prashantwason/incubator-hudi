@@ -18,6 +18,8 @@
 
 package org.apache.hudi.io.storage.row.parquet;
 
+import org.apache.hudi.adapter.DataTypeAdapter;
+import org.apache.hudi.common.schema.HoodieSchema;
 import org.apache.hudi.common.util.collection.Pair;
 
 import lombok.extern.slf4j.Slf4j;
@@ -46,6 +48,17 @@ import static org.apache.parquet.schema.LogicalTypeAnnotation.TimeUnit;
 
 /**
  * Schema converter converts Parquet schema to and from Flink internal types.
+ *
+ * <p>On reads, this converter performs best-effort physical type mapping. It detects the
+ * Parquet {@code VARIANT} annotation and will reject shredded variants. Blob and Vector types
+ * cannot be distinguished from ordinary binary columns via Parquet schema alone.
+ *
+ * <p>On writes, this converter maps Flink {@code VariantType} to the canonical unshredded Parquet
+ * layout (group with binary metadata + value fields). The VARIANT logical type annotation is
+ * resolved by {@link DataTypeAdapter#variantParquetAnnotation()} — on Flink 2.1+ with
+ * parquet-java 1.16.0+ the annotation is attached automatically; on pre-2.1 Flink or with
+ * parquet < 1.16.0 the write throws {@link UnsupportedOperationException} because writing
+ * variant data without the annotation would produce files that no reader can identify as variant.
  *
  * <p>Reference org.apache.flink.formats.parquet.utils.ParquetSchemaConverter to support timestamp of INT64 8 bytes.
  */
@@ -155,6 +168,18 @@ public class ParquetSchemaConverter {
             new MapType(
                 convertToRowField(keyValueType.getLeft()).getType().copy(true),
                 convertToRowField(keyValueType.getRight()).getType()));
+      } else if (hasVariantAnnotation(logicalType)) {
+        // Fires for files written with parquet-java that carry the VARIANT annotation.
+        // The reader infers the Flink RowType from the Parquet footer via convertToRowType(),
+        // so this annotation detection is the primary mechanism for recognizing Variant columns.
+        if (isShreddedVariant(groupType)) {
+          throw new UnsupportedOperationException(
+              "Shredded Variant is not supported in Flink. "
+                  + "The Parquet group '" + groupType.getName() + "' contains a '"
+                  + HoodieSchema.Variant.VARIANT_TYPED_VALUE_FIELD
+                  + "' field indicating a shredded layout.");
+        }
+        dataType = DataTypeAdapter.createVariantType();
       } else {
         dataType =
             DataTypes.of(new RowType(
@@ -188,6 +213,54 @@ public class ParquetSchemaConverter {
       types[i] = convertToParquetType(fieldName, fieldType, fieldType.isNullable() ? Type.Repetition.OPTIONAL : Type.Repetition.REQUIRED);
     }
     return new MessageType(name, types);
+  }
+
+  /**
+   * Checks whether the group carries the Parquet {@code VARIANT} logical type annotation.
+   * Uses class-name matching so this compiles against parquet-java versions that predate the
+   * {@code VariantLogicalTypeAnnotation} class (< 1.15.2).
+   */
+  private static boolean hasVariantAnnotation(LogicalTypeAnnotation logicalType) {
+    // needs to ensure the writer attach the variant annotation in 1.3.
+    return logicalType != null
+        && logicalType.getClass().getSimpleName().equals("VariantLogicalTypeAnnotation");
+  }
+
+  /**
+   * Checks whether a variant group contains a {@code typed_value} field, indicating a shredded
+   * layout. Called only after {@link #hasVariantAnnotation} returns true.
+   */
+  private static boolean isShreddedVariant(GroupType groupType) {
+    return groupType.containsField(HoodieSchema.Variant.VARIANT_TYPED_VALUE_FIELD);
+  }
+
+  /**
+   * Converts a Variant column to the canonical unshredded Parquet layout:
+   * a group with required binary {@code metadata} and required binary {@code value}.
+   *
+   * <p>No shredded-variant guard is needed here: Flink 2.1's {@code VariantType} is a single
+   * atomic {@code LogicalTypeRoot.VARIANT} with no shredding representation (FLIP-521 scopes
+   * shredding out), so a shredded variant can never arrive as a Flink LogicalType.
+   *
+   * <p>Delegates to {@link DataTypeAdapter#variantParquetAnnotation()} for the VARIANT logical
+   * type annotation. On Flink < 2.1 this throws (variant writes are unsupported). On Flink 2.1+
+   * with parquet-java < 1.16.0 this also throws, because writing variant data without the
+   * annotation would produce files that no reader can identify as variant.
+   */
+  private static Type convertVariantToParquetType(String name, Type.Repetition repetition) {
+    LogicalTypeAnnotation annotation = DataTypeAdapter.variantParquetAnnotation()
+        .orElseThrow(() -> new UnsupportedOperationException(
+            "Cannot write Variant columns: parquet-java 1.16.0+ is required to emit the VARIANT "
+                + "logical type annotation. Without the annotation, readers cannot identify the "
+                + "column as Variant. Current parquet-java version does not support "
+                + "LogicalTypeAnnotation.variantType()."));
+    return Types.buildGroup(repetition)
+        .as(annotation)
+        .addField(Types.primitive(PrimitiveType.PrimitiveTypeName.BINARY, Type.Repetition.REQUIRED)
+            .named(HoodieSchema.Variant.VARIANT_METADATA_FIELD))
+        .addField(Types.primitive(PrimitiveType.PrimitiveTypeName.BINARY, Type.Repetition.REQUIRED)
+            .named(HoodieSchema.Variant.VARIANT_VALUE_FIELD))
+        .named(name);
   }
 
   private static Type convertToParquetType(
@@ -304,6 +377,9 @@ public class ParquetSchemaConverter {
             .addField(convertToParquetType(field.getName(), field.getType(), field.getType().isNullable() ? Type.Repetition.OPTIONAL : Type.Repetition.REQUIRED)));
         return builder.named(name);
       default:
+        if (DataTypeAdapter.isVariantType(type)) {
+          return convertVariantToParquetType(name, repetition);
+        }
         throw new UnsupportedOperationException("Unsupported type: " + type);
     }
   }

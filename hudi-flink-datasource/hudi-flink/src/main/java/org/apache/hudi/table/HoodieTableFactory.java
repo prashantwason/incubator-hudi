@@ -18,6 +18,7 @@
 
 package org.apache.hudi.table;
 
+import org.apache.hudi.common.config.HoodieCommonConfig;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
 import org.apache.hudi.common.model.HoodieFileFormat;
 import org.apache.hudi.common.model.HoodieTableType;
@@ -86,9 +87,9 @@ public class HoodieTableFactory implements DynamicTableSourceFactory, DynamicTab
     StoragePath path = new StoragePath(conf.getOptional(FlinkOptions.PATH).orElseThrow(() ->
         new ValidationException("Option [path] should not be empty.")));
     setupTableOptions(conf.get(FlinkOptions.PATH), conf);
-    checkBaseFileFormat(conf);
     ResolvedSchema schema = context.getCatalogTable().getResolvedSchema();
     setupConfOptions(conf, context.getObjectIdentifier(), context.getCatalogTable(), schema);
+    checkBaseFileFormatForRead(conf, schema);
     return new HoodieTableSource(
         SerializableSchema.create(schema),
         path,
@@ -116,11 +117,6 @@ public class HoodieTableFactory implements DynamicTableSourceFactory, DynamicTab
   private void setupTableOptions(String basePath, Configuration conf) {
     StreamerUtil.getTableConfig(basePath, HadoopConfigurations.getHadoopConf(conf))
         .ifPresent(tableConfig -> {
-          // Guard: reject Lance from existing table config (hoodie.properties); checkBaseFileFormat() handles user-supplied config separately
-          if (tableConfig.contains(HoodieTableConfig.BASE_FILE_FORMAT)
-              && HoodieFileFormat.LANCE.name().equalsIgnoreCase(tableConfig.getString(HoodieTableConfig.BASE_FILE_FORMAT))) {
-            throw new HoodieValidationException(HoodieFileFormat.LANCE_SPARK_ONLY_ERROR_MSG);
-          }
           if (tableConfig.contains(HoodieTableConfig.RECORDKEY_FIELDS)
               && !conf.contains(FlinkOptions.RECORD_KEY_FIELD)) {
             conf.set(FlinkOptions.RECORD_KEY_FIELD, tableConfig.getString(HoodieTableConfig.RECORDKEY_FIELDS));
@@ -177,8 +173,8 @@ public class HoodieTableFactory implements DynamicTableSourceFactory, DynamicTab
    * @param schema The table schema
    */
   private void sanityCheck(Configuration conf, ResolvedSchema schema) {
-    checkBaseFileFormat(conf);
     checkTableType(conf);
+    checkBaseFileFormatForWrite(conf, schema);
     checkIndexType(conf);
 
     if (!OptionsResolver.isAppendMode(conf)) {
@@ -196,27 +192,63 @@ public class HoodieTableFactory implements DynamicTableSourceFactory, DynamicTab
       HoodieIndexConfig.INDEX_TYPE.checkValues(indexTypeStr);
     }
     HoodieIndex.IndexType indexType = OptionsResolver.getIndexType(conf);
-    if (indexType == HoodieIndex.IndexType.GLOBAL_RECORD_LEVEL_INDEX) {
-      ValidationUtils.checkArgument(conf.get(FlinkOptions.METADATA_ENABLED),
-          String.format("Metadata table should be enabled when %s is %s.", FlinkOptions.INDEX_TYPE.key(), HoodieIndex.IndexType.GLOBAL_RECORD_LEVEL_INDEX));
-      ValidationUtils.checkArgument(conf.get(FlinkOptions.INDEX_GLOBAL_ENABLED),
-          String.format("Partition level index updating is not supported for GLOBAL_RECORD_LEVEL_INDEX, please set '%s' = 'true'.", FlinkOptions.INDEX_GLOBAL_ENABLED.key()));
+    switch (indexType) {
+      case GLOBAL_RECORD_LEVEL_INDEX:
+        ValidationUtils.checkArgument(conf.get(FlinkOptions.METADATA_ENABLED),
+            String.format("Metadata table should be enabled when %s is %s.", FlinkOptions.INDEX_TYPE.key(), HoodieIndex.IndexType.GLOBAL_RECORD_LEVEL_INDEX));
+        ValidationUtils.checkArgument(conf.get(FlinkOptions.INDEX_GLOBAL_ENABLED),
+            String.format("Partition level index updating is not supported for GLOBAL_RECORD_LEVEL_INDEX, please set '%s' = 'true'.", FlinkOptions.INDEX_GLOBAL_ENABLED.key()));
 
-      boolean deferredRLI = Boolean.parseBoolean(conf.getString(
-          HoodieMetadataConfig.DEFER_RLI_INIT_FOR_FRESH_TABLE.key(), HoodieMetadataConfig.DEFER_RLI_INIT_FOR_FRESH_TABLE.defaultValue().toString()));
-      ValidationUtils.checkArgument(!deferredRLI,
-          String.format("Deferred RLI initialization is not supported for flink ingestion, please set '%s' = 'false'.", HoodieMetadataConfig.DEFER_RLI_INIT_FOR_FRESH_TABLE.key()));
+        boolean deferredRLI = Boolean.parseBoolean(conf.getString(
+            HoodieMetadataConfig.DEFER_RLI_INIT_FOR_FRESH_TABLE.key(), HoodieMetadataConfig.DEFER_RLI_INIT_FOR_FRESH_TABLE.defaultValue().toString()));
+        ValidationUtils.checkArgument(!deferredRLI,
+            String.format("Deferred RLI initialization is not supported for flink ingestion, please set '%s' = 'false'.", HoodieMetadataConfig.DEFER_RLI_INIT_FOR_FRESH_TABLE.key()));
+        break;
+      case RECORD_LEVEL_INDEX:
+        ValidationUtils.checkArgument(OptionsResolver.isUpsertOperation(conf) || OptionsResolver.isInsertOverwrite(conf),
+            "Partitioned record level index supports only Flink streaming upsert and insert overwrite.");
+        ValidationUtils.checkArgument(!OptionsResolver.isNonBlockingConcurrencyControl(conf),
+            "Partitioned record level index does not support non-blocking concurrency control.");
+        break;
+      default:
+        break;
     }
   }
 
   /**
-   * Validate the base file format. Lance is only supported with the Spark engine.
+   * Validate the base file format. Flink Lance support is scoped to append-only COW tables.
    */
-  private void checkBaseFileFormat(Configuration conf) {
-    String baseFileFormat = conf.getString(HoodieTableConfig.BASE_FILE_FORMAT.key(), null);
-    if (baseFileFormat != null && HoodieFileFormat.LANCE.name().equalsIgnoreCase(baseFileFormat)) {
-      throw new HoodieValidationException(HoodieFileFormat.LANCE_SPARK_ONLY_ERROR_MSG);
+  private void checkBaseFileFormatForRead(Configuration conf, ResolvedSchema schema) {
+    checkLanceBaseFileFormat(conf, schema);
+  }
+
+  private void checkBaseFileFormatForWrite(Configuration conf, ResolvedSchema schema) {
+    checkLanceBaseFileFormat(conf, schema);
+    if (isLanceBaseFileFormat(conf) && !OptionsResolver.isAppendMode(conf)) {
+      throw new HoodieValidationException("Flink Lance base-file writes require append-only INSERT mode. Set '"
+          + FlinkOptions.OPERATION.key() + "' = 'insert'.");
     }
+  }
+
+  private void checkLanceBaseFileFormat(Configuration conf, ResolvedSchema schema) {
+    if (!isLanceBaseFileFormat(conf)) {
+      return;
+    }
+    if (conf.containsKey(FlinkOptions.RECORD_KEY_FIELD.key()) || schema.getPrimaryKey().isPresent()) {
+      throw new HoodieValidationException("Flink Lance base-file support is only available for append-only tables without primary keys.");
+    }
+    if (OptionsResolver.isMorTable(conf)) {
+      throw new HoodieValidationException("Flink Lance base-file support is only available for COPY_ON_WRITE append-only tables.");
+    }
+    if (OptionsResolver.isSchemaEvolutionEnabled(conf)) {
+      throw new HoodieValidationException("Flink Lance base-file support does not support schema evolution. Set '"
+          + HoodieCommonConfig.SCHEMA_EVOLUTION_ENABLE.key() + "' = 'false'.");
+    }
+  }
+
+  private boolean isLanceBaseFileFormat(Configuration conf) {
+    String baseFileFormat = conf.getString(HoodieTableConfig.BASE_FILE_FORMAT.key(), null);
+    return baseFileFormat != null && HoodieFileFormat.LANCE.name().equalsIgnoreCase(baseFileFormat);
   }
 
   /**
@@ -240,7 +272,11 @@ public class HoodieTableFactory implements DynamicTableSourceFactory, DynamicTab
   private void checkRecordKey(Configuration conf, ResolvedSchema schema) {
     List<String> fields = schema.getColumnNames();
     if (schema.getPrimaryKey().isEmpty()) {
-      String[] recordKeys = OptionsResolver.getRecordKeyStr(conf).split(",");
+      String[] recordKeys = OptionsResolver.getRecordKeys(conf);
+      if (recordKeys.length == 0) {
+        throw new HoodieValidationException("Primary key definition is required, use either PRIMARY KEY syntax or option '"
+            + FlinkOptions.RECORD_KEY_FIELD.key() + "' to specify.");
+      }
       Arrays.stream(recordKeys)
           .filter(field -> !fields.contains(field))
           .findAny()
@@ -293,7 +329,7 @@ public class HoodieTableFactory implements DynamicTableSourceFactory, DynamicTab
   private static void setupHoodieKeyOptions(Configuration conf, CatalogTable table) {
     List<String> pkColumns = table.getSchema().getPrimaryKey()
         .map(pk -> pk.getColumns()).orElse(Collections.emptyList());
-    if (pkColumns.size() > 0) {
+    if (!pkColumns.isEmpty()) {
       // the PRIMARY KEY syntax always has higher priority than option FlinkOptions#RECORD_KEY_FIELD
       String recordKey = String.join(",", pkColumns);
       conf.set(FlinkOptions.RECORD_KEY_FIELD, recordKey);
@@ -309,12 +345,15 @@ public class HoodieTableFactory implements DynamicTableSourceFactory, DynamicTab
         log.info("'{}' is not set, therefore '{}' value will be used as index key instead",
             FlinkOptions.INDEX_KEY_FIELD.key(),
             FlinkOptions.RECORD_KEY_FIELD.key());
-        conf.set(FlinkOptions.INDEX_KEY_FIELD, OptionsResolver.getRecordKeyStr(conf));
+        String recordKeyStr = OptionsResolver.getRecordKeyStr(conf);
+        if (StringUtils.nonEmpty(recordKeyStr)) {
+          conf.set(FlinkOptions.INDEX_KEY_FIELD, recordKeyStr);
+        }
       } else {
         Set<String> recordKeySet =
-            Arrays.stream(OptionsResolver.getRecordKeyStr(conf).split(",")).collect(Collectors.toSet());
+            Arrays.stream(OptionsResolver.getRecordKeys(conf)).collect(Collectors.toSet());
         Set<String> indexKeySet =
-            Arrays.stream(conf.get(FlinkOptions.INDEX_KEY_FIELD).split(",")).collect(Collectors.toSet());
+            Arrays.stream(OptionsResolver.getBucketIndexKeys(conf)).collect(Collectors.toSet());
         if (!recordKeySet.containsAll(indexKeySet)) {
           throw new HoodieValidationException(
               FlinkOptions.INDEX_KEY_FIELD + " should be a subset of or equal to the recordKey fields");
@@ -324,7 +363,7 @@ public class HoodieTableFactory implements DynamicTableSourceFactory, DynamicTab
 
     // tweak the key gen class if possible
     final String[] partitions = conf.get(FlinkOptions.PARTITION_PATH_FIELD).split(",");
-    final String[] pks = OptionsResolver.getRecordKeyStr(conf).split(",");
+    final String[] pks = OptionsResolver.getRecordKeys(conf);
     if (partitions.length == 1) {
       final String partitionField = partitions[0];
       if (partitionField.isEmpty()) {
@@ -442,6 +481,14 @@ public class HoodieTableFactory implements DynamicTableSourceFactory, DynamicTab
       }
       // generally size of index data is much smaller than data record, so set the buffer size of
       // the index writer as 1/4 of that for data writer if it's not set by user explicitly.
+      if (!conf.contains(FlinkOptions.INDEX_RLI_WRITE_BUFFER_SIZE)) {
+        conf.set(FlinkOptions.INDEX_RLI_WRITE_BUFFER_SIZE, OptionsResolver.getWriteBufferSizeInBytes(conf) / 1024 / 1024 / 4);
+      }
+    } else if (indexType == HoodieIndex.IndexType.RECORD_LEVEL_INDEX) {
+      conf.setString(HoodieMetadataConfig.RECORD_LEVEL_INDEX_ENABLE_PROP.key(), "true");
+      conf.set(FlinkOptions.INDEX_GLOBAL_ENABLED, false);
+      conf.setString(HoodieMetadataConfig.STREAMING_WRITE_ENABLED.key(), "true");
+      conf.set(FlinkOptions.INDEX_BOOTSTRAP_ENABLED, false);
       if (!conf.contains(FlinkOptions.INDEX_RLI_WRITE_BUFFER_SIZE)) {
         conf.set(FlinkOptions.INDEX_RLI_WRITE_BUFFER_SIZE, OptionsResolver.getWriteBufferSizeInBytes(conf) / 1024 / 1024 / 4);
       }

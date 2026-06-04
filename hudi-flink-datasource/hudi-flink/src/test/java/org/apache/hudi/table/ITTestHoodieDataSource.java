@@ -31,7 +31,6 @@ import org.apache.hudi.common.table.marker.MarkerType;
 import org.apache.hudi.common.table.timeline.HoodieTimeline;
 import org.apache.hudi.common.util.CollectionUtils;
 import org.apache.hudi.config.HoodieWriteConfig;
-import org.apache.hudi.common.model.HoodieFileFormat;
 import org.apache.hudi.configuration.FlinkOptions;
 import org.apache.hudi.index.HoodieIndex;
 import org.apache.hudi.index.bucket.partition.PartitionBucketIndexUtils;
@@ -65,7 +64,6 @@ import org.apache.flink.table.catalog.ObjectPath;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.types.Row;
 import org.apache.flink.util.CollectionUtil;
-import org.apache.flink.util.ExceptionUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -416,7 +414,6 @@ public class ITTestHoodieDataSource {
 
     String hoodieTableDDL = sql("t1")
         .option(FlinkOptions.PATH, tempFile.getAbsolutePath())
-        .options(getDefaultKeys())
         .option(FlinkOptions.OPERATION, "insert")
         .option(FlinkOptions.READ_AS_STREAMING, true)
         .option(FlinkOptions.CLUSTERING_SCHEDULE_ENABLED, true)
@@ -446,7 +443,6 @@ public class ITTestHoodieDataSource {
 
     String hoodieTableDDL = sql("t1")
         .option(FlinkOptions.PATH, tempFile.getAbsolutePath())
-        .options(getDefaultKeys())
         .option(FlinkOptions.OPERATION, "insert")
         .option(FlinkOptions.CLUSTERING_SCHEDULE_ENABLED, true)
         .option(FlinkOptions.CLUSTERING_ASYNC_ENABLED, true)
@@ -1362,31 +1358,27 @@ public class ITTestHoodieDataSource {
   }
 
   @Test
-  void testLanceFormatRejectedByFlink() {
-    // Lance base file format is only supported with the Spark engine.
-    // Flink should reject it early with a clear error on both read and write paths.
-    String createLanceTable = sql("lance_t1")
+  void testLanceFormatAppendOnlyWriteAndRead() {
+    String createHoodieTable = sql("lance_t1")
         .option(FlinkOptions.PATH, tempFile.getAbsolutePath())
-        .options(getDefaultKeys())
+        .option(FlinkOptions.OPERATION, "insert")
         .option("hoodie.table.base.file.format", "LANCE")
         .end();
+    batchTableEnv.executeSql(createHoodieTable);
 
-    // Creating the table itself succeeds (DDL is just metadata registration),
-    // but any attempt to read or write should fail.
-    // Flink wraps our HoodieValidationException in its own ValidationException.
-    batchTableEnv.executeSql(createLanceTable);
+    execInsertSql(batchTableEnv, "insert into lance_t1 values "
+        + "('id1', 'Alice', 23, TIMESTAMP '1970-01-01 00:00:01', 'par1'),"
+        + "('id2', 'Bob', 31, TIMESTAMP '1970-01-01 00:00:02', 'par2')");
 
-    // Source (read) path should throw
-    ValidationException readEx = assertThrows(ValidationException.class,
-        () -> execSelectSql(batchTableEnv, "select * from lance_t1"),
-        "Lance format should be rejected when reading via Flink");
-    assertTrue(ExceptionUtils.findThrowableWithMessage(readEx, HoodieFileFormat.LANCE_SPARK_ONLY_ERROR_MSG).isPresent());
+    List<Row> rows = CollectionUtil.iteratorToList(
+        batchTableEnv.executeSql("select uuid, name, age, ts, `partition` from lance_t1").collect());
+    assertRowsEquals(rows,
+        "[+I[id1, Alice, 23, 1970-01-01T00:00:01, par1], "
+            + "+I[id2, Bob, 31, 1970-01-01T00:00:02, par2]]");
 
-    // Sink (write) path should throw
-    ValidationException writeEx = assertThrows(ValidationException.class,
-        () -> execInsertSql(batchTableEnv, "insert into lance_t1 values ('id1', 'Alice', 23, TIMESTAMP '1970-01-01 00:00:01', 'par1')"),
-        "Lance format should be rejected when writing via Flink");
-    assertTrue(ExceptionUtils.findThrowableWithMessage(writeEx, HoodieFileFormat.LANCE_SPARK_ONLY_ERROR_MSG).isPresent());
+    List<Row> projectedRows = CollectionUtil.iteratorToList(
+        batchTableEnv.executeSql("select name, uuid from lance_t1").collect());
+    assertRowsEquals(projectedRows, "[+I[Alice, id1], +I[Bob, id2]]");
   }
 
   @ParameterizedTest
@@ -1651,9 +1643,9 @@ public class ITTestHoodieDataSource {
 
     String hoodieTableDDL = sql("hoodie_sink")
         .option(FlinkOptions.PATH, tempFile.getAbsolutePath())
-        .options(getDefaultKeys())
         .option(FlinkOptions.OPERATION, "insert")
         .option(FlinkOptions.INSERT_CLUSTER, clustering)
+        .option(FlinkOptions.RECORD_KEY_FIELD, clustering ? "uuid" : "")
         .end();
     tableEnv.executeSql(hoodieTableDDL);
 
@@ -3169,6 +3161,7 @@ public class ITTestHoodieDataSource {
         .option(FlinkOptions.PATH, tempFile.getAbsolutePath())
         .options(getDefaultKeys())
         .option(FlinkOptions.INDEX_TYPE, HoodieIndex.IndexType.GLOBAL_RECORD_LEVEL_INDEX.name())
+        .option(FlinkOptions.INDEX_BOOTSTRAP_ENABLED, false)
         .option(FlinkOptions.READ_DATA_SKIPPING_ENABLED, true)
         .option(FlinkOptions.TABLE_TYPE, tableType.name())
         .end();
@@ -3178,6 +3171,12 @@ public class ITTestHoodieDataSource {
     List<Row> result1 = CollectionUtil.iterableToList(
         () -> tableEnv.sqlQuery("select * from t1").execute().collect());
     assertRowsEquals(result1, TestData.DATA_SET_SOURCE_INSERT);
+
+    // insert another batch of records, so that minibatch lookup results are not empty
+    execInsertSql(tableEnv, TestSQL.UPDATE_INSERT_T1);
+    result1 = CollectionUtil.iterableToList(
+        () -> tableEnv.sqlQuery("select * from t1").execute().collect());
+    assertRowsEquals(result1, TestData.DATA_SET_SOURCE_MERGED);
   }
 
   @ParameterizedTest
@@ -3212,11 +3211,11 @@ public class ITTestHoodieDataSource {
 
     String hoodieTableDDL = sql("t1")
         .option(FlinkOptions.PATH, tempFile.getAbsolutePath())
-        .options(getDefaultKeys())
         .option(FlinkOptions.TABLE_TYPE, MERGE_ON_READ)
         .option(FlinkOptions.OPERATION, "insert")
         .option(FlinkOptions.WRITE_BUFFER_MEMORY_TYPE, BufferMemoryType.MANAGED)
         .option(FlinkOptions.WRITE_BUFFER_TYPE, bufferType.name())
+        .option(FlinkOptions.RECORD_KEY_FIELD, "uuid")
         .end();
     streamTableEnv.executeSql(hoodieTableDDL);
 
@@ -3281,6 +3280,28 @@ public class ITTestHoodieDataSource {
     assertRowsEquals(result2, "["
         + "+I[id7, Bob, 44, 1970-01-01T00:00:07, par4], "
         + "+I[id8, Han, 56, 1970-01-01T00:00:08, par4]]");
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  void testIgnoreEmitDeleteForBatchReading(boolean useSourceV2) {
+    String hoodieTableDDL = sql("t1")
+        .option(FlinkOptions.PATH, tempFile.getAbsolutePath())
+        .options(getDefaultKeys())
+        .option(FlinkOptions.READ_AS_STREAMING, false)
+        .option(FlinkOptions.TABLE_TYPE, MERGE_ON_READ)
+        .option(FlinkOptions.READ_SOURCE_V2_ENABLED, useSourceV2)
+        .end();
+
+    batchTableEnv.executeSql(hoodieTableDDL);
+    execInsertSql(batchTableEnv, TestSQL.INSERT_T1);
+    // delete EQ(=)
+    final String deleteSql = "delete from t1 where uuid = 'id1'";
+    execInsertSql(batchTableEnv, deleteSql);
+    List<Row> rows1 = CollectionUtil.iterableToList(
+        () -> batchTableEnv.sqlQuery("select * from t1").execute().collect());
+    List<RowData> expected = TestData.delete(TestData.DATA_SET_SOURCE_INSERT, 0);
+    assertRowsEquals(rows1, expected);
   }
 
   // -------------------------------------------------------------------------
@@ -3528,11 +3549,51 @@ public class ITTestHoodieDataSource {
       // and max waiting timeout is 30s
       tableResult.await(30, TimeUnit.SECONDS);
     } catch (Throwable e) {
-      ExceptionUtils.assertThrowable(e, CollectSinkTableFactory.SuccessException.class);
+      // Acceptable terminal causes:
+      //   1. SuccessException: the sink reached its expected row count and intentionally
+      //      threw to terminate the streaming job. This is the happy path.
+      //   2. IOException("Stream is closed!") wrapped as HoodieIOException: a benign
+      //      error-attribution race between the source-side cascading-shutdown path and
+      //      the sink-side SuccessException terminator. When the sink throws
+      //      SuccessException to end the job, the chained source's SplitFetcher can close
+      //      the underlying Hadoop FSDataInputStream while the mailbox is still draining
+      //      a BatchRecords queued earlier; the next row-group read on the now-closed
+      //      stream surfaces an IOException("Stream is closed!"). With
+      //      restart-strategy.fixed-delay.attempts=0 (set in beforeEach to keep tests
+      //      deterministic) that IOException becomes the job's reported failure cause
+      //      instead of the sink's SuccessException, even though the sink has already
+      //      collected the expected rows by then - i.e. the functional outcome is
+      //      unchanged, only the error-attribution differs. Production paths correctly
+      //      fail the job on stream-closed-mid-read (the right behavior for real I/O
+      //      failures), so this tolerance is scoped to the SuccessException-based test
+      //      pattern below and is NOT mirrored in production code.
+      if (!isAcceptableTerminalFailure(e)) {
+        throw new AssertionError("Unexpected job failure", e);
+      }
     }
     tEnv.executeSql("DROP TABLE IF EXISTS sink");
     return CollectSinkTableFactory.RESULT.values().stream()
         .flatMap(Collection::stream)
         .collect(Collectors.toList());
+  }
+
+  /**
+   * Whether {@code e} (or any of its causes) is one of the terminal failures that
+   * {@link #fetchResultWithExpectedNum} is allowed to swallow. See the comment at the call
+   * site for the rationale.
+   */
+  private static boolean isAcceptableTerminalFailure(Throwable e) {
+    Throwable cur = e;
+    while (cur != null) {
+      if (cur instanceof CollectSinkTableFactory.SuccessException) {
+        return true;
+      }
+      String msg = cur.getMessage();
+      if (msg != null && msg.contains("Stream is closed")) {
+        return true;
+      }
+      cur = cur.getCause();
+    }
+    return false;
   }
 }

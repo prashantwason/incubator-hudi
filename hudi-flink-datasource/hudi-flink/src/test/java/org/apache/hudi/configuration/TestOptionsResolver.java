@@ -19,7 +19,9 @@
 package org.apache.hudi.configuration;
 
 import org.apache.hudi.common.model.HoodieFailedWritesCleaningPolicy;
+import org.apache.hudi.common.model.HoodieTableType;
 import org.apache.hudi.common.model.WriteConcurrencyMode;
+import org.apache.hudi.common.model.WriteOperationType;
 import org.apache.hudi.config.HoodieCleanConfig;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.index.HoodieIndex;
@@ -30,8 +32,10 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -50,6 +54,49 @@ public class TestOptionsResolver {
     // set lowercase index
     conf.set(FlinkOptions.INDEX_TYPE, "bloom");
     assertEquals(HoodieIndex.IndexType.BLOOM, OptionsResolver.getIndexType(conf));
+  }
+
+  @Test
+  void testRecordLevelIndexStreamingWrite() {
+    Configuration conf = getConf();
+    conf.set(FlinkOptions.METADATA_ENABLED, true);
+    conf.set(FlinkOptions.INDEX_TYPE, HoodieIndex.IndexType.RECORD_LEVEL_INDEX.name());
+
+    assertTrue(OptionsResolver.isRecordLevelIndex(conf));
+    assertTrue(OptionsResolver.isStreamingIndexWriteEnabled(conf));
+
+    conf.set(FlinkOptions.OPERATION, WriteOperationType.INSERT_OVERWRITE.value());
+    assertFalse(OptionsResolver.isStreamingIndexWriteEnabled(conf));
+
+    conf.set(FlinkOptions.OPERATION, WriteOperationType.UPSERT.value());
+    conf.set(FlinkOptions.INDEX_TYPE, HoodieIndex.IndexType.BUCKET.name());
+    assertFalse(OptionsResolver.isRecordLevelIndex(conf));
+    assertFalse(OptionsResolver.isStreamingIndexWriteEnabled(conf));
+  }
+
+  @Test
+  void testGetRecordKeys() {
+    Configuration conf = new Configuration();
+    assertNull(OptionsResolver.getRecordKeyStr(conf));
+    assertArrayEquals(new String[]{}, OptionsResolver.getRecordKeys(conf));
+
+    conf.set(FlinkOptions.RECORD_KEY_FIELD, "");
+    assertArrayEquals(new String[]{}, OptionsResolver.getRecordKeys(conf));
+
+    conf.set(FlinkOptions.RECORD_KEY_FIELD, "uuid, name");
+    assertArrayEquals(new String[]{"uuid", " name"}, OptionsResolver.getRecordKeys(conf));
+  }
+
+  @Test
+  void testGetBucketIndexKeys() {
+    Configuration conf = new Configuration();
+    assertArrayEquals(new String[]{}, OptionsResolver.getBucketIndexKeys(conf));
+
+    conf.set(FlinkOptions.INDEX_KEY_FIELD, "");
+    assertArrayEquals(new String[]{}, OptionsResolver.getBucketIndexKeys(conf));
+
+    conf.set(FlinkOptions.INDEX_KEY_FIELD, "uuid, name");
+    assertArrayEquals(new String[]{"uuid", " name"}, OptionsResolver.getBucketIndexKeys(conf));
   }
 
   @Test
@@ -76,5 +123,72 @@ public class TestOptionsResolver {
     conf.setString(HoodieWriteConfig.WRITE_CONCURRENCY_MODE.key(), WriteConcurrencyMode.OPTIMISTIC_CONCURRENCY_CONTROL.name());
     conf.set(FlinkOptions.PATH, tempFile.getAbsolutePath());
     return conf;
+  }
+
+  @Test
+  void testAreTableServicesEnabled() {
+    Configuration conf = new Configuration();
+    // default value should be true
+    assertTrue(OptionsResolver.areTableServicesEnabled(conf));
+
+    // explicitly set to true
+    conf.set(FlinkOptions.TABLE_SERVICES_ENABLED, true);
+    assertTrue(OptionsResolver.areTableServicesEnabled(conf));
+
+    // explicitly set to false
+    conf.set(FlinkOptions.TABLE_SERVICES_ENABLED, false);
+    assertFalse(OptionsResolver.areTableServicesEnabled(conf));
+  }
+
+  @Test
+  void testTableServicesGateCompactionAndCleaning() {
+    Configuration conf = getConf();
+    conf.set(FlinkOptions.TABLE_TYPE, HoodieTableType.MERGE_ON_READ.name());
+    conf.setString(HoodieCleanConfig.FAILED_WRITES_CLEANER_POLICY.key(), HoodieFailedWritesCleaningPolicy.LAZY.name());
+
+    assertTrue(OptionsResolver.needsAsyncCompaction(conf));
+    assertTrue(OptionsResolver.needsScheduleCompaction(conf));
+    assertTrue(OptionsResolver.needsAsyncCleaning(conf));
+    assertTrue(OptionsResolver.isLazyFailedWritesCleanPolicy(conf));
+    assertTrue(OptionsResolver.isLazyFailedWritesCleaning(conf));
+
+    conf.set(FlinkOptions.TABLE_SERVICES_ENABLED, false);
+
+    assertFalse(OptionsResolver.needsAsyncCompaction(conf));
+    assertFalse(OptionsResolver.needsScheduleCompaction(conf));
+    assertFalse(OptionsResolver.needsAsyncCleaning(conf));
+    assertTrue(OptionsResolver.isLazyFailedWritesCleanPolicy(conf));
+    assertFalse(OptionsResolver.isLazyFailedWritesCleaning(conf));
+  }
+
+  @Test
+  void testTableServicesGateMetadataCompaction() {
+    Configuration conf = getConf();
+    conf.set(FlinkOptions.METADATA_ENABLED, true);
+    conf.set(FlinkOptions.INDEX_TYPE, HoodieIndex.IndexType.RECORD_LEVEL_INDEX.name());
+
+    assertTrue(OptionsResolver.needsAsyncMetadataCompaction(conf));
+    assertTrue(OptionsResolver.needsScheduleMdtCompaction(conf));
+
+    conf.set(FlinkOptions.TABLE_SERVICES_ENABLED, false);
+
+    assertFalse(OptionsResolver.needsAsyncMetadataCompaction(conf));
+    assertFalse(OptionsResolver.needsScheduleMdtCompaction(conf));
+  }
+
+  @Test
+  void testTableServicesGateClustering() {
+    Configuration conf = getConf();
+    conf.set(FlinkOptions.OPERATION, WriteOperationType.INSERT.value());
+    conf.set(FlinkOptions.CLUSTERING_ASYNC_ENABLED, true);
+    conf.set(FlinkOptions.CLUSTERING_SCHEDULE_ENABLED, true);
+
+    assertTrue(OptionsResolver.needsAsyncClustering(conf));
+    assertTrue(OptionsResolver.needsScheduleClustering(conf));
+
+    conf.set(FlinkOptions.TABLE_SERVICES_ENABLED, false);
+
+    assertFalse(OptionsResolver.needsAsyncClustering(conf));
+    assertFalse(OptionsResolver.needsScheduleClustering(conf));
   }
 }

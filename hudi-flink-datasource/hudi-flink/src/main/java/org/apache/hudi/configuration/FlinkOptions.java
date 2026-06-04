@@ -188,6 +188,12 @@ public class FlinkOptions extends HoodieConfig {
       .defaultValue(false) // keep sync with hoodie style
       .withDescription("If enabled, the checkpoint Id will also be written to hudi metadata.");
 
+  public static final ConfigOption<Boolean> TABLE_SERVICES_ENABLED = ConfigOptions
+      .key(HoodieWriteConfig.TABLE_SERVICES_ENABLED.key())
+      .booleanType()
+      .defaultValue(HoodieWriteConfig.TABLE_SERVICES_ENABLED.defaultValue())
+      .withDescription("Master control to disable all table services including archive, clean, compact, cluster, etc.");
+
   // ------------------------------------------------------------------------
   //  Changelog Capture Options
   // ------------------------------------------------------------------------
@@ -307,6 +313,15 @@ public class FlinkOptions extends HoodieConfig {
       .withDescription("Maximum memory allocated for the record level index cache per bucket-assign task.\n"
           + "The memory size of each individual cache within a checkpoint interval is dynamically calculated based on the \n"
           + "average memory size of caches for historical checkpoints.");
+
+  @AdvancedConfig
+  public static final ConfigOption<Integer> INDEX_RLI_CACHE_CONCURRENT_PARTITIONS_NUM = ConfigOptions
+      .key("index.rli.cache.concurrent.partitions.num")
+      .intType()
+      .defaultValue(2)
+      .withDescription("Expected number of partitions whose partitioned RLI caches are updated concurrently. "
+          + "Used to infer the initial memory size for each partition cache as INDEX_RLI_CACHE_SIZE / concurrency "
+          + "when historical cache usage is unavailable.");
 
   @AdvancedConfig
   public static final ConfigOption<Integer> INDEX_RLI_LOOKUP_MINIBATCH_SIZE = ConfigOptions

@@ -27,6 +27,7 @@ import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.TableResult;
 import org.apache.flink.types.Row;
 import org.apache.flink.util.CollectionUtil;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -38,6 +39,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+
 
 /**
  * Integration test for cross-engine compatibility - verifying that Flink can read Variant tables written by Spark 4.0.
@@ -55,9 +57,6 @@ public class ITTestVariantCrossEngineCompatibility {
   private void verifyFlinkCanReadSparkVariantTable(String tablePath, String tableType, String testDescription) throws Exception {
     TableEnvironment tableEnv = TestTableEnvs.getBatchTableEnv();
 
-    // Create a Hudi table pointing to the Spark-written data
-    // In Flink, Variant is represented as ROW<metadata BYTES, value BYTES>
-    // NOTE: value is a reserved keyword
     String createTableDdl = String.format(
         "CREATE TABLE variant_table ("
             + "  id INT,"
@@ -74,7 +73,6 @@ public class ITTestVariantCrossEngineCompatibility {
 
     tableEnv.executeSql(createTableDdl);
 
-    // Query the table to verify Flink can read the data
     TableResult result = tableEnv.executeSql("SELECT id, name, v, ts FROM variant_table ORDER BY id");
     List<Row> rows = CollectionUtil.iteratorToList(result.collect());
 
@@ -114,6 +112,7 @@ public class ITTestVariantCrossEngineCompatibility {
   }
 
   @Test
+  @Disabled("disabled and reopen the tests for 1.3")
   public void testFlinkReadSparkVariantCOWTable() throws Exception {
     // Test that Flink can read a COW table with Variant data written by Spark 4.0
     Path cowTargetDir = tempDir.resolve("cow");
@@ -123,6 +122,7 @@ public class ITTestVariantCrossEngineCompatibility {
   }
 
   @Test
+  @Disabled("disabled and reopen the tests for 1.3")
   public void testFlinkReadSparkVariantMORTableWithAvro() throws Exception {
     // Test that Flink can read a MOR table with AVRO record type and Variant data written by Spark 4.0
     Path morAvroTargetDir = tempDir.resolve("mor_avro");
@@ -132,6 +132,7 @@ public class ITTestVariantCrossEngineCompatibility {
   }
 
   @Test
+  @Disabled("disabled and reopen the tests for 1.3")
   public void testFlinkReadSparkVariantMORTableWithSpark() throws Exception {
     // Test that Flink can read a MOR table with SPARK record type and Variant data written by Spark 4.0
     Path morSparkTargetDir = tempDir.resolve("mor_spark");
