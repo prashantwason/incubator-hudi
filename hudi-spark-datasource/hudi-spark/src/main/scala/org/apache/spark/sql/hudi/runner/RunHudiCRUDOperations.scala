@@ -17,6 +17,7 @@
 
 package org.apache.spark.sql.hudi.runner
 
+import org.apache.hudi.{DataSourceReadOptions, DataSourceWriteOptions}
 import org.apache.hudi.common.config.HoodieMetadataConfig
 import org.apache.hudi.common.table.HoodieTableMetaClient
 import org.apache.hudi.exception.TableNotFoundException
@@ -25,6 +26,8 @@ import org.apache.hudi.hadoop.fs.HadoopFSUtils
 import org.apache.hadoop.fs.Path
 import org.apache.spark.sql.SaveMode
 import org.slf4j.LoggerFactory
+
+import scala.collection.mutable.ListBuffer
 
 class RunHudiCRUDOperations extends RunOperationsBase {
   private val log = LoggerFactory.getLogger(getClass)
@@ -88,77 +91,315 @@ class RunHudiCRUDOperations extends RunOperationsBase {
     log.info("INSERT INTO SQL test executed successfully")
   }
 
+  /**
+   * Matrix coverage for SQL UPDATE across:
+   *   hoodie.spark.sql.optimized.writes.enable in {true, false}
+   *   table type in {cow, mor}
+   *   column style in {partial, all}  (partial = update one non-PK col, all = update every non-PK col)
+   *
+   * Per-cell failures are accumulated and reported as a single AssertionError so the run log
+   * shows the complete pass/fail grid even when an early cell breaks.
+   */
   def testHudiUpdateSqlCommand(): Unit = {
     val database = "rawdatatmp"
-    val tableName = "hudi_trips_cow_test_update_sql"
-    val basePath = getBasePath(tableName)
-    cleanup(tableName, basePath)
-
-    spark.sql(
-      s"""
-         |CREATE TABLE $database.$tableName (
-         |  id INT,
-         |  name STRING,
-         |  price DOUBLE,
-         |  ts BIGINT
-         |) USING hudi
-         |TBLPROPERTIES (
-         |  type = 'cow',
-         |  primaryKey = 'id',
-         |  preCombineField = 'ts'
-         |)
-         |LOCATION '$basePath'
-         |""".stripMargin)
-    spark.sql(
-      s"""INSERT INTO $database.$tableName VALUES
-         |(1, 'rider1', 10.0, 1000),
-         |(2, 'rider2', 20.0, 2000)""".stripMargin)
-
-    spark.sql(s"UPDATE $database.$tableName SET price = 99.0, ts = 5000 WHERE id = 1")
-
-    val updated = spark.sql(s"SELECT price FROM $database.$tableName WHERE id = 1").collect()
-    assert(updated.length == 1, s"Expected exactly 1 row for id=1 but got ${updated.length}")
-    val updatedPrice = updated(0).getDouble(0)
-    assert(updatedPrice == 99.0, s"Expected price 99.0 after UPDATE but got $updatedPrice")
-    runSqlQueryWithAsserts(database, tableName, fullScan = true, expectedVal = 2)
-    log.info("UPDATE SQL test executed successfully")
+    val results = ListBuffer[(String, Option[Throwable])]()
+    for {
+      optimized <- Seq(true, false)
+      tableType <- Seq("cow", "mor")
+      style <- Seq("partial", "all")
+    } {
+      val cellLabel = s"flag=$optimized type=$tableType style=$style"
+      val tableName = s"hudi_dml_update_${tableType}_opt_${optimized}_$style"
+      results += runOptimizedWritesCell("UPDATE", cellLabel, optimized, database, tableName, () => {
+        val basePath = getBasePath(tableName)
+        setupOptimizedWritesTestTable(database, tableName, basePath, tableType)
+        val updateSql = if (style == "partial") {
+          s"UPDATE $database.$tableName SET fare = 999.99 WHERE id = 3"
+        } else {
+          s"UPDATE $database.$tableName SET name = 'r3_new', fare = 999.99, ts = ts + 1 WHERE id = 3"
+        }
+        log.info(s"[UPDATE] cell $cellLabel: executing $updateSql")
+        spark.sql(updateSql)
+        val expectedSnapshotRow = if (style == "partial") {
+          (3, "r3", 999.99, 1002L, "2025-01-02")
+        } else {
+          (3, "r3_new", 999.99, 1003L, "2025-01-02")
+        }
+        val expectedROBaselineRow = (3, "r3", 30.0, 1002L, "2025-01-02")
+        assertViaSnapshotAndRO(
+          database, tableName, basePath, tableType,
+          expectedSnapshotCount = 5,
+          expectedROCount = 5,
+          snapshotMutationCheck = (view: String) => {
+            assertRow(view, id = 3, expected = expectedSnapshotRow, label = "snapshot")
+          },
+          roMutationCheck = (view: String) => {
+            assertRow(view, id = 3, expected = expectedROBaselineRow,
+              label = "RO baseline (no compaction)")
+          })
+      })
+    }
+    failIfAnyCellsFailed("UPDATE", results.toSeq)
   }
 
+  /**
+   * Matrix coverage for SQL DELETE across:
+   *   hoodie.spark.sql.optimized.writes.enable in {true, false}
+   *   table type in {cow, mor}
+   *
+   * No column-style dimension because DELETE has no SET clause.
+   */
   def testHudiDeleteSqlCommand(): Unit = {
     val database = "rawdatatmp"
-    val tableName = "hudi_trips_cow_test_delete_sql"
-    val basePath = getBasePath(tableName)
-    cleanup(tableName, basePath)
+    val results = ListBuffer[(String, Option[Throwable])]()
+    for {
+      optimized <- Seq(true, false)
+      tableType <- Seq("cow", "mor")
+    } {
+      val cellLabel = s"flag=$optimized type=$tableType"
+      val tableName = s"hudi_dml_delete_${tableType}_opt_$optimized"
+      results += runOptimizedWritesCell("DELETE", cellLabel, optimized, database, tableName, () => {
+        val basePath = getBasePath(tableName)
+        setupOptimizedWritesTestTable(database, tableName, basePath, tableType)
+        val deleteSql = s"DELETE FROM $database.$tableName WHERE id = 3"
+        log.info(s"[DELETE] cell $cellLabel: executing $deleteSql")
+        spark.sql(deleteSql)
+        assertViaSnapshotAndRO(
+          database, tableName, basePath, tableType,
+          expectedSnapshotCount = 4,
+          expectedROCount = 5,
+          snapshotMutationCheck = (view: String) => {
+            val cnt = spark.sql(s"SELECT count(*) FROM $view WHERE id = 3")
+              .collectAsList().get(0).getLong(0)
+            assert(cnt == 0, s"snapshot: expected id=3 deleted, but found $cnt rows")
+          },
+          roMutationCheck = (view: String) => {
+            // RO sees only base files; the delete is in a log file and not yet compacted,
+            // so the row should still be visible on the RO path.
+            val cnt = spark.sql(s"SELECT count(*) FROM $view WHERE id = 3")
+              .collectAsList().get(0).getLong(0)
+            assert(cnt == 1, s"RO: expected baseline id=3 still visible (no compaction), but found $cnt rows")
+          })
+      })
+    }
+    failIfAnyCellsFailed("DELETE", results.toSeq)
+  }
 
+  /**
+   * Matrix coverage for SQL MERGE INTO across:
+   *   hoodie.spark.sql.optimized.writes.enable in {true, false}
+   *   table type in {cow, mor}
+   *   column style in {partial, all}  (partial = UPDATE SET fare = s.fare, all = UPDATE SET *)
+   *
+   * Source CTE has one matched row (id=3 -> fare=777.0) and one unmatched row (id=99).
+   * RO assertion intentionally does not check the inserted row's visibility because MOR-insert
+   * routing (base file vs. log file) is not a stable contract.
+   */
+  def testHudiMergeIntoSqlCommand(): Unit = {
+    val database = "rawdatatmp"
+    val results = ListBuffer[(String, Option[Throwable])]()
+    for {
+      optimized <- Seq(true, false)
+      tableType <- Seq("cow", "mor")
+      style <- Seq("partial", "all")
+    } {
+      val cellLabel = s"flag=$optimized type=$tableType style=$style"
+      val tableName = s"hudi_dml_merge_${tableType}_opt_${optimized}_$style"
+      results += runOptimizedWritesCell("MERGE", cellLabel, optimized, database, tableName, () => {
+        val basePath = getBasePath(tableName)
+        setupOptimizedWritesTestTable(database, tableName, basePath, tableType)
+        val updateClause = if (style == "partial") {
+          // Hudi MERGE INTO requires the precombine field (`ts`) to appear in the SET clause
+          // for partial updates; otherwise: MergeIntoFieldResolutionException for `ts`.
+          "UPDATE SET fare = s.fare, ts = s.ts"
+        } else {
+          "UPDATE SET *"
+        }
+        val insertClause = if (style == "partial") {
+          "INSERT (id, name, fare, ts, partitionpath) VALUES (s.id, s.name, s.fare, s.ts, s.partitionpath)"
+        } else {
+          "INSERT *"
+        }
+        val mergeSql =
+          s"""
+             | MERGE INTO $database.$tableName t
+             | USING (
+             |   SELECT 3 AS id, 'r3_merged' AS name, 777.0 AS fare, 2000L AS ts, '2025-01-02' AS partitionpath
+             |   UNION ALL
+             |   SELECT 99 AS id, 'r99' AS name, 88.0 AS fare, 2001L AS ts, '2025-01-03' AS partitionpath
+             | ) s
+             | ON t.id = s.id
+             | WHEN MATCHED THEN $updateClause
+             | WHEN NOT MATCHED THEN $insertClause
+             |""".stripMargin
+        log.info(s"[MERGE] cell $cellLabel: executing $mergeSql")
+        spark.sql(mergeSql)
+        val expectedSnapshotIdThreeRow = if (style == "partial") {
+          // partial: only fare and ts are taken from source; name stays as baseline.
+          (3, "r3", 777.0, 2000L, "2025-01-02")
+        } else {
+          // all (UPDATE SET *): entire row is replaced by source.
+          (3, "r3_merged", 777.0, 2000L, "2025-01-02")
+        }
+        val expectedSnapshotIdNinetyNineRow = (99, "r99", 88.0, 2001L, "2025-01-03")
+        val expectedROBaselineIdThreeRow = (3, "r3", 30.0, 1002L, "2025-01-02")
+        assertViaSnapshotAndRO(
+          database, tableName, basePath, tableType,
+          expectedSnapshotCount = 6,
+          expectedROCount = -1, // RO row count is not asserted for MERGE - see roMutationCheck.
+          snapshotMutationCheck = (view: String) => {
+            assertRow(view, id = 3, expected = expectedSnapshotIdThreeRow, label = "snapshot")
+            assertRow(view, id = 99, expected = expectedSnapshotIdNinetyNineRow,
+              label = "snapshot (inserted row)")
+          },
+          roMutationCheck = (view: String) => {
+            // Assert only the matched UPDATE has not landed in base files yet.
+            // The inserted id=99 row's RO visibility depends on small-file packing and is not asserted.
+            assertRow(view, id = 3, expected = expectedROBaselineIdThreeRow,
+              label = "RO baseline (no compaction)")
+          })
+      })
+    }
+    failIfAnyCellsFailed("MERGE", results.toSeq)
+  }
+
+  private def setupOptimizedWritesTestTable(database: String, tableName: String,
+                                            basePath: String, tableType: String): Unit = {
+    cleanup(tableName, basePath)
     spark.sql(
       s"""
          |CREATE TABLE $database.$tableName (
          |  id INT,
          |  name STRING,
-         |  price DOUBLE,
-         |  ts BIGINT
+         |  fare DOUBLE,
+         |  ts BIGINT,
+         |  partitionpath STRING
          |) USING hudi
+         |PARTITIONED BY (partitionpath)
          |TBLPROPERTIES (
-         |  type = 'cow',
+         |  type = '$tableType',
          |  primaryKey = 'id',
          |  preCombineField = 'ts'
          |)
          |LOCATION '$basePath'
          |""".stripMargin)
     spark.sql(
-      s"""INSERT INTO $database.$tableName VALUES
-         |(1, 'rider1', 10.0, 1000),
-         |(2, 'rider2', 20.0, 2000),
-         |(3, 'rider3', 30.0, 3000)""".stripMargin)
-
-    spark.sql(s"DELETE FROM $database.$tableName WHERE id = 2")
-
-    val survivors = spark.sql(s"SELECT id FROM $database.$tableName ORDER BY id")
-      .collect().map(_.getInt(0)).toSeq
-    assert(survivors == Seq(1, 3), s"Expected ids Seq(1, 3) after DELETE but got $survivors")
-    runSqlQueryWithAsserts(database, tableName, fullScan = true, expectedVal = 2)
-    log.info("DELETE SQL test executed successfully")
+      s"""
+         |INSERT INTO $database.$tableName VALUES
+         |  (1, 'r1', 10.0, 1000, '2025-01-01'),
+         |  (2, 'r2', 20.0, 1001, '2025-01-01'),
+         |  (3, 'r3', 30.0, 1002, '2025-01-02'),
+         |  (4, 'r4', 40.0, 1002, '2025-01-02'),
+         |  (5, 'r5', 50.0, 1003, '2025-01-02')
+         |""".stripMargin)
   }
+
+  private def runOptimizedWritesCell(opLabel: String, cellLabel: String, optimized: Boolean,
+                                     database: String, tableName: String,
+                                     body: () => Unit): (String, Option[Throwable]) = {
+    val flagKey = DataSourceWriteOptions.SPARK_SQL_OPTIMIZED_WRITES.key()
+    spark.conf.set(flagKey, optimized.toString)
+    val basePath = getBasePath(tableName)
+    try {
+      body()
+      log.info(s"[$opLabel] cell $cellLabel -> PASS")
+      (cellLabel, None)
+    } catch {
+      case t: Throwable =>
+        log.error(s"[$opLabel] cell $cellLabel -> FAIL (${truncate(t.toString, 240)})", t)
+        (cellLabel, Some(t))
+    } finally {
+      try cleanup(tableName, basePath) catch {
+        case t: Throwable => log.warn(s"[$opLabel] cleanup failed for $tableName: ${t.getMessage}")
+      }
+      spark.conf.unset(flagKey)
+    }
+  }
+
+  private def assertViaSnapshotAndRO(database: String, tableName: String, basePath: String,
+                                     tableType: String, expectedSnapshotCount: Long,
+                                     expectedROCount: Long,
+                                     snapshotMutationCheck: String => Unit,
+                                     roMutationCheck: String => Unit): Unit = {
+    // For COW, the HMS-registered Hudi table reads correctly via SQL.
+    // For MOR, on this stack the HoodieSparkPlugin injects
+    //   spark.hoodie.datasource.read.file.index.list.file.statuses.using.ro.path.filter=true
+    // session-wide, which causes every read (including the _rt Hive view and even the DF
+    // reader with QUERY_TYPE=snapshot) to list only base files. We override that flag per-read
+    // here so the snapshot DF actually merges log files.
+    val snapshotDf = if (tableType == "mor") {
+      spark.read.format("hudi")
+        .option(DataSourceReadOptions.QUERY_TYPE.key, DataSourceReadOptions.QUERY_TYPE_SNAPSHOT_OPT_VAL)
+        .option(DataSourceReadOptions.FILE_INDEX_LIST_FILE_STATUSES_USING_RO_PATH_FILTER.key, "false")
+        .load(basePath)
+    } else {
+      spark.sql(s"SELECT * FROM $database.$tableName")
+    }
+    val snapshotView = s"${tableName}_snapshot_view"
+    snapshotDf.createOrReplaceTempView(snapshotView)
+    spark.sql(s"SELECT * FROM $snapshotView").show(20, false)
+    val snapshotCount = spark.sql(s"SELECT count(*) FROM $snapshotView")
+      .collectAsList().get(0).getLong(0)
+    assert(snapshotCount == expectedSnapshotCount,
+      s"snapshot: expected $expectedSnapshotCount rows, got $snapshotCount")
+    snapshotMutationCheck(snapshotView)
+
+    if (tableType == "mor") {
+      val roDf = spark.read.format("hudi")
+        .option(DataSourceReadOptions.QUERY_TYPE.key, DataSourceReadOptions.QUERY_TYPE_READ_OPTIMIZED_OPT_VAL)
+        .load(basePath)
+      val roView = s"${tableName}_ro_view"
+      roDf.createOrReplaceTempView(roView)
+      roDf.show(20, false)
+      if (expectedROCount >= 0) {
+        val roCount = roDf.count()
+        assert(roCount == expectedROCount,
+          s"RO: expected $expectedROCount rows, got $roCount")
+      }
+      roMutationCheck(roView)
+    }
+  }
+
+  private def failIfAnyCellsFailed(opLabel: String,
+                                   results: Seq[(String, Option[Throwable])]): Unit = {
+    val failures = results.collect { case (label, Some(t)) => (label, t) }
+    if (failures.nonEmpty) {
+      val summary = failures.map { case (label, t) =>
+        s"  - $label -> ${truncate(t.toString, 300)}"
+      }.mkString("\n")
+      // Use RuntimeException (not AssertionError) so HoodieSparkSqlWriterRunner's
+      // `case e: Exception` catch records this method as failed via reportStatusMetrics
+      // instead of letting the Error propagate and abort runAllTests.
+      val aggregate = new RuntimeException(
+        s"$opLabel: ${failures.size} of ${results.size} cells failed:\n$summary")
+      failures.foreach { case (_, t) => aggregate.addSuppressed(t) }
+      throw aggregate
+    }
+    log.info(s"$opLabel: all ${results.size} cells passed")
+  }
+
+  /**
+   * Assert that exactly one row exists for the given id and matches the expected
+   * (id, name, fare, ts, partitionpath) tuple. Used by the UPDATE/MERGE matrix tests so
+   * the partial vs all-column behaviour is actually validated end-to-end, not just `fare`.
+   */
+  private def assertRow(view: String, id: Int,
+                        expected: (Int, String, Double, Long, String),
+                        label: String): Unit = {
+    val rows = spark.sql(
+      s"SELECT id, name, fare, ts, partitionpath FROM $view WHERE id = $id")
+      .collectAsList()
+    assert(rows.size == 1,
+      s"$label: expected exactly 1 row for id=$id, got ${rows.size}")
+    val row = rows.get(0)
+    val actual = (row.getInt(0), row.getString(1), row.getDouble(2),
+      row.getLong(3), row.getString(4))
+    assert(actual == expected,
+      s"$label: expected row $expected for id=$id, got $actual")
+  }
+
+  private def truncate(s: String, max: Int): String =
+    if (s == null || s.length <= max) s else s.substring(0, max) + "..."
 
   def testInsertOverwriteWithSourceHudi(): Unit = {
     val database = "rawdatatmp"
