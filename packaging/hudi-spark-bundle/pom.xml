@@ -101,6 +101,17 @@
                   <!-- Bundle Jackson JSR310 library since it is not present in spark 2.x. For spark 3.x this will
                        bundle the same JSR310 version that is included in spark runtime -->
                   <include>com.fasterxml.jackson.datatype:jackson-datatype-jsr310</include>
+                  <!-- [UBER] Bundle the full Jackson stack alongside jsr310. The broad
+                       `com.fasterxml.jackson.` relocation below rewrites Hudi's databind
+                       references (and jsr310's) into org.apache.hudi.com.fasterxml.jackson.*,
+                       so the complete databind/core/annotations classes must be packaged
+                       under that relocated namespace. Without these, the relocated
+                       org.apache.hudi.com.fasterxml.jackson.databind package is incomplete
+                       (e.g. missing ToStringSerializerBase, added in Jackson 2.10), causing
+                       NoClassDefFoundError when JavaTimeModule is registered at runtime. -->
+                  <include>com.fasterxml.jackson.core:jackson-databind</include>
+                  <include>com.fasterxml.jackson.core:jackson-core</include>
+                  <include>com.fasterxml.jackson.core:jackson-annotations</include>
                   <include>com.lmax:disruptor</include>
                   <include>com.github.davidmoten:guava-mini</include>
                   <include>com.github.davidmoten:hilbert-curve</include>
