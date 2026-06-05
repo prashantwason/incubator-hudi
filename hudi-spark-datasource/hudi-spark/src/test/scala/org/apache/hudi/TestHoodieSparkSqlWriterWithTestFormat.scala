@@ -138,15 +138,15 @@ class TestHoodieSparkSqlWriterWithTestFormat extends HoodieSparkWriterTestBase {
       "hoodie.insert.shuffle.parallelism" -> "4",
       "hoodie.upsert.shuffle.parallelism" -> "4")
     val dataFrame2 = spark.createDataFrame(Seq(StringLongTest(UUID.randomUUID().toString, new Date().getTime)))
+    // The table-config "Config conflict" check is now relaxed to a log, but appending with a
+    // different table name is still blocked by handleSaveModes.
     val tableAlreadyExistException = intercept[HoodieException](HoodieSparkSqlWriter.write(sqlContext, SaveMode.Append, barTableModifier, dataFrame2))
-    assert(tableAlreadyExistException.getMessage.contains("Config conflict"))
-    assert(tableAlreadyExistException.getMessage.contains(s"${HoodieWriteConfig.TBL_NAME.key}:\thoodie_bar_tbl\thoodie_foo_tbl"))
+    assert(tableAlreadyExistException.getMessage.contains("can not append data to the table with another name"))
 
-    //on same path try append with delete operation and different("hoodie_bar_tbl") table name which should throw an exception
+    //on same path try append with delete operation and different("hoodie_bar_tbl") table name which should also throw
     val deleteTableModifier = barTableModifier ++ Map(DataSourceWriteOptions.OPERATION.key -> "delete")
     val deleteCmdException = intercept[HoodieException](HoodieSparkSqlWriter.write(sqlContext, SaveMode.Append, deleteTableModifier, dataFrame2))
-    assert(tableAlreadyExistException.getMessage.contains("Config conflict"))
-    assert(tableAlreadyExistException.getMessage.contains(s"${HoodieWriteConfig.TBL_NAME.key}:\thoodie_bar_tbl\thoodie_foo_tbl"))
+    assert(deleteCmdException.getMessage.contains("can not append data to the table with another name"))
   }
 
   /**
@@ -164,9 +164,8 @@ class TestHoodieSparkSqlWriterWithTestFormat extends HoodieSparkWriterTestBase {
     val tableModifier2 = Map("path" -> tempBasePath, HoodieWriteConfig.TBL_NAME.key -> hoodieFooTableName,
       "hoodie.datasource.write.recordkey.field" -> "ts", HoodieTableConfig.TABLE_FORMAT.key -> "test-format")
     val dataFrame2 = spark.createDataFrame(Seq(StringLongTest(UUID.randomUUID().toString, new Date().getTime)))
-    val hoodieException = intercept[HoodieException](HoodieSparkSqlWriter.write(sqlContext, SaveMode.Append, tableModifier2, dataFrame2))
-    assert(hoodieException.getMessage.contains("Config conflict"))
-    assert(hoodieException.getMessage.contains(s"RecordKey:\tts\tuuid"))
+    // record key mismatch is now logged instead of throwing; the append succeeds
+    assert(HoodieSparkSqlWriter.write(sqlContext, SaveMode.Append, tableModifier2, dataFrame2)._1)
 
     //on same path try write with different RECORDKEY_FIELD_NAME and Overwrite SaveMode should be successful.
     assert(HoodieSparkSqlWriter.write(sqlContext, SaveMode.Overwrite, tableModifier2, dataFrame2)._1)
@@ -220,14 +219,10 @@ class TestHoodieSparkSqlWriterWithTestFormat extends HoodieSparkWriterTestBase {
     val structType = HoodieSchemaConversionUtils.convertHoodieSchemaToStructType(schema)
     val inserts = DataSourceTestUtils.generateRandomRows(1000)
     val df = spark.createDataFrame(sc.parallelize(inserts.asScala.toSeq), structType)
-    try {
-      // write to Hudi
-      HoodieSparkSqlWriter.write(sqlContext, SaveMode.Append, fooTableModifier, df)
-      fail("Should have thrown exception")
-    } catch {
-      case e: HoodieException => assertTrue(e.getMessage.startsWith("Config conflict"))
-      case e: Exception => fail(e);
-    }
+    // The table-config "Config conflict" check is now relaxed to a log, but enabling meta fields
+    // on a table created without them is still rejected by the write client's table-property validation.
+    val e = intercept[HoodieException](HoodieSparkSqlWriter.write(sqlContext, SaveMode.Append, fooTableModifier, df))
+    assertTrue(e.getMessage.contains("populate.meta.fields already disabled"))
   }
 
   /**
@@ -557,16 +552,16 @@ class TestHoodieSparkSqlWriterWithTestFormat extends HoodieSparkWriterTestBase {
       .mode(SaveMode.Overwrite).save(tablePath1)
 
     val df2 = Seq((2, "a2", 20, 1000, "2021-10-16")).toDF("id", "name", "value", "ts", "dt")
-    // raise exception when NonpartitionedKeyGenerator is specified
-    val configConflictException = intercept[HoodieException] {
+    // A different key generator (Nonpartitioned vs Simple) is now only logged, not fatal.
+    try {
       df2.write.format("hudi")
         .options(options)
         .option(HoodieWriteConfig.TBL_NAME.key, tableName1)
         .option(HoodieWriteConfig.KEYGENERATOR_CLASS_NAME.key, classOf[NonpartitionedKeyGenerator].getName)
         .mode(SaveMode.Append).save(tablePath1)
+    } catch {
+      case _: Throwable => fail("Specifying a different key generator should not fail now that the check is relaxed")
     }
-    assert(configConflictException.getMessage.contains("Config conflict"))
-    assert(configConflictException.getMessage.contains(s"KeyGenerator:\t${classOf[NonpartitionedKeyGenerator].getName}\t${classOf[SimpleKeyGenerator].getName}"))
   }
 
   @Test

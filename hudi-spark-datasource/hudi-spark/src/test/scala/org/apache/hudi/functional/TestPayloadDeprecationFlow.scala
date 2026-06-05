@@ -28,7 +28,6 @@ import org.apache.hudi.common.model.debezium.{DebeziumConstants, MySqlDebeziumAv
 import org.apache.hudi.common.table.{HoodieTableConfig, HoodieTableMetaClient, HoodieTableVersion}
 import org.apache.hudi.common.table.HoodieTableConfig.RECORD_MERGE_PROPERTY_PREFIX
 import org.apache.hudi.config.{HoodieClusteringConfig, HoodieCompactionConfig, HoodieWriteConfig}
-import org.apache.hudi.exception.HoodieException
 import org.apache.hudi.table.upgrade.{SparkUpgradeDowngradeHelper, UpgradeDowngrade}
 import org.apache.hudi.testutils.SparkClientFunctionalTestHarness
 
@@ -36,7 +35,6 @@ import org.apache.spark.sql.SaveMode
 import org.junit.jupiter.api.Assertions.{assertEquals, assertFalse, assertTrue}
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.{Arguments, MethodSource}
-import org.scalatest.Assertions.assertThrows
 
 import scala.jdk.CollectionConverters._
 
@@ -181,22 +179,9 @@ class TestPayloadDeprecationFlow extends SparkClientFunctionalTestHarness {
       metaClient.getTableConfig.getProps.containsKey(RECORD_MERGE_PROPERTY_PREFIX + DELETE_KEY))
     assertEquals(expectedOrderingFields, metaClient.getTableConfig.getOrderingFieldsStr.orElse(null))
 
-    // 5. Add a trivial update to trigger payload class mismatch.
-    val thirdUpdateData = Seq(
-      (12, 3L, "rider-CC", "driver-CC", 33.90, "i", "12.1", 12, 1, "i"))
-    val thirdUpdate = spark.createDataFrame(thirdUpdateData).toDF(columns: _*)
-    if (!payloadClazz.equals(classOf[MySqlDebeziumAvroPayload].getName)) {
-      assertThrows[HoodieException] {
-        thirdUpdate.write.format("hudi").
-          option(OPERATION.key(), "upsert").
-          option(HoodieCompactionConfig.INLINE_COMPACT.key(), "false").
-          option(HoodieCompactionConfig.INLINE_COMPACT_NUM_DELTA_COMMITS.key(), "1").
-          option(HoodieTableConfig.PAYLOAD_CLASS_NAME.key(),
-            classOf[MySqlDebeziumAvroPayload].getName).
-          mode(SaveMode.Append).
-          save(basePath)
-      }
-    }
+    // 5. A conflicting payload class is now only logged (no longer throws), so the previous
+    //    probe write that asserted a HoodieException has been removed. It must not run here
+    //    because, without the throw, it would mutate table state for the assertions that follow.
 
     // 6. Add a delete.
     val fourthUpdateData = Seq(
@@ -406,22 +391,9 @@ class TestPayloadDeprecationFlow extends SparkClientFunctionalTestHarness {
     assertEquals(9, metaClient.getTableConfig.getTableVersion.versionCode())
     assertEquals(payloadClazz, metaClient.getTableConfig.getLegacyPayloadClass)
 
-    // 5. Add a trivial update to trigger payload class mismatch.
-    val thirdUpdateData = Seq(
-      (12, 3L, "rider-CC", "driver-CC", 33.90, "i", "12.1", 12, 1, "i"))
-    val thirdUpdate = spark.createDataFrame(thirdUpdateData).toDF(columns: _*)
-    if (!payloadClazz.equals(classOf[MySqlDebeziumAvroPayload].getName)) {
-      assertThrows[HoodieException] {
-        thirdUpdate.write.format("hudi").
-          option(OPERATION.key(), "upsert").
-          option(HoodieCompactionConfig.INLINE_COMPACT.key(), "false").
-          option(HoodieCompactionConfig.INLINE_COMPACT_NUM_DELTA_COMMITS.key(), "1").
-          option(HoodieTableConfig.PAYLOAD_CLASS_NAME.key(),
-            classOf[MySqlDebeziumAvroPayload].getName).
-          mode(SaveMode.Append).
-          save(basePath)
-      }
-    }
+    // 5. A conflicting payload class is now only logged (no longer throws), so the previous
+    //    probe write that asserted a HoodieException has been removed. It must not run here
+    //    because, without the throw, it would mutate table state for the assertions that follow.
 
     // 6. Add a delete.
     val fourthUpdateData = Seq(

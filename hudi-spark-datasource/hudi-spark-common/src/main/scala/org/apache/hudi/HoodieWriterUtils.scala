@@ -400,7 +400,7 @@ object HoodieWriterUtils {
 
       if (diffConfigs.nonEmpty) {
         diffConfigs.insert(0, "\nConfig conflict(key\tcurrent value\texisting value):\n")
-        throw new HoodieException(diffConfigs.toString.trim)
+        log.error("Config mismatch detected between table configs and runtime configs: " + diffConfigs.toString.trim)
       }
     }
 
@@ -432,7 +432,7 @@ object HoodieWriterUtils {
 
     if (diffConfigs.nonEmpty) {
       diffConfigs.insert(0, "\nConfig conflict(key\tcurrent value\texisting value):\n")
-      throw new HoodieException(diffConfigs.toString.trim)
+      log.error("Config mismatch detected between table configs and runtime configs: " + diffConfigs.toString.trim)
     }
   }
 

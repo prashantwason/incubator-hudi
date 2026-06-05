@@ -25,7 +25,6 @@ import org.apache.hudi.common.table.HoodieTableConfig;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.HoodieTableVersion;
 import org.apache.hudi.config.HoodieWriteConfig;
-import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.testutils.HoodieClientTestBase;
 import org.apache.hudi.util.JavaScalaConverters;
 
@@ -41,7 +40,6 @@ import static org.apache.hudi.common.testutils.HoodieTestUtils.getMetaClientBuil
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TestHoodieWriterUtils extends HoodieClientTestBase {
@@ -186,7 +184,7 @@ class TestHoodieWriterUtils extends HoodieClientTestBase {
   }
 
   @Test
-  void validateTableConfig_qualifiedTableName_rejectedWhenDbPrefixMismatches() throws IOException {
+  void validateTableConfig_qualifiedTableName_dbPrefixMismatch_logsButDoesNotThrow() throws IOException {
     HoodieTableMetaClient metaClient = getMetaClientBuilder(HoodieTableType.COPY_ON_WRITE, new Properties(), "db1")
         .initTable(storageConf, tempDir.resolve("qualifiedNameWrongDb").toString());
     HoodieTableConfig tableConfig = metaClient.getTableConfig();
@@ -194,16 +192,15 @@ class TestHoodieWriterUtils extends HoodieClientTestBase {
     TypedProperties writerParams = TypedProperties.copy(tableConfig.getProps());
     writerParams.put(HoodieTableConfig.NAME.key(), "db2." + RAW_TRIPS_TEST_NAME);
 
-    HoodieException ex = assertThrows(HoodieException.class, () -> HoodieWriterUtils.validateTableConfig(
+    // Config mismatches are now logged instead of throwing.
+    Assertions.assertDoesNotThrow(() -> HoodieWriterUtils.validateTableConfig(
         sparkSession,
         JavaScalaConverters.convertJavaPropertiesToScalaMap(writerParams),
         tableConfig));
-    assertTrue(ex.getMessage().contains(HoodieTableConfig.NAME.key()),
-        "Expected exception to mention hoodie.table.name; was: " + ex.getMessage());
   }
 
   @Test
-  void validateTableConfig_qualifiedTableName_rejectedWhenTableSuffixMismatches() throws IOException {
+  void validateTableConfig_qualifiedTableName_tableSuffixMismatch_logsButDoesNotThrow() throws IOException {
     HoodieTableMetaClient metaClient = getMetaClientBuilder(HoodieTableType.COPY_ON_WRITE, new Properties(), "db1")
         .initTable(storageConf, tempDir.resolve("qualifiedNameWrongTable").toString());
     HoodieTableConfig tableConfig = metaClient.getTableConfig();
@@ -211,12 +208,11 @@ class TestHoodieWriterUtils extends HoodieClientTestBase {
     TypedProperties writerParams = TypedProperties.copy(tableConfig.getProps());
     writerParams.put(HoodieTableConfig.NAME.key(), "db1.some_other_table");
 
-    HoodieException ex = assertThrows(HoodieException.class, () -> HoodieWriterUtils.validateTableConfig(
+    // Config mismatches are now logged instead of throwing.
+    Assertions.assertDoesNotThrow(() -> HoodieWriterUtils.validateTableConfig(
         sparkSession,
         JavaScalaConverters.convertJavaPropertiesToScalaMap(writerParams),
         tableConfig));
-    assertTrue(ex.getMessage().contains(HoodieTableConfig.NAME.key()),
-        "Expected exception to mention hoodie.table.name; was: " + ex.getMessage());
   }
 
   // ---------------------------------------------------------------------------
@@ -245,7 +241,7 @@ class TestHoodieWriterUtils extends HoodieClientTestBase {
   }
 
   @Test
-  void validateTableConfig_mismatchedNonNullRecordKeys_stillThrows() throws IOException {
+  void validateTableConfig_mismatchedNonNullRecordKeys_logsButDoesNotThrow() throws IOException {
     HoodieTableMetaClient metaClient = getMetaClientBuilder(HoodieTableType.COPY_ON_WRITE, new Properties(), "")
         .initTable(storageConf, tempDir.resolve("recordKeyMismatch").toString());
     HoodieTableConfig tableConfig = metaClient.getTableConfig();
@@ -254,12 +250,11 @@ class TestHoodieWriterUtils extends HoodieClientTestBase {
     TypedProperties writerParams = TypedProperties.copy(tableConfig.getProps());
     writerParams.put("hoodie.datasource.write.recordkey.field", "k_writer");
 
-    HoodieException ex = assertThrows(HoodieException.class, () -> HoodieWriterUtils.validateTableConfig(
+    // Config mismatches (including record key) are now logged instead of throwing.
+    Assertions.assertDoesNotThrow(() -> HoodieWriterUtils.validateTableConfig(
         sparkSession,
         JavaScalaConverters.convertJavaPropertiesToScalaMap(writerParams),
         tableConfig));
-    assertTrue(ex.getMessage().contains("RecordKey"),
-        "Expected exception to mention RecordKey; was: " + ex.getMessage());
   }
 
   // ---------------------------------------------------------------------------

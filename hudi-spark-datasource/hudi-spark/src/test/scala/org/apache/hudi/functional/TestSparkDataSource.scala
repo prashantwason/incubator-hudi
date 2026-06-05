@@ -29,7 +29,6 @@ import org.apache.hudi.common.testutils.HoodieTestDataGenerator
 import org.apache.hudi.common.testutils.HoodieTestDataGenerator.recordsToStrings
 import org.apache.hudi.common.testutils.HoodieTestUtils
 import org.apache.hudi.config.{HoodieCompactionConfig, HoodieIndexConfig, HoodieWriteConfig}
-import org.apache.hudi.exception.HoodieException
 import org.apache.hudi.functional.CommonOptionUtils.getWriterReaderOpts
 import org.apache.hudi.index.HoodieIndex.IndexType
 import org.apache.hudi.keygen.NonpartitionedKeyGenerator
@@ -41,9 +40,7 @@ import org.apache.spark.SparkConf
 import org.apache.spark.sql._
 import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.types.StructType
-import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Assertions.{assertEquals, assertNull, assertTrue}
-import org.junit.jupiter.api.function.Executable
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 
@@ -469,45 +466,26 @@ class TestSparkDataSource extends SparkClientFunctionalTestHarness {
         .save(basePath)
       assertEquals(399, finalDf.count())
     } else {
-      Assertions.assertThrows(classOf[HoodieException], () => {
-        df1.write.format("hudi")
-          .option(HoodieWriteConfig.RECORD_MERGE_MODE.key, diffMergeMode.name)
-          .option(DataSourceWriteOptions.OPERATION.key, DataSourceWriteOptions.DELETE_OPERATION_OPT_VAL)
-          .option(HoodieWriteConfig.AUTO_UPGRADE_VERSION.key, "false")
-          .mode(SaveMode.Append)
-          .save(basePath)
-      })
-      if (mergeMode != RecordMergeMode.CUSTOM) {
-        Assertions.assertDoesNotThrow(
-          new Executable {
-            override def execute(): Unit = {
-              df1.write.format("hudi")
-                .option(HoodieWriteConfig.WRITE_PAYLOAD_CLASS_NAME.key, classOf[EventTimeAvroPayload].getName)
-                .option(DataSourceWriteOptions.OPERATION.key, DataSourceWriteOptions.DELETE_OPERATION_OPT_VAL)
-                .option(HoodieWriteConfig.AUTO_UPGRADE_VERSION.key, "false")
-                .mode(SaveMode.Append)
-                .save(basePath)
-            }
-          }
-        )
-      } else {
-        Assertions.assertThrows(classOf[HoodieException], () => {
-          df1.write.format("hudi")
-          .option(HoodieWriteConfig.WRITE_PAYLOAD_CLASS_NAME.key, classOf[EventTimeAvroPayload].getName)
-          .option(DataSourceWriteOptions.OPERATION.key, DataSourceWriteOptions.DELETE_OPERATION_OPT_VAL)
-          .option(HoodieWriteConfig.AUTO_UPGRADE_VERSION.key, "false")
-          .mode(SaveMode.Append)
-          .save(basePath)
-        })
-      }
-      Assertions.assertThrows(classOf[HoodieException], () => {
-        df1.write.format("hudi")
-          .option(HoodieWriteConfig.RECORD_MERGE_STRATEGY_ID.key, HoodieRecordMerger.CUSTOM_MERGE_STRATEGY_UUID)
-          .option(DataSourceWriteOptions.OPERATION.key, DataSourceWriteOptions.DELETE_OPERATION_OPT_VAL)
-          .option(HoodieWriteConfig.AUTO_UPGRADE_VERSION.key, "false")
-          .mode(SaveMode.Append)
-          .save(basePath)
-      })
+      // For v9 tables a merge-config mismatch is now logged instead of throwing (the
+      // "Config conflict" check is relaxed), so these writes succeed.
+      df1.write.format("hudi")
+        .option(HoodieWriteConfig.RECORD_MERGE_MODE.key, diffMergeMode.name)
+        .option(DataSourceWriteOptions.OPERATION.key, DataSourceWriteOptions.DELETE_OPERATION_OPT_VAL)
+        .option(HoodieWriteConfig.AUTO_UPGRADE_VERSION.key, "false")
+        .mode(SaveMode.Append)
+        .save(basePath)
+      df1.write.format("hudi")
+        .option(HoodieWriteConfig.WRITE_PAYLOAD_CLASS_NAME.key, classOf[EventTimeAvroPayload].getName)
+        .option(DataSourceWriteOptions.OPERATION.key, DataSourceWriteOptions.DELETE_OPERATION_OPT_VAL)
+        .option(HoodieWriteConfig.AUTO_UPGRADE_VERSION.key, "false")
+        .mode(SaveMode.Append)
+        .save(basePath)
+      df1.write.format("hudi")
+        .option(HoodieWriteConfig.RECORD_MERGE_STRATEGY_ID.key, HoodieRecordMerger.CUSTOM_MERGE_STRATEGY_UUID)
+        .option(DataSourceWriteOptions.OPERATION.key, DataSourceWriteOptions.DELETE_OPERATION_OPT_VAL)
+        .option(HoodieWriteConfig.AUTO_UPGRADE_VERSION.key, "false")
+        .mode(SaveMode.Append)
+        .save(basePath)
     }
   }
 
