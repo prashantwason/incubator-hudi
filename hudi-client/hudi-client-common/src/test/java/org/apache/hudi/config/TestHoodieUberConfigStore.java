@@ -334,6 +334,52 @@ public class TestHoodieUberConfigStore {
     });
   }
 
+  /**
+   * Verifies that {@link HoodieUberConfigStore#fromBasePath} routes each supported URI scheme to
+   * the correct config-store prefix. GCS paths (where the URI host is an opaque bucket alias like
+   * {@code uber-prod-cv0hw} that contains no datacenter substring) must short-circuit to the
+   * cloudlake config store rather than falling through host-based matching.
+   */
+  @ParameterizedTest
+  @CsvSource({
+      // GCS-backed cloudlake tables — PHX-region bucket
+      "gs://uber-prod-cv0hw/jwj42/rawdata/foo, cfs://ns-cloudlake/user/hudi/config_store",
+      // GCS-backed cloudlake tables — DCA-region bucket (same store; cloudlake is region-agnostic for configs)
+      "gs://uber-prod-prjjk/gu53t/team/foo, cfs://ns-cloudlake/user/hudi/config_store",
+      // CFS logical cloudlake path
+      "cfs://ns-cloudlake/tables/rawdata/foo, cfs://ns-cloudlake/user/hudi/config_store",
+      // HDFS PHX router
+      "hdfs://ns-router-prod-phx/tables/foo, hdfs://ns-router-prod-phx/user/hudi/config_store",
+      // HDFS DCA router
+      "hdfs://ns-router-dca1/tables/foo, hdfs://ns-router-dca1/user/hudi/config_store",
+      // viewfs (PHX-side namespace) maps via the existing 'phx' substring matcher
+      "viewfs://ns-platinum-prod-phx/tables/foo, hdfs://ns-router-prod-phx/user/hudi/config_store",
+      // Defensive scheme lowercasing
+      "GS://uber-prod-cv0hw/foo, cfs://ns-cloudlake/user/hudi/config_store"
+  })
+  public void testFromBasePathSchemeRouting(String basePath, String expectedConfigStorePath) {
+    HoodieUberConfigStore store = HoodieUberConfigStore.fromBasePath(hadoopConf, basePath);
+    assertEquals(expectedConfigStorePath, store.getConfigStorePath());
+  }
+
+  @Test
+  public void testFromBasePathRejectsUnsupportedScheme() {
+    HoodieException ex = assertThrows(HoodieException.class, () ->
+        HoodieUberConfigStore.fromBasePath(hadoopConf, "s3a://some-bucket/foo"));
+    // Message must name the offending scheme so operators can diagnose without reading source.
+    assertTrue(ex.getMessage().contains("s3a"), "Expected scheme in error message, got: " + ex.getMessage());
+  }
+
+  @Test
+  public void testFromBasePathRejectsMissingHostForHdfs() {
+    // hdfs:///foo has scheme but no host. Must produce a clear "Missing host" error rather than
+    // letting an empty-string datacenter flow into the substring matcher.
+    HoodieException ex = assertThrows(HoodieException.class, () ->
+        HoodieUberConfigStore.fromBasePath(hadoopConf, "hdfs:///foo"));
+    assertTrue(ex.getMessage().contains("Missing host"),
+        "Expected 'Missing host' in error message, got: " + ex.getMessage());
+  }
+
   @Test
   public void testEmptyConfigFiles() throws IOException {
     // Create empty config files

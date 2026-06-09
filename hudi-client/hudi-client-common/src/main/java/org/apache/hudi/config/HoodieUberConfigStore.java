@@ -29,6 +29,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
 import java.util.Properties;
 
 /**
@@ -135,7 +136,7 @@ public class HoodieUberConfigStore {
    * @return HoodieUberConfigStore instance
    */
   public static HoodieUberConfigStore fromBasePath(Configuration hadoopConf, String basePath) {
-    String datacenter = extractHostFromPath(basePath);
+    String datacenter = datacenterFromBasePath(basePath);
     String configStorePath = getConfigStorePathForDatacenter(datacenter);
     return new HoodieUberConfigStore(hadoopConf, configStorePath, true);
   }
@@ -311,6 +312,45 @@ public class HoodieUberConfigStore {
 
     throw new HoodieException("Invalid datacenter or host: " + datacenter
         + ". Expected host to contain one of: phx, dca, cloudlake");
+  }
+
+  /**
+   * Maps a Hudi base path to the datacenter token expected by
+   * {@link #getPathPrefixForDatacenter(String)}.
+   *
+   * <p>Dispatches on URI scheme, not host. GCS bucket names (e.g. {@code uber-prod-cv0hw})
+   * contain no datacenter substring, so host-based matching would fail.
+   * Cloud schemes ({@code gs}, {@code cfs}) map to {@code "cloudlake"} (a deployment class,
+   * not a physical DC). HDFS/viewfs paths return the URI host.
+   *
+   * @param basePath Hudi table base path (e.g. {@code gs://bucket/...},
+   *                 {@code hdfs://ns-router-prod-phx/...})
+   * @return {@code "cloudlake"} for GCS/CFS paths; the URI host for HDFS/viewfs paths
+   * @throws HoodieException if the scheme is unsupported or if an HDFS/viewfs URI has no host
+   */
+  static String datacenterFromBasePath(String basePath) {
+    URI uri;
+    try {
+      uri = new Path(basePath).toUri();
+    } catch (Exception e) {
+      throw new HoodieException("Failed to parse basePath as URI: " + basePath, e);
+    }
+    String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase();
+    switch (scheme) {
+      case "gs":
+      case "cfs":
+        return "cloudlake";
+      case "hdfs":
+      case "viewfs":
+        String host = extractHostFromPath(basePath);
+        if (host == null || host.isEmpty()) {
+          throw new HoodieException("Missing host in basePath: " + basePath);
+        }
+        return host;
+      default:
+        throw new HoodieException("Unsupported scheme '" + scheme + "' in basePath: " + basePath
+            + ". Expected one of: gs, cfs, hdfs, viewfs");
+    }
   }
 
   /**
