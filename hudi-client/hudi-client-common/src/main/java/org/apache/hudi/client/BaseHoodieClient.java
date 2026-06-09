@@ -100,7 +100,22 @@ public abstract class BaseHoodieClient implements Serializable, AutoCloseable {
 
   protected BaseHoodieClient(HoodieEngineContext context, HoodieWriteConfig clientConfig,
                              Option<EmbeddedTimelineService> timelineServer) {
-    this(context, clientConfig, timelineServer, buildTransactionManager(context, clientConfig), buildTimeGenerator(context, clientConfig));
+    this(context, withConfigStoreApplied(context, clientConfig), timelineServer, ConfigMarker.ENRICHED);
+  }
+
+  // Enum marker used purely for constructor overload disambiguation.
+  private enum ConfigMarker { ENRICHED }
+
+  // Private intermediate constructor: receives the already-enriched config and feeds it to
+  // buildTransactionManager and buildTimeGenerator (both snapshot config at construction time)
+  // before the 5-arg canonical ctor body runs.
+  private BaseHoodieClient(HoodieEngineContext context, HoodieWriteConfig enrichedConfig,
+                           Option<EmbeddedTimelineService> timelineServer, ConfigMarker ignored) {
+    this(context, enrichedConfig, timelineServer, buildTransactionManager(context, enrichedConfig), buildTimeGenerator(context, enrichedConfig));
+  }
+
+  private static HoodieWriteConfig withConfigStoreApplied(HoodieEngineContext context, HoodieWriteConfig config) {
+    return HoodieUberConfigStore.applyConfigStore(context.getStorageConf().unwrapAs(org.apache.hadoop.conf.Configuration.class), config);
   }
 
   private static TimeGenerator buildTimeGenerator(HoodieEngineContext context, HoodieWriteConfig clientConfig) {
@@ -118,8 +133,11 @@ public abstract class BaseHoodieClient implements Serializable, AutoCloseable {
     this.storage = HoodieStorageUtils.getStorage(clientConfig.getBasePath(), storageConf);
     this.context = context;
     this.basePath = clientConfig.getBasePath();
-    this.config = HoodieUberConfigStore.applyConfigStore(
-        storageConf.unwrapAs(org.apache.hadoop.conf.Configuration.class), clientConfig);
+    // Enrichment (HoodieUberConfigStore) was already applied by the 3-arg ctor chain before
+    // buildTransactionManager and buildTimeGenerator ran. Use clientConfig directly here.
+    // @VisibleForTesting callers pass configs in IS_TESTING=true environments where
+    // applyConfigStore is a no-op, so this change is transparent to tests.
+    this.config = clientConfig;
     this.config.setValue(APPLICATION_ID, context.getApplicationId());
     this.timelineServer = timelineServer;
     shouldStopTimelineServer = !timelineServer.isPresent();

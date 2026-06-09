@@ -35,7 +35,6 @@ import org.apache.hudi.common.table.TableSchemaResolver;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.StringUtils;
 import org.apache.hudi.common.util.ValidationUtils;
-import org.apache.hudi.config.HoodieUberConfigStore;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieIndexException;
@@ -218,20 +217,19 @@ public class HoodieSparkIndexClient extends BaseHoodieIndexClient {
           .withEngineType(EngineType.SPARK)
           .withProps(configs)
           .build();
-      // Apply HoodieUberConfigStore overrides (lock provider, MDT settings, etc.) before any
-      // read on the config. The same overlay is applied later inside BaseHoodieClient.<init>,
-      // but the validation below runs first and reads getLockProviderClass(), so we need the
-      // overlay materialized here.
-      localWriteConfig = HoodieUberConfigStore.applyConfigStore(
-          engineContextOpt.get().getStorageConf().unwrapAs(org.apache.hadoop.conf.Configuration.class),
-          localWriteConfig);
-      // Validate if a lock provide class is set properly.
-      if (localWriteConfig.getWriteConcurrencyMode().supportsMultiWriter() && StringUtils.isNullOrEmpty(localWriteConfig.getLockProviderClass())) {
+      SparkRDDWriteClient writeClient = new SparkRDDWriteClient(engineContextOpt.get(), localWriteConfig, Option.empty());
+      // Validate using the effective config after any config-store enrichment applied inside
+      // BaseHoodieClient.<init> (e.g. HoodieUberConfigStore, runClientInitCallbacks). Checking
+      // the raw localWriteConfig here would reject configurations that are only resolved after
+      // construction, including those supplied by init callbacks or cluster-managed config stores.
+      HoodieWriteConfig effectiveConfig = writeClient.getConfig();
+      if (effectiveConfig.getWriteConcurrencyMode().supportsMultiWriter() && StringUtils.isNullOrEmpty(effectiveConfig.getLockProviderClass())) {
+        writeClient.close();
         throw new IllegalArgumentException(
             "To create index asynchronously, multi-writer configurations need to be enabled and hence 'hoodie.write.lock.provider' is expected to be set for such cases. "
                 + "For single writer mode, feel free to set the config value to org.apache.hudi.client.transaction.lock.InProcessLockProvider and retry index creation");
       }
-      return new SparkRDDWriteClient(engineContextOpt.get(), localWriteConfig, Option.empty());
+      return writeClient;
     } catch (Exception e) {
       throw new HoodieException("Failed to create write client while performing index operation ", e);
     }
