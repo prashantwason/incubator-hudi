@@ -75,7 +75,7 @@ public class Metrics {
   }
 
   private void registerHoodieCommonMetrics() {
-    registerGauges(Registry.getAllMetrics(true, true), Option.of(commonMetricPrefix));
+    registerGauges(Registry.getAllMetrics(true, true), Option.ofNullable(commonMetricPrefix));
   }
 
   public static synchronized Metrics getInstance(HoodieMetricsConfig metricConfig, HoodieStorage storage) {
