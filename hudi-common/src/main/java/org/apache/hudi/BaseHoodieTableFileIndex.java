@@ -318,7 +318,7 @@ public abstract class BaseHoodieTableFileIndex implements AutoCloseable {
     // Without this, the caller's Collectors.toMap(identity, cache::get) NPEs on empty partitions
     // because cache.get returns null and toMap rejects null values. This matches the contract
     // already honored by filterFiles, which iterates over partitions rather than over files.
-    partitions.forEach(p -> partitionToFileSlices.put(p, new ArrayList<>()));
+    partitions.forEach(p -> partitionToFileSlices.put(p, Collections.emptyList()));
 
     for (StoragePathInfo pathInfo : allFiles) {
       // Create FileSlice obj from StoragePathInfo.
@@ -331,7 +331,11 @@ public abstract class BaseHoodieTableFileIndex implements AutoCloseable {
       // Add the FileSlice to partitionToFileSlices
       PartitionPath partitionPathObj = partitionsMap.get(relPartitionPath);
       if (partitionPathObj != null) {
-        List<FileSlice> fileSlices = partitionToFileSlices.computeIfAbsent(partitionPathObj, k -> new ArrayList<>());
+        List<FileSlice> fileSlices = partitionToFileSlices.get(partitionPathObj);
+        if (fileSlices.isEmpty()) {
+          fileSlices = new ArrayList<>();
+          partitionToFileSlices.put(partitionPathObj, fileSlices);
+        }
         fileSlices.add(fileSlice);
       } else {
         log.warn("Could not find partition path object for relative path: {}. Skipping file: {}",
