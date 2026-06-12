@@ -157,16 +157,16 @@ public class HoodieShadowPipeline {
           .fromProperties(srcTableProperties)
           .setTableType(HoodieTableType.valueOf(cfg.destTableType));
     } else {
-      tableBuilder = HoodieTableMetaClient.newTableBuilder().fromMetaClient(srcMetaClient)
-          .setTableName(getFullTargetTableName(cfg))
-          .setBaseFileFormat(srcMetaClient.getTableConfig().getBaseFileFormat().name())
-          .setTableType(HoodieTableType.valueOf(cfg.destTableType))
-          .setArchiveLogFolder(HoodieTableConfig.ARCHIVELOG_FOLDER.defaultValue())
-          .setPartitionFields(cfg.partitionColumns)
-          .setRecordKeyFields(cfg.recordKeyColumn)
-          .setPopulateMetaFields(cfg.writeMetaFields)
-          .setKeyGeneratorClassProp(cfg.keyGenerator)
-          .setOrderingFields(cfg.sourceOrderingField);
+      tableBuilder = HoodieTableMetaClient.newTableBuilder()
+              .setTableName(getFullTargetTableName(cfg))
+              .setBaseFileFormat(srcMetaClient.getTableConfig().getBaseFileFormat().name())
+              .setTableType(HoodieTableType.valueOf(cfg.destTableType))
+              .setArchiveLogFolder(HoodieTableConfig.ARCHIVELOG_FOLDER.defaultValue())
+              .setPartitionFields(cfg.partitionColumns)
+              .setRecordKeyFields(cfg.recordKeyColumn)
+              .setPopulateMetaFields(cfg.writeMetaFields)
+              .setKeyGeneratorClassProp(cfg.keyGenerator)
+              .setOrderingFields(cfg.sourceOrderingField);
       if (cfg.destTableType.equals(HoodieTableType.MERGE_ON_READ.name())) {
         tableBuilder.setPayloadClassName(cfg.destPayloadClassName);
       }

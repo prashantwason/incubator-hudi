@@ -79,7 +79,9 @@
       "spark.yarn.access.hadoopFileSystems": "hdfs://ns-krypton-prod-dca1,hdfs://ns-platinum-prod-phx,hdfs://ns-router-prod-phx,hdfs://ns-router-dca1,hdfs://ns-neon-prod-dca1,cfs://ns-cloudlake",
       "spark.hadoop.dfs.checksum.combine.mode" : "COMPOSITE_CRC",
       "spark.hadoop.fs.gs.checksum.type": "CRC32C",
-      "spark.razor.disabled": "true"
+      "spark.razor.disabled": "true",
+      "spark.livy.spark.binary-type": "PARQUET_13",
+      "spark.plugins": "org.apache.spark.sql.hudi.HoodieSparkPlugin"
     },
     "queue": "${QUEUE}",
     "sparkEnv": "SPARK_33",
