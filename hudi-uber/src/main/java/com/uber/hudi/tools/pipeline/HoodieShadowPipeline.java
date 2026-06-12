@@ -45,7 +45,6 @@ import org.apache.hudi.client.transaction.lock.LockManager;
 import org.apache.hudi.client.transaction.lock.ZookeeperBasedLockProvider;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
 import org.apache.hudi.common.config.HoodieStorageConfig;
-import org.apache.hudi.common.config.SerializableConfiguration;
 import org.apache.hudi.common.config.TypedProperties;
 import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.model.HoodieBaseFile;
@@ -86,6 +85,7 @@ import org.apache.hudi.hive.HiveSyncTool;
 import org.apache.hudi.keygen.constant.KeyGeneratorOptions;
 import org.apache.hudi.metrics.MetricsReporterType;
 import org.apache.hudi.storage.StoragePath;
+import org.apache.hudi.storage.hadoop.HadoopStorageConfiguration;
 import org.apache.hudi.sync.common.HoodieSyncConfig;
 import org.apache.hudi.table.HoodieSparkTable;
 import org.apache.hudi.table.HoodieTable;
@@ -244,7 +244,7 @@ public class HoodieShadowPipeline {
     int partitionFilePairsCount = (int) partitionFilePairs.count();
     int copyParallelism = Math.min(partitionFilePairsCount, 100000);
     LOG.info(String.format("Copying %d files with total size %d", partitionFilePairsCount, totalSize[0]));
-    SerializableConfiguration serializableHadoopConf = new SerializableConfiguration(jssc.hadoopConfiguration());
+    HadoopStorageConfiguration serializableHadoopConf = new HadoopStorageConfiguration(jssc.hadoopConfiguration());
     sparkEngineContext.setJobStatus(HoodieShadowPipeline.class.getSimpleName(), "Copying all data files");
     JavaRDD<Pair<Boolean, Pair<String, String>>> statusesRdd = partitionFilePairs
         .repartition(copyParallelism)
@@ -399,11 +399,11 @@ public class HoodieShadowPipeline {
     return destMetaClient;
   }
 
-  private static boolean copyFileWithChecksum(SerializableConfiguration serializableHadoopConf, Path srcPath, Path destPath) throws IOException {
-    FileSystem srcFs = srcPath.getFileSystem(serializableHadoopConf.value());
-    FileSystem destFs = destPath.getFileSystem(serializableHadoopConf.value());
+  private static boolean copyFileWithChecksum(HadoopStorageConfiguration serializableHadoopConf, Path srcPath, Path destPath) throws IOException {
+    FileSystem srcFs = srcPath.getFileSystem(serializableHadoopConf.unwrap());
+    FileSystem destFs = destPath.getFileSystem(serializableHadoopConf.unwrap());
     LOG.info("Copy initiating from {} to {}", srcPath, destPath);
-    FileUtil.copy(srcFs, srcPath, destFs, destPath, false, serializableHadoopConf.value());
+    FileUtil.copy(srcFs, srcPath, destFs, destPath, false, serializableHadoopConf.unwrap());
     LOG.info("Copy complete from {} to {}", srcPath, destPath);
     // Validate checksum for the copied file.
     return checkCopiedFile(srcFs, srcPath, destFs, destPath);

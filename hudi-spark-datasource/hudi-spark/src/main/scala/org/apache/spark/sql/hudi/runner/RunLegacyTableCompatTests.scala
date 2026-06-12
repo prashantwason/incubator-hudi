@@ -40,7 +40,7 @@ import scala.collection.JavaConverters._
  *
  *   - pre_promote_task creates the table via SparkSQL `CREATE EXTERNAL TABLE db.t (...) USING HUDI ...`
  *     without `'primaryKey'` in TBLPROPERTIES. HoodieCatalogTable persists `hoodie.table.name=t`
- *     (bare) + `hoodie.database.name=db` separately, and leaves `hoodie.table.recordkey.fields` unset.
+ *     (bare) + `hoodie.DEFAULT_DATABASE.name=db` separately, and leaves `hoodie.table.recordkey.fields` unset.
  *   - The hudi_writer.py job then runs `df.write.format("hudi")` with `hoodie.table.name = "db.t"`
  *     (qualified, the legacy hudi-pyspark drogon convention) and `hoodie.datasource.write.recordkey.field`.
  *   - Pre-fix, this hit two writer-side validators in 1.2:
@@ -58,12 +58,12 @@ import scala.collection.JavaConverters._
  * Setup uses SparkSQL `CREATE TABLE ... USING HUDI` because the DataSource writer stores
  * whatever `hoodie.table.name` is supplied (e.g., it would store the qualified form),
  * whereas HoodieCatalogTable splits the qualified identifier and writes the canonical
- * (bare name + separate database) shape — which is the actual on-disk shape produced by
+ * (bare name + separate DEFAULT_DATABASE) shape — which is the actual on-disk shape produced by
  * the failing production pipeline.
  */
 class RunLegacyTableCompatTests extends RunOperationsBase {
   private val log = LoggerFactory.getLogger(getClass)
-  private val database = "rawdatatmp"
+  val DEFAULT_DATABASE = "rawdatatmp"
 
   /** Build a metaClient for the table at basePath (used to inspect or modify on-disk hoodie.properties). */
   private def buildMetaClient(basePath: String): HoodieTableMetaClient = {
@@ -76,7 +76,7 @@ class RunLegacyTableCompatTests extends RunOperationsBase {
   /**
    * Create the Hudi table via SparkSQL `CREATE EXTERNAL TABLE ... USING HUDI` so that
    * HoodieCatalogTable produces the canonical on-disk shape: bare `hoodie.table.name`
-   * + separate `hoodie.database.name`. When `includePrimaryKey` is false the DDL omits
+   * + separate `hoodie.DEFAULT_DATABASE.name`. When `includePrimaryKey` is false the DDL omits
    * `'primaryKey'`, matching the legacy Hudi-0.14 SparkSQL shape that leaves
    * `hoodie.table.recordkey.fields` unset on disk.
    */
@@ -89,7 +89,7 @@ class RunLegacyTableCompatTests extends RunOperationsBase {
     }
     spark.sql(
       s"""
-         |CREATE EXTERNAL TABLE $database.$tableName (
+         |CREATE EXTERNAL TABLE $DEFAULT_DATABASE.$tableName (
          |  uuid STRING,
          |  ts TIMESTAMP,
          |  rider STRING,
@@ -122,7 +122,7 @@ class RunLegacyTableCompatTests extends RunOperationsBase {
       .options(QuickstartUtils.getQuickstartWriteConfigs)
       // Qualified "db.table" form — the legacy hudi-pyspark convention that triggered
       // the production failure.
-      .option(HoodieTableConfig.NAME.key(), s"$database.$tableName")
+      .option(HoodieTableConfig.NAME.key(), s"$DEFAULT_DATABASE.$tableName")
       .option(RECORDKEY_FIELD.key(), recordKeyField)
       .option(PARTITIONPATH_FIELD.key(), "partitionpath")
       .option(PRECOMBINE_FIELD.key(), "ts")
@@ -133,7 +133,7 @@ class RunLegacyTableCompatTests extends RunOperationsBase {
       // RunOperationsBase.writeToHudiTable convention.
       .option(HiveSyncConfigHolder.HIVE_SYNC_ENABLED.key(), "true")
       .option(HiveSyncConfigHolder.HIVE_SYNC_MODE.key(), HiveSyncMode.HMS.name())
-      .option(HoodieSyncConfig.META_SYNC_DATABASE_NAME.key(), database)
+      .option(HoodieSyncConfig.META_SYNC_DATABASE_NAME.key(), DEFAULT_DATABASE)
       .option(HoodieSyncConfig.META_SYNC_TABLE_NAME.key(), tableName)
       .option(HoodieSyncConfig.META_SYNC_PARTITION_FIELDS.key(), "partitionpath")
       .option(HoodieSyncConfig.META_SYNC_PARTITION_EXTRACTOR_CLASS.key(),
@@ -144,7 +144,7 @@ class RunLegacyTableCompatTests extends RunOperationsBase {
 
   /**
    * Fix 1 + handleSaveModes — table created via SparkSQL `CREATE TABLE ... USING HUDI` has
-   * bare `hoodie.table.name` + separate `hoodie.database.name` on disk. A subsequent
+   * bare `hoodie.table.name` + separate `hoodie.DEFAULT_DATABASE.name` on disk. A subsequent
    * DataSource Append that supplies the qualified `db.table` form for `hoodie.table.name`
    * must succeed (Fix 1 carve-out in HoodieWriterUtils.shouldIgnoreConfig + the normalized
    * comparison in HoodieSparkSqlWriter.handleSaveModes).
@@ -160,18 +160,18 @@ class RunLegacyTableCompatTests extends RunOperationsBase {
       val initialTableConfig = buildMetaClient(basePath).getTableConfig
       val onDiskRawName = initialTableConfig.getString(HoodieTableConfig.NAME)
       val onDiskRawDb = initialTableConfig.getString(HoodieTableConfig.DATABASE_NAME)
-      log.info(s"On-disk after CREATE TABLE — hoodie.table.name=$onDiskRawName, hoodie.database.name=$onDiskRawDb")
+      log.info(s"On-disk after CREATE TABLE — hoodie.table.name=$onDiskRawName, hoodie.DEFAULT_DATABASE.name=$onDiskRawDb")
       assert(onDiskRawName == tableName,
         s"on-disk hoodie.table.name should be the bare table name '$tableName' (HoodieCatalogTable shape), was: $onDiskRawName")
-      assert(onDiskRawDb == database,
-        s"on-disk hoodie.database.name should be '$database' (HoodieCatalogTable shape), was: $onDiskRawDb")
+      assert(onDiskRawDb == DEFAULT_DATABASE,
+        s"on-disk hoodie.DEFAULT_DATABASE.name should be '$DEFAULT_DATABASE' (HoodieCatalogTable shape), was: $onDiskRawDb")
 
       // Append with qualified "<db>.<table>" form — pre-fix this would throw either
       // `Config conflict: hoodie.table.name: db.t  t` (validateTableConfig) or
       // `hoodie table with name t ... can not append data ... with another name db.t`
       // (handleSaveModes), depending on which validator fired first.
       appendViaDataSource(tableName, basePath, recordKeyField = "uuid")
-      runDataFrameReaderWithAsserts(database, tableName, expectedVal = 20)
+      runDataFrameReaderWithAsserts(DEFAULT_DATABASE, tableName, expectedVal = 20)
       log.info("PASSED: qualified hoodie.table.name accepted on Append against bare on-disk shape")
     } finally {
       cleanup(tableName, basePath)
@@ -210,7 +210,7 @@ class RunLegacyTableCompatTests extends RunOperationsBase {
         s"hoodie.table.recordkey.fields should have been backfilled to 'uuid' on disk, was: $persistedRecordKey")
       log.info(s"PASSED: backfilled hoodie.table.recordkey.fields=$persistedRecordKey on disk")
 
-      runDataFrameReaderWithAsserts(database, tableName, expectedVal = 20)
+      runDataFrameReaderWithAsserts(DEFAULT_DATABASE, tableName, expectedVal = 20)
     } finally {
       cleanup(tableName, basePath)
     }
@@ -237,7 +237,7 @@ class RunLegacyTableCompatTests extends RunOperationsBase {
         s"on-disk hoodie.table.name should remain bare '$tableName', was: ${finalTableConfig.getString(HoodieTableConfig.NAME)}")
       assert(finalTableConfig.getString(HoodieTableConfig.RECORDKEY_FIELDS) == "uuid",
         s"hoodie.table.recordkey.fields should have been backfilled to 'uuid', was: ${finalTableConfig.getString(HoodieTableConfig.RECORDKEY_FIELDS)}")
-      runDataFrameReaderWithAsserts(database, tableName, expectedVal = 20)
+      runDataFrameReaderWithAsserts(DEFAULT_DATABASE, tableName, expectedVal = 20)
       log.info("PASSED: combined qualified-name + missing-recordkey legacy compat")
     } finally {
       cleanup(tableName, basePath)
@@ -247,8 +247,8 @@ class RunLegacyTableCompatTests extends RunOperationsBase {
   /**
    * handleSaveModes — legacy-fixture variant. The other tests reach the qualified-name branch
    * by *passing* the qualified `hoodie.table.name` at write time against a 1.x-shaped on-disk
-   * file (NAME=bare, DATABASE_NAME=set). This test instead mutates the on-disk
-   * `.hoodie/hoodie.properties` to the actual 0.14 shape (NAME=db.table, no DATABASE_NAME)
+   * file (NAME=bare, DEFAULT_DATABASE_NAME=set). This test instead mutates the on-disk
+   * `.hoodie/hoodie.properties` to the actual 0.14 shape (NAME=db.table, no DEFAULT_DATABASE_NAME)
    * before the Append, so `tableConfig.getTableName()` returns the bare form via the
    * HoodieTableConfig workaround and `handleSaveModes` is the validator that fires.
    *
@@ -264,19 +264,19 @@ class RunLegacyTableCompatTests extends RunOperationsBase {
 
     try {
       createHudiTableViaSql(tableName, basePath, includePrimaryKey = true)
-      rewriteHoodiePropertiesAsLegacy(basePath, qualifiedName = s"$database.$tableName")
+      rewriteHoodiePropertiesAsLegacy(basePath, qualifiedName = s"$DEFAULT_DATABASE.$tableName")
 
       val mutatedTableConfig = buildMetaClient(basePath).getTableConfig
       val rawName = mutatedTableConfig.getString(HoodieTableConfig.NAME)
       val rawDb = mutatedTableConfig.getString(HoodieTableConfig.DATABASE_NAME)
-      log.info(s"On-disk after mutation — hoodie.table.name=$rawName, hoodie.database.name=$rawDb")
-      assert(rawName == s"$database.$tableName",
-        s"on-disk hoodie.table.name should be the qualified form '$database.$tableName', was: $rawName")
+      log.info(s"On-disk after mutation — hoodie.table.name=$rawName, hoodie.DEFAULT_DATABASE.name=$rawDb")
+      assert(rawName == s"$DEFAULT_DATABASE.$tableName",
+        s"on-disk hoodie.table.name should be the qualified form '$DEFAULT_DATABASE.$tableName', was: $rawName")
       assert(rawDb == null || rawDb.isEmpty,
-        s"on-disk hoodie.database.name should be unset (legacy 0.14 shape), was: $rawDb")
+        s"on-disk hoodie.DEFAULT_DATABASE.name should be unset (legacy 0.14 shape), was: $rawDb")
 
       appendViaDataSource(tableName, basePath, recordKeyField = "uuid")
-      runDataFrameReaderWithAsserts(database, tableName, expectedVal = 20)
+      runDataFrameReaderWithAsserts(DEFAULT_DATABASE, tableName, expectedVal = 20)
       log.info("PASSED: Append succeeded against pre-seeded legacy hoodie.properties shape")
     } finally {
       cleanup(tableName, basePath)
@@ -285,7 +285,7 @@ class RunLegacyTableCompatTests extends RunOperationsBase {
 
   /**
    * Mutate `<basePath>/.hoodie/hoodie.properties` to the on-disk shape Hudi 0.14 wrote:
-   * `hoodie.table.name=<db>.<table>` (qualified) and no `hoodie.database.name`. The checksum
+   * `hoodie.table.name=<db>.<table>` (qualified) and no `hoodie.DEFAULT_DATABASE.name`. The checksum
    * is recomputed by `HoodieTableConfig.updateAndDeleteProps`, so the file remains internally
    * consistent for subsequent reads.
    */
@@ -295,6 +295,6 @@ class RunLegacyTableCompatTests extends RunOperationsBase {
     updates.setProperty(HoodieTableConfig.NAME.key(), qualifiedName)
     val deletes = Collections.singleton(HoodieTableConfig.DATABASE_NAME.key())
     HoodieTableConfig.updateAndDeleteProps(metaClient.getStorage, metaClient.getMetaPath, updates, deletes)
-    log.info(s"Rewrote $basePath/.hoodie/hoodie.properties: NAME=$qualifiedName, removed DATABASE_NAME")
+    log.info(s"Rewrote $basePath/.hoodie/hoodie.properties: NAME=$qualifiedName, removed DEFAULT_DATABASE_NAME")
   }
 }

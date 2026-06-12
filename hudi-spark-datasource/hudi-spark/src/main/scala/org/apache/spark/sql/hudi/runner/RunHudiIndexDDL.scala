@@ -37,7 +37,7 @@ import scala.collection.JavaConverters._
  */
 class RunHudiIndexDDL extends RunOperationsBase {
   private val log = LoggerFactory.getLogger(getClass)
-  private val database = "rawdatatmp"
+  val DEFAULT_DATABASE = "rawdatatmp"
 
   // -------- happy-path tests --------
 
@@ -48,12 +48,12 @@ class RunHudiIndexDDL extends RunOperationsBase {
     cleanup(tableName, basePath)
     createBaseTable(tableName)
 
-    spark.sql(s"CREATE INDEX record_index ON $database.$tableName (uuid)")
-    assertIndexExists(database, tableName, "record_index")
+    spark.sql(s"CREATE INDEX record_index ON $DEFAULT_DATABASE.$tableName (uuid)")
+    assertIndexExists(DEFAULT_DATABASE, tableName, "record_index")
     assertMetadataPartition(basePath, "record_index")
 
-    spark.sql(s"DROP INDEX record_index ON $database.$tableName")
-    assertIndexAbsent(database, tableName, "record_index")
+    spark.sql(s"DROP INDEX record_index ON $DEFAULT_DATABASE.$tableName")
+    assertIndexAbsent(DEFAULT_DATABASE, tableName, "record_index")
     log.info("testCreateAndDropRecordIndex passed")
   }
 
@@ -68,12 +68,12 @@ class RunHudiIndexDDL extends RunOperationsBase {
     cleanup(tableName, basePath)
     createBaseTable(tableName)
 
-    spark.sql(s"CREATE INDEX record_index ON $database.$tableName (uuid)")
-    spark.sql(s"CREATE INDEX idx_rider ON $database.$tableName (rider)")
-    assertIndexExists(database, tableName, partitionName)
+    spark.sql(s"CREATE INDEX record_index ON $DEFAULT_DATABASE.$tableName (uuid)")
+    spark.sql(s"CREATE INDEX idx_rider ON $DEFAULT_DATABASE.$tableName (rider)")
+    assertIndexExists(DEFAULT_DATABASE, tableName, partitionName)
 
-    spark.sql(s"DROP INDEX idx_rider ON $database.$tableName")
-    assertIndexAbsent(database, tableName, partitionName)
+    spark.sql(s"DROP INDEX idx_rider ON $DEFAULT_DATABASE.$tableName")
+    assertIndexAbsent(DEFAULT_DATABASE, tableName, partitionName)
     log.info("testCreateAndDropSecondaryIndex passed")
   }
 
@@ -86,12 +86,12 @@ class RunHudiIndexDDL extends RunOperationsBase {
     createBaseTable(tableName)
 
     spark.sql(
-      s"""CREATE INDEX idx_lower_rider ON $database.$tableName
+      s"""CREATE INDEX idx_lower_rider ON $DEFAULT_DATABASE.$tableName
          |USING column_stats(rider) OPTIONS(expr='lower')""".stripMargin)
-    assertIndexExists(database, tableName, partitionName)
+    assertIndexExists(DEFAULT_DATABASE, tableName, partitionName)
 
-    spark.sql(s"DROP INDEX idx_lower_rider ON $database.$tableName")
-    assertIndexAbsent(database, tableName, partitionName)
+    spark.sql(s"DROP INDEX idx_lower_rider ON $DEFAULT_DATABASE.$tableName")
+    assertIndexAbsent(DEFAULT_DATABASE, tableName, partitionName)
     log.info("testCreateAndDropColumnStatsExpressionIndex passed")
   }
 
@@ -102,9 +102,9 @@ class RunHudiIndexDDL extends RunOperationsBase {
     cleanup(tableName, basePath)
     createBaseTable(tableName)
 
-    spark.sql(s"CREATE INDEX record_index ON $database.$tableName (uuid)")
+    spark.sql(s"CREATE INDEX record_index ON $DEFAULT_DATABASE.$tableName (uuid)")
     // Should return without throwing; current implementation is Seq.empty.
-    spark.sql(s"REFRESH INDEX record_index ON $database.$tableName").collect()
+    spark.sql(s"REFRESH INDEX record_index ON $DEFAULT_DATABASE.$tableName").collect()
     log.info("testRefreshIndex passed")
   }
 
@@ -122,8 +122,8 @@ class RunHudiIndexDDL extends RunOperationsBase {
     cleanup(tableName, basePath)
     createBaseTable(tableName)
 
-    spark.sql(s"CREATE INDEX record_index ON $database.$tableName (uuid)")
-    expectIndexException(s"CREATE INDEX record_index ON $database.$tableName (uuid)",
+    spark.sql(s"CREATE INDEX record_index ON $DEFAULT_DATABASE.$tableName (uuid)")
+    expectIndexException(s"CREATE INDEX record_index ON $DEFAULT_DATABASE.$tableName (uuid)",
       "Index already exists")
     log.info("testCreateIndexDuplicateFails passed")
   }
@@ -135,10 +135,10 @@ class RunHudiIndexDDL extends RunOperationsBase {
     cleanup(tableName, basePath)
     createBaseTable(tableName)
 
-    expectIndexException(s"DROP INDEX nonexistent_idx ON $database.$tableName",
+    expectIndexException(s"DROP INDEX nonexistent_idx ON $DEFAULT_DATABASE.$tableName",
       "Index does not exist")
     // IF EXISTS swallows the absence.
-    spark.sql(s"DROP INDEX IF EXISTS nonexistent_idx ON $database.$tableName")
+    spark.sql(s"DROP INDEX IF EXISTS nonexistent_idx ON $DEFAULT_DATABASE.$tableName")
     log.info("testDropIndexMissingFails passed")
   }
 
@@ -150,7 +150,7 @@ class RunHudiIndexDDL extends RunOperationsBase {
     createBaseTable(tableName)
 
     expectIndexException(
-      s"CREATE INDEX idx_cs ON $database.$tableName USING column_stats(rider)",
+      s"CREATE INDEX idx_cs ON $DEFAULT_DATABASE.$tableName USING column_stats(rider)",
       "Column stats index without expression")
     log.info("testCreateColumnStatsWithoutExpressionFails passed")
   }
@@ -162,7 +162,7 @@ class RunHudiIndexDDL extends RunOperationsBase {
    * pre-enable record_index so that CREATE INDEX record_index actually does the work.
    */
   private def createBaseTable(tableName: String): Unit = {
-    createInserts(database, tableName, SaveMode.Overwrite, isHudiTable = true)
+    createInserts(DEFAULT_DATABASE, tableName, SaveMode.Overwrite, isHudiTable = true)
   }
 
   private def showIndexesAsList(db: String, tbl: String): Seq[(String, String, String)] = {

@@ -61,7 +61,7 @@ import scala.util.Try
  */
 class RunHudiTableDDLOperations extends RunOperationsBase {
   private val log = LoggerFactory.getLogger(getClass)
-  private val database = "rawdatatmp"
+  val DEFAULT_DATABASE = "rawdatatmp"
 
   // ===========================================================================
   // SHOW PARTITIONS — ShowHoodieTablePartitionsCommand
@@ -75,7 +75,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
 
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tableName (
+         |CREATE TABLE $DEFAULT_DATABASE.$tableName (
          |  id INT,
          |  name STRING,
          |  price DOUBLE,
@@ -89,7 +89,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
          |LOCATION '$basePath'
          |""".stripMargin)
 
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'a1', 10.0, 1000)")
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'a1', 10.0, 1000)")
 
     assertShowPartitions(tableName, Seq.empty)
   }
@@ -103,7 +103,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
 
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tableName (
+         |CREATE TABLE $DEFAULT_DATABASE.$tableName (
          |  id INT,
          |  name STRING,
          |  price DOUBLE,
@@ -121,7 +121,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
 
     spark.sql(
       s"""
-         |INSERT INTO $database.$tableName VALUES
+         |INSERT INTO $DEFAULT_DATABASE.$tableName VALUES
          |  (1, 'a1', 10.0, 1000, '2025-01-01'),
          |  (2, 'a2', 11.0, 1001, '2025-01-02'),
          |  (3, 'a3', 12.0, 1002, '2025-01-03')
@@ -143,7 +143,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
 
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tableName (
+         |CREATE TABLE $DEFAULT_DATABASE.$tableName (
          |  id INT,
          |  name STRING,
          |  price DOUBLE,
@@ -163,7 +163,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
 
     spark.sql(
       s"""
-         |INSERT INTO $database.$tableName VALUES
+         |INSERT INTO $DEFAULT_DATABASE.$tableName VALUES
          |  (1, 'a1', 10.0, 1000, '2025', '01', '01'),
          |  (2, 'a2', 11.0, 1001, '2025', '01', '02'),
          |  (3, 'a3', 12.0, 1002, '2025', '02', '01'),
@@ -187,7 +187,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
 
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tableName (
+         |CREATE TABLE $DEFAULT_DATABASE.$tableName (
          |  id INT,
          |  name STRING,
          |  price DOUBLE,
@@ -207,7 +207,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
 
     spark.sql(
       s"""
-         |INSERT INTO $database.$tableName VALUES
+         |INSERT INTO $DEFAULT_DATABASE.$tableName VALUES
          |  (1, 'a1', 10.0, 1000, '2025', '01', '01'),
          |  (2, 'a2', 11.0, 1001, '2025', '01', '02'),
          |  (3, 'a3', 12.0, 1002, '2025', '02', '01'),
@@ -238,7 +238,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
 
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tableName (
+         |CREATE TABLE $DEFAULT_DATABASE.$tableName (
          |  id INT,
          |  name STRING,
          |  price DOUBLE,
@@ -257,7 +257,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
 
     spark.sql(
       s"""
-         |INSERT INTO $database.$tableName VALUES
+         |INSERT INTO $DEFAULT_DATABASE.$tableName VALUES
          |  (1, 'a1', 10.0, 1000, '2026-01-05'),
          |  (2, 'a2', 11.0, 1001, '2026-01-06'),
          |  (3, 'a3', 12.0, 1002, '2026-02-10')
@@ -279,7 +279,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
 
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tableName (
+         |CREATE TABLE $DEFAULT_DATABASE.$tableName (
          |  id INT,
          |  name STRING,
          |  price DOUBLE,
@@ -297,16 +297,16 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
 
     spark.sql(
       s"""
-         |INSERT INTO $database.$tableName VALUES
+         |INSERT INTO $DEFAULT_DATABASE.$tableName VALUES
          |  (1, 'a1', 10.0, 1000, '2025-06-01'),
          |  (2, 'a2', 11.0, 1001, '2025-06-02')
          |""".stripMargin)
     assertShowPartitions(tableName, Seq("datestr=2025-06-01", "datestr=2025-06-02"))
 
-    spark.sql(s"ALTER TABLE $database.$tableName DROP PARTITION (datestr='2025-06-01')")
+    spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName DROP PARTITION (datestr='2025-06-01')")
     assertShowPartitions(tableName, Seq("datestr=2025-06-02"))
 
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (3, 'a3', 12.0, 1002, '2025-06-01')")
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (3, 'a3', 12.0, 1002, '2025-06-01')")
     assertShowPartitions(tableName, Seq("datestr=2025-06-01", "datestr=2025-06-02"))
   }
 
@@ -319,7 +319,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
 
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tableName (
+         |CREATE TABLE $DEFAULT_DATABASE.$tableName (
          |  id INT,
          |  name STRING,
          |  price DOUBLE,
@@ -337,7 +337,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
 
     spark.sql(
       s"""
-         |INSERT INTO $database.$tableName VALUES
+         |INSERT INTO $DEFAULT_DATABASE.$tableName VALUES
          |  (1, 'a1', 10.0, 1000, '2025-07-01'),
          |  (2, 'a2', 11.0, 1001, '2025-07-02'),
          |  (3, 'a3', 12.0, 1002, '2025-07-03')
@@ -350,7 +350,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
 
     spark.sql(
       s"""
-         |INSERT OVERWRITE TABLE $database.$tableName VALUES
+         |INSERT OVERWRITE TABLE $DEFAULT_DATABASE.$tableName VALUES
          |  (4, 'a4', 13.0, 1003, '2025-07-01'),
          |  (5, 'a5', 14.0, 1004, '2025-07-02')
          |""".stripMargin)
@@ -373,9 +373,9 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, basePath)
     try {
       createBasicTable(tableName, tableType)
-      spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'a1', 10.0, 1000)")
+      spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'a1', 10.0, 1000)")
 
-      spark.sql(s"ALTER TABLE $database.$tableName ADD COLUMNS (ext0 STRING, ext1 DOUBLE)")
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName ADD COLUMNS (ext0 STRING, ext1 DOUBLE)")
 
       // Catalog reflects new columns
       val catalogTable = getCatalogTable(tableName)
@@ -390,8 +390,8 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
       assert(avroFieldNames.contains("ext1"), s"meta-client schema missing ext1: $avroFieldNames")
 
       // Old row reads back with NULLs for new cols, post-add insert preserves values
-      spark.sql(s"INSERT INTO $database.$tableName VALUES (2, 'a2', 12.0, 1001, 'x', 2.5)")
-      val rows = spark.sql(s"SELECT id, ext0, ext1 FROM $database.$tableName ORDER BY id").collect()
+      spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (2, 'a2', 12.0, 1001, 'x', 2.5)")
+      val rows = spark.sql(s"SELECT id, ext0, ext1 FROM $DEFAULT_DATABASE.$tableName ORDER BY id").collect()
       assert(rows.length == 2, s"expected 2 rows, got ${rows.length}")
       assert(rows(0).getString(1) == null, "row id=1 ext0 should be NULL")
       assert(rows(1).getString(1) == "x", s"row id=2 ext0 should be 'x', got '${rows(1).getString(1)}'")
@@ -407,7 +407,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, basePath)
     try {
       createBasicTable(tableName, tableType)
-      spark.sql(s"ALTER TABLE $database.$tableName ADD COLUMNS (dt STRING COMMENT 'data time')")
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName ADD COLUMNS (dt STRING COMMENT 'data time')")
       val catalogTable = getCatalogTable(tableName)
       val dtField = catalogTable.schema.fields.find(_.name == "dt").getOrElse(
         throw new AssertionError(s"dt column missing in catalog schema: ${catalogTable.schema.fieldNames.mkString(",")}"))
@@ -426,7 +426,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     try {
       createBasicTable(tableName, tableType)
       expectFailure(
-        s"ALTER TABLE $database.$tableName ADD COLUMNS (name STRING)",
+        s"ALTER TABLE $DEFAULT_DATABASE.$tableName ADD COLUMNS (name STRING)",
         "already exists in the table")
     } finally cleanup(tableName, basePath)
   }
@@ -445,11 +445,11 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(s"${tableName}_rt", basePath)
     try {
       createBasicTable(tableName, "mor")
-      spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'a1', 10.0, 1000)")
-      spark.sql(s"ALTER TABLE $database.$tableName ADD COLUMNS (ext0 STRING)")
+      spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'a1', 10.0, 1000)")
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName ADD COLUMNS (ext0 STRING)")
 
       Seq(s"${tableName}_ro", s"${tableName}_rt").foreach { sideTable =>
-        val ident = new TableIdentifier(sideTable, Some(database))
+        val ident = new TableIdentifier(sideTable, Some(DEFAULT_DATABASE))
         if (spark.sessionState.catalog.tableExists(ident)) {
           val schema = spark.sessionState.catalog.getTableMetadata(ident).schema
           val names = HoodieSqlCommonUtils.removeMetaFields(schema).fields.map(_.name).toSet
@@ -479,10 +479,10 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
         columns = "id INT, name STRING, price DOUBLE, ts BIGINT, dt STRING",
         tableType = tableType,
         partitionedBy = Some("dt"))
-      spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'a1', 10.0, 1000, '2025-01-01')")
-      spark.sql(s"ALTER TABLE $database.$tableName ADD COLUMNS (ext0 DOUBLE)")
+      spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'a1', 10.0, 1000, '2025-01-01')")
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName ADD COLUMNS (ext0 DOUBLE)")
       // Old partition still queryable, new column is NULL there
-      val rows = spark.sql(s"SELECT id, dt, ext0 FROM $database.$tableName WHERE dt = '2025-01-01'").collect()
+      val rows = spark.sql(s"SELECT id, dt, ext0 FROM $DEFAULT_DATABASE.$tableName WHERE dt = '2025-01-01'").collect()
       assert(rows.length == 1, s"expected 1 row, got ${rows.length}")
       assert(rows(0).get(2) == null, s"ext0 should be NULL on pre-add row, got ${rows(0).get(2)}")
       // Partition column is still last in catalog schema
@@ -506,7 +506,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, basePath)
     try {
       createBasicTable(tableName, tableType)
-      spark.sql(s"ALTER TABLE $database.$tableName CHANGE COLUMN id id INT COMMENT 'primary id'")
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName CHANGE COLUMN id id INT COMMENT 'primary id'")
       val catalogTable = getCatalogTable(tableName)
       val idField = catalogTable.schema.fields(catalogTable.schema.fieldIndex("id"))
       assert(idField.getComment().contains("primary id"),
@@ -531,7 +531,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     try {
       createBasicTable(tableName, tableType)
       expectFailure(
-        s"ALTER TABLE $database.$tableName CHANGE COLUMN id id BIGINT",
+        s"ALTER TABLE $DEFAULT_DATABASE.$tableName CHANGE COLUMN id id BIGINT",
         "ALTER TABLE CHANGE COLUMN is not supported for changing column")
     } finally cleanup(tableName, basePath)
   }
@@ -553,7 +553,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
           "hoodie.clean.failed.writes.policy" -> "LAZY",
           "hoodie.write.lock.provider" -> "org.apache.hudi.client.transaction.lock.FileSystemBasedLockProvider"
         ))
-      spark.sql(s"ALTER TABLE $database.$tableName CHANGE COLUMN id id INT COMMENT 'primary id'")
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName CHANGE COLUMN id id INT COMMENT 'primary id'")
       val catalogTable = getCatalogTable(tableName)
       val idField = catalogTable.schema.fields(catalogTable.schema.fieldIndex("id"))
       assert(idField.getComment().contains("primary id"),
@@ -582,8 +582,8 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
           "hoodie.keep.max.commits" -> "300",
           "hoodie.keep.min.commits" -> "200"
         ))
-      spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'a1', 10.0, 1000)")
-      spark.sql(s"INSERT INTO $database.$tableName VALUES (2, 'a2', 20.0, 2000)")
+      spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'a1', 10.0, 1000)")
+      spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (2, 'a2', 20.0, 2000)")
 
       val metaClient = openMetaClient(basePath)
       val rollbackBefore = metaClient.getActiveTimeline.getRollbackTimeline.countInstants()
@@ -591,11 +591,11 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
       metaClient.getArchivedTimeline().reload()
       val archiveBefore = metaClient.getArchivedTimeline().countInstants()
 
-      spark.sql(s"ALTER TABLE $database.$tableName CHANGE COLUMN id id INT COMMENT 'pk'")
-      spark.sql(s"ALTER TABLE $database.$tableName SET TBLPROPERTIES ('hoodie.clean.commits.retained' = '1')")
-      spark.sql(s"ALTER TABLE $database.$tableName SET TBLPROPERTIES ('hoodie.keep.max.commits' = '3')")
-      spark.sql(s"ALTER TABLE $database.$tableName SET TBLPROPERTIES ('hoodie.keep.min.commits' = '2')")
-      spark.sql(s"ALTER TABLE $database.$tableName CHANGE COLUMN id id INT COMMENT 'primary id'")
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName CHANGE COLUMN id id INT COMMENT 'pk'")
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName SET TBLPROPERTIES ('hoodie.clean.commits.retained' = '1')")
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName SET TBLPROPERTIES ('hoodie.keep.max.commits' = '3')")
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName SET TBLPROPERTIES ('hoodie.keep.min.commits' = '2')")
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName CHANGE COLUMN id id INT COMMENT 'primary id'")
 
       metaClient.reloadActiveTimeline()
       val rollbackAfter = metaClient.getActiveTimeline.getRollbackTimeline.countInstants()
@@ -628,8 +628,8 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
         "hoodie.datasource.write.schema.allow.auto.evolution.column.drop" -> "true"
       ) {
         createBasicTable(tableName, tableType, extraTblProps = Map("hoodie.schema.on.read.enable" -> "true"))
-        spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'a1', 10.0, 1000)")
-        spark.sql(s"ALTER TABLE $database.$tableName RENAME COLUMN name TO fullname")
+        spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'a1', 10.0, 1000)")
+        spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName RENAME COLUMN name TO fullname")
 
         val catalogTable = getCatalogTable(tableName)
         val fields = HoodieSqlCommonUtils.removeMetaFields(catalogTable.schema).fields.map(_.name).toSet
@@ -638,7 +638,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
         assert(!fields.contains("name"),
           s"catalog schema should not contain old name 'name', got: $fields")
 
-        val rows = spark.sql(s"SELECT id, fullname FROM $database.$tableName WHERE id = 1").collect()
+        val rows = spark.sql(s"SELECT id, fullname FROM $DEFAULT_DATABASE.$tableName WHERE id = 1").collect()
         assert(rows.length == 1, s"expected 1 row, got ${rows.length}")
         assert(rows(0).getString(1) == "a1",
           s"renamed column should retain prior value 'a1', got '${rows(0).getString(1)}'")
@@ -659,7 +659,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
       withConf("hoodie.schema.on.read.enable" -> "false") {
         createBasicTable(tableName, "cow", extraTblProps = Map("hoodie.schema.on.read.enable" -> "false"))
         expectFailureAny(
-          s"ALTER TABLE $database.$tableName RENAME COLUMN name TO fullname",
+          s"ALTER TABLE $DEFAULT_DATABASE.$tableName RENAME COLUMN name TO fullname",
           Seq("schema.on.read", "schema on read", "not supported", "Unsupported", "v2 tables"))
       }
     } finally cleanup(tableName, basePath)
@@ -680,20 +680,20 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(newName, basePath)
     try {
       createBasicTable(tableName, tableType)
-      spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'a1', 10.0, 1000)")
+      spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'a1', 10.0, 1000)")
 
-      spark.sql(s"ALTER TABLE $database.$tableName RENAME TO $database.$newName")
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName RENAME TO $DEFAULT_DATABASE.$newName")
 
-      assert(!spark.sessionState.catalog.tableExists(new TableIdentifier(tableName, Some(database))),
+      assert(!spark.sessionState.catalog.tableExists(new TableIdentifier(tableName, Some(DEFAULT_DATABASE))),
         s"old table $tableName should not exist in HMS")
-      assert(spark.sessionState.catalog.tableExists(new TableIdentifier(newName, Some(database))),
+      assert(spark.sessionState.catalog.tableExists(new TableIdentifier(newName, Some(DEFAULT_DATABASE))),
         s"new table $newName should exist in HMS")
 
       val metaClient = openMetaClient(basePath)
       assert(metaClient.getTableConfig.getTableName == newName,
         s"meta-client tableName should be '$newName', got '${metaClient.getTableConfig.getTableName}'")
 
-      val rows = spark.sql(s"SELECT id, name FROM $database.$newName").collect()
+      val rows = spark.sql(s"SELECT id, name FROM $DEFAULT_DATABASE.$newName").collect()
       assert(rows.length == 1, s"renamed table should still have 1 row, got ${rows.length}")
     } finally {
       cleanup(newName, basePath)
@@ -713,7 +713,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
       // Managed table — no LOCATION clause. HMS picks the warehouse path.
       spark.sql(
         s"""
-           |CREATE TABLE $database.$tableName (
+           |CREATE TABLE $DEFAULT_DATABASE.$tableName (
            |  id INT, name STRING, price DOUBLE, ts BIGINT
            |) USING hudi
            |TBLPROPERTIES (
@@ -722,15 +722,15 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
            |  preCombineField = 'ts'
            |)
            |""".stripMargin)
-      spark.sql(s"ALTER TABLE $database.$tableName RENAME TO $database.$newName")
-      assert(!spark.sessionState.catalog.tableExists(new TableIdentifier(tableName, Some(database))),
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName RENAME TO $DEFAULT_DATABASE.$newName")
+      assert(!spark.sessionState.catalog.tableExists(new TableIdentifier(tableName, Some(DEFAULT_DATABASE))),
         s"old managed table $tableName should not exist after rename")
-      assert(spark.sessionState.catalog.tableExists(new TableIdentifier(newName, Some(database))),
+      assert(spark.sessionState.catalog.tableExists(new TableIdentifier(newName, Some(DEFAULT_DATABASE))),
         s"new managed table $newName should exist after rename")
     } finally {
       // Drop using current registered name; either may be present depending on test outcome
-      Try(spark.sql(s"DROP TABLE IF EXISTS $database.$tableName"))
-      Try(spark.sql(s"DROP TABLE IF EXISTS $database.$newName"))
+      Try(spark.sql(s"DROP TABLE IF EXISTS $DEFAULT_DATABASE.$tableName"))
+      Try(spark.sql(s"DROP TABLE IF EXISTS $DEFAULT_DATABASE.$newName"))
     }
   }
 
@@ -747,10 +747,10 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
       createBasicTable(tableName, tableType)
       val oldPath = getCatalogTable(tableName).location.toString
 
-      spark.sql(s"ALTER TABLE $database.$tableName RENAME TO $database.$newName")
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName RENAME TO $DEFAULT_DATABASE.$newName")
 
       val newPath = spark.sessionState.catalog.getTableMetadata(
-        new TableIdentifier(newName, Some(database))).location.toString
+        new TableIdentifier(newName, Some(DEFAULT_DATABASE))).location.toString
       assert(oldPath == newPath,
         s"external table physical path should be preserved on rename; old='$oldPath' new='$newPath'")
     } finally {
@@ -775,7 +775,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
         tableType = "cow",
         partitionedBy = None)
       expectFailure(
-        s"ALTER TABLE $database.$tableName ADD PARTITION (dt = '2023-08-01')",
+        s"ALTER TABLE $DEFAULT_DATABASE.$tableName ADD PARTITION (dt = '2023-08-01')",
         "is a non-partitioned table that is not allowed to add partition")
     } finally cleanup(tableName, basePath)
   }
@@ -791,7 +791,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
         tableType = "cow",
         partitionedBy = Some("dt"))
       expectFailure(
-        s"ALTER TABLE $database.$tableName ADD PARTITION (dt='2023-08-01') LOCATION '/tmp/path'",
+        s"ALTER TABLE $DEFAULT_DATABASE.$tableName ADD PARTITION (dt='2023-08-01') LOCATION '/tmp/path'",
         "Hoodie table does not support specify partition location explicitly")
     } finally cleanup(tableName, basePath)
   }
@@ -806,14 +806,14 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
         columns = "id BIGINT, name STRING, ts STRING, dt STRING",
         tableType = "cow",
         partitionedBy = Some("dt"))
-      spark.sql(s"ALTER TABLE $database.$tableName ADD PARTITION (dt='2023-08-01')")
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName ADD PARTITION (dt='2023-08-01')")
       assertShowPartitions(tableName, Seq("dt=2023-08-01"))
 
       // IF NOT EXISTS is silent on duplicate
-      spark.sql(s"ALTER TABLE $database.$tableName ADD IF NOT EXISTS PARTITION (dt='2023-08-01')")
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName ADD IF NOT EXISTS PARTITION (dt='2023-08-01')")
       // Bare form raises
       expectFailure(
-        s"ALTER TABLE $database.$tableName ADD PARTITION (dt='2023-08-01')",
+        s"ALTER TABLE $DEFAULT_DATABASE.$tableName ADD PARTITION (dt='2023-08-01')",
         "Partition metadata already exists for path")
     } finally cleanup(tableName, basePath)
   }
@@ -834,7 +834,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
         tableType = "cow",
         partitionedBy = Some("dt"),
         extraTblProps = Map("hoodie.datasource.write.hive_style_partitioning" -> hiveStyle.toString))
-      spark.sql(s"ALTER TABLE $database.$tableName ADD PARTITION (dt='2023-08-01')")
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName ADD PARTITION (dt='2023-08-01')")
       val expected = if (hiveStyle) Seq("dt=2023-08-01") else Seq("2023-08-01")
       assertShowPartitions(tableName, expected)
     } finally cleanup(tableName, basePath)
@@ -856,7 +856,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
         tableType = "cow",
         partitionedBy = Some("year, month, day"),
         extraTblProps = Map("hoodie.datasource.write.hive_style_partitioning" -> hiveStyle.toString))
-      spark.sql(s"ALTER TABLE $database.$tableName ADD PARTITION (year='2023', month='08', day='01')")
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName ADD PARTITION (year='2023', month='08', day='01')")
       val expected = if (hiveStyle) Seq("year=2023/month=08/day=01") else Seq("2023/08/01")
       assertShowPartitions(tableName, expected)
     } finally cleanup(tableName, basePath)
@@ -876,7 +876,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
         tableType = "cow",
         partitionedBy = Some("p_a, p_b"),
         extraTblProps = Map("hoodie.datasource.write.partitionpath.urlencode" -> urlEncode.toString))
-      spark.sql(s"ALTER TABLE $database.$tableName ADD PARTITION (p_a='url%a', p_b='key=val')")
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName ADD PARTITION (p_a='url%a', p_b='key=val')")
       val expected =
         if (urlEncode) Seq("p_a=url%25a/p_b=key%3Dval")
         else Seq("p_a=url%a/p_b=key=val")
@@ -901,9 +901,9 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
         columns = "id BIGINT, name STRING, ts STRING, dt STRING",
         tableType = tableType,
         partitionedBy = None)
-      spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'a', 'v1', '2021-10-01')")
+      spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'a', 'v1', '2021-10-01')")
       expectFailure(
-        s"ALTER TABLE $database.$tableName DROP PARTITION (dt='2021-10-01')",
+        s"ALTER TABLE $DEFAULT_DATABASE.$tableName DROP PARTITION (dt='2021-10-01')",
         "is a non-partitioned table that is not allowed to drop partition")
     } finally cleanup(tableName, basePath)
   }
@@ -922,10 +922,10 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
         tableType = "cow",
         partitionedBy = Some("dt"),
         extraTblProps = Map("hoodie.datasource.write.partitionpath.urlencode" -> urlEncode.toString))
-      spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'a', 'v1', '2021-10-01'), (2, 'b', 'v1', '2021-10-02')")
-      spark.sql(s"ALTER TABLE $database.$tableName DROP PARTITION (dt='2021-10-01')")
+      spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'a', 'v1', '2021-10-01'), (2, 'b', 'v1', '2021-10-02')")
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName DROP PARTITION (dt='2021-10-01')")
 
-      val rows = spark.sql(s"SELECT dt FROM $database.$tableName ORDER BY dt").collect()
+      val rows = spark.sql(s"SELECT dt FROM $DEFAULT_DATABASE.$tableName ORDER BY dt").collect()
       assert(rows.length == 1, s"expected 1 row after drop, got ${rows.length}")
       assert(rows(0).getString(0) == "2021-10-02",
         s"expected only 2021-10-02 partition to remain, got ${rows(0).getString(0)}")
@@ -950,19 +950,19 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
         extraTblProps = Map("hoodie.datasource.write.hive_style_partitioning" -> hiveStyle.toString))
       spark.sql(
         s"""
-           |INSERT INTO $database.$tableName VALUES
+           |INSERT INTO $DEFAULT_DATABASE.$tableName VALUES
            |  (1, 'a', 'v1', '2021', '10', '01'),
            |  (2, 'b', 'v1', '2021', '10', '02')
            |""".stripMargin)
 
       // Not specifying all partition columns must fail
       expectFailure(
-        s"ALTER TABLE $database.$tableName DROP PARTITION (year='2021', month='10')",
+        s"ALTER TABLE $DEFAULT_DATABASE.$tableName DROP PARTITION (year='2021', month='10')",
         "All partition columns need to be specified for Hoodie's partition")
 
       // Specifying all keys succeeds
-      spark.sql(s"ALTER TABLE $database.$tableName DROP PARTITION (year='2021', month='10', day='01')")
-      val rows = spark.sql(s"SELECT id, year, month, day FROM $database.$tableName ORDER BY id").collect()
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName DROP PARTITION (year='2021', month='10', day='01')")
+      val rows = spark.sql(s"SELECT id, year, month, day FROM $DEFAULT_DATABASE.$tableName ORDER BY id").collect()
       assert(rows.length == 1, s"expected 1 surviving row, got ${rows.length}")
       assert(rows(0).getLong(0) == 2L, s"expected id=2 to remain, got ${rows(0).getLong(0)}")
     } finally cleanup(tableName, basePath)
@@ -983,15 +983,15 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
         partitionedBy = Some("partition_date_col"))
       spark.sql(
         s"""
-           |INSERT INTO $database.$tableName VALUES
+           |INSERT INTO $DEFAULT_DATABASE.$tableName VALUES
            |  (1, 'a1', 10.0, 1000, '2023-08-01'),
            |  (2, 'a2', 10.0, 1000, '2023-08-02'),
            |  (3, 'a3', 10.0, 1000, '2023-09-01')
            |""".stripMargin)
-      spark.sql(s"ALTER TABLE $database.$tableName DROP PARTITION (partition_date_col='2023-08-*')")
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName DROP PARTITION (partition_date_col='2023-08-*')")
 
       val rows = spark.sql(
-        s"SELECT DISTINCT partition_date_col FROM $database.$tableName ORDER BY partition_date_col").collect()
+        s"SELECT DISTINCT partition_date_col FROM $DEFAULT_DATABASE.$tableName ORDER BY partition_date_col").collect()
       assert(rows.length == 1, s"expected only 2023-09-01 to remain, got ${rows.length} partitions")
       assert(rows(0).getString(0) == "2023-09-01",
         s"expected '2023-09-01', got '${rows(0).getString(0)}'")
@@ -1011,16 +1011,16 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
         columns = "id INT, name STRING, price DOUBLE, ts BIGINT",
         tableType = tableType,
         partitionedBy = Some("ts"))
-      spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'a1', 10.0, 1000)")
-      spark.sql(s"INSERT INTO $database.$tableName VALUES (2, 'a2', 10.0, 1001)")
-      spark.sql(s"INSERT INTO $database.$tableName VALUES (3, 'a3', 10.0, 1002)")
+      spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'a1', 10.0, 1000)")
+      spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (2, 'a2', 10.0, 1001)")
+      spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (3, 'a3', 10.0, 1002)")
 
-      val client = HoodieCLIUtils.createHoodieWriteClient(spark, basePath, Map.empty, scala.Option(s"$database.$tableName"))
+      val client = HoodieCLIUtils.createHoodieWriteClient(spark, basePath, Map.empty, scala.Option(s"$DEFAULT_DATABASE.$tableName"))
       try {
         val instant = client.scheduleClustering(HOption.empty()).get()
         log.info(s"Scheduled clustering instant: $instant")
         expectFailure(
-          s"ALTER TABLE $database.$tableName DROP PARTITION (ts=1002)",
+          s"ALTER TABLE $DEFAULT_DATABASE.$tableName DROP PARTITION (ts=1002)",
           "Failed to drop partitions")
       } finally client.close()
     } finally cleanup(tableName, basePath)
@@ -1039,19 +1039,19 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
         extraTblProps = Map("hoodie.index.type" -> "INMEMORY"))
 
       withConf("hoodie.compact.inline" -> "false", "hoodie.compact.schedule.inline" -> "false") {
-        spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'a1', 10.0, 1000)")
-        spark.sql(s"INSERT INTO $database.$tableName VALUES (2, 'a2', 10.0, 1001)")
-        spark.sql(s"INSERT INTO $database.$tableName VALUES (3, 'a3', 10.0, 1002)")
-        spark.sql(s"INSERT INTO $database.$tableName VALUES (4, 'a4', 10.0, 1003)")
-        spark.sql(s"INSERT INTO $database.$tableName VALUES (5, 'a5', 10.0, 1004)")
+        spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'a1', 10.0, 1000)")
+        spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (2, 'a2', 10.0, 1001)")
+        spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (3, 'a3', 10.0, 1002)")
+        spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (4, 'a4', 10.0, 1003)")
+        spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (5, 'a5', 10.0, 1004)")
 
-        val client = HoodieCLIUtils.createHoodieWriteClient(spark, basePath, Map.empty, scala.Option(s"$database.$tableName"))
+        val client = HoodieCLIUtils.createHoodieWriteClient(spark, basePath, Map.empty, scala.Option(s"$DEFAULT_DATABASE.$tableName"))
         try {
           val instant = client.scheduleCompaction(HOption.empty())
           assert(instant.isPresent, "compaction plan should be scheduled")
           log.info(s"Scheduled compaction instant: ${instant.get()}")
           expectFailure(
-            s"ALTER TABLE $database.$tableName DROP PARTITION (ts=1002)",
+            s"ALTER TABLE $DEFAULT_DATABASE.$tableName DROP PARTITION (ts=1002)",
             "Failed to drop partitions")
         } finally client.close()
       }
@@ -1072,19 +1072,19 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
 
       withConf("hoodie.compact.inline" -> "false", "hoodie.compact.schedule.inline" -> "false") {
         // Same partition each time so log-compaction has multiple log blocks for one file group
-        spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'a1', 10.0, 1000)")
-        spark.sql(s"INSERT INTO $database.$tableName VALUES (2, 'a2', 10.0, 1000)")
-        spark.sql(s"INSERT INTO $database.$tableName VALUES (3, 'a3', 10.0, 1000)")
-        spark.sql(s"INSERT INTO $database.$tableName VALUES (4, 'a4', 10.0, 1000)")
-        spark.sql(s"INSERT INTO $database.$tableName VALUES (5, 'a5', 10.0, 1000)")
+        spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'a1', 10.0, 1000)")
+        spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (2, 'a2', 10.0, 1000)")
+        spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (3, 'a3', 10.0, 1000)")
+        spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (4, 'a4', 10.0, 1000)")
+        spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (5, 'a5', 10.0, 1000)")
 
-        val client = HoodieCLIUtils.createHoodieWriteClient(spark, basePath, Map.empty, scala.Option(s"$database.$tableName"))
+        val client = HoodieCLIUtils.createHoodieWriteClient(spark, basePath, Map.empty, scala.Option(s"$DEFAULT_DATABASE.$tableName"))
         try {
           val instant = client.scheduleLogCompaction(HOption.empty())
           assert(instant.isPresent, "log-compaction plan should be scheduled")
           log.info(s"Scheduled log-compaction instant: ${instant.get()}")
           expectFailure(
-            s"ALTER TABLE $database.$tableName DROP PARTITION (ts=1000)",
+            s"ALTER TABLE $DEFAULT_DATABASE.$tableName DROP PARTITION (ts=1000)",
             "Failed to drop partitions")
         } finally client.close()
       }
@@ -1108,13 +1108,13 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
         partitionedBy = Some("dt"))
       spark.sql(
         s"""
-           |INSERT INTO $database.$tableName VALUES
+           |INSERT INTO $DEFAULT_DATABASE.$tableName VALUES
            |  (1, 'a1', 10.0, 1000, '01'),
            |  (2, 'a2', 10.0, 1000, '02'),
            |  (3, 'a3', 10.0, 1000, '03')
            |""".stripMargin)
 
-      spark.sql(s"ALTER TABLE $database.$tableName DROP PARTITION (dt='01')")
+      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName DROP PARTITION (dt='01')")
 
       val metaClient = openMetaClient(basePath)
       val replaceTimeline = metaClient.getActiveTimeline.getCompletedReplaceTimeline
@@ -1146,14 +1146,14 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
       expected: Seq[String],
       partitionSpec: Option[String] = None): Unit = {
     val sql = partitionSpec match {
-      case Some(spec) => s"SHOW PARTITIONS $database.$tableName $spec"
-      case None       => s"SHOW PARTITIONS $database.$tableName"
+      case Some(spec) => s"SHOW PARTITIONS $DEFAULT_DATABASE.$tableName $spec"
+      case None       => s"SHOW PARTITIONS $DEFAULT_DATABASE.$tableName"
     }
     val rows = spark.sql(sql).collect().map(_.getString(0)).toSeq.sorted
     val expectedSorted = expected.sorted
     log.info(s"[$tableName] $sql -> ${rows.mkString("[", ", ", "]")}")
     assert(rows == expectedSorted,
-      s"SHOW PARTITIONS mismatch for $database.$tableName " +
+      s"SHOW PARTITIONS mismatch for $DEFAULT_DATABASE.$tableName " +
         s"(spec=${partitionSpec.getOrElse("none")}). " +
         s"Expected ${expectedSorted.mkString("[", ", ", "]")}, " +
         s"got ${rows.mkString("[", ", ", "]")}")
@@ -1185,7 +1185,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     val partitionClause = partitionedBy.map(p => s"PARTITIONED BY ($p)").getOrElse("")
     val ddl =
       s"""
-         |CREATE TABLE $database.$tableName (
+         |CREATE TABLE $DEFAULT_DATABASE.$tableName (
          |  $columns
          |) USING hudi
          |TBLPROPERTIES (
@@ -1194,13 +1194,13 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
          |$partitionClause
          |LOCATION '$basePath'
          |""".stripMargin
-    log.info(s"Creating table $database.$tableName:\n$ddl")
+    log.info(s"Creating table $DEFAULT_DATABASE.$tableName:\n$ddl")
     spark.sql(ddl)
   }
 
   private def getCatalogTable(tableName: String): org.apache.spark.sql.catalyst.catalog.CatalogTable = {
-    spark.sessionState.catalog.refreshTable(new TableIdentifier(tableName, Some(database)))
-    spark.sessionState.catalog.getTableMetadata(new TableIdentifier(tableName, Some(database)))
+    spark.sessionState.catalog.refreshTable(new TableIdentifier(tableName, Some(DEFAULT_DATABASE)))
+    spark.sessionState.catalog.getTableMetadata(new TableIdentifier(tableName, Some(DEFAULT_DATABASE)))
   }
 
   private def openMetaClient(basePath: String): HoodieTableMetaClient = {
@@ -1266,13 +1266,13 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, getBasePath(tableName))
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tableName (
+         |CREATE TABLE $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, price DOUBLE, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |""".stripMargin)
-    assert(tableExists(database, tableName), s"$database.$tableName should exist")
-    assert(spark.sql(s"SELECT * FROM $database.$tableName").count() == 0)
+    assert(tableExists(DEFAULT_DATABASE, tableName), s"$DEFAULT_DATABASE.$tableName should exist")
+    assert(spark.sql(s"SELECT * FROM $DEFAULT_DATABASE.$tableName").count() == 0)
   }
 
   /** CREATE TABLE without LOCATION for MOR creates the base table (ro/rt only appear after first write). */
@@ -1281,12 +1281,12 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, getBasePath(tableName))
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tableName (
+         |CREATE TABLE $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, price DOUBLE, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'mor', primaryKey = 'id', preCombineField = 'ts')
          |""".stripMargin)
-    assert(tableExists(database, tableName), s"$database.$tableName should exist")
+    assert(tableExists(DEFAULT_DATABASE, tableName), s"$DEFAULT_DATABASE.$tableName should exist")
   }
 
   /** CREATE EXTERNAL TABLE with LOCATION + PARTITIONED BY (COW). */
@@ -1296,14 +1296,14 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, basePath)
     spark.sql(
       s"""
-         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, price DOUBLE, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |PARTITIONED BY (datestr string)
          |LOCATION '$basePath'
          |""".stripMargin)
-    assert(tableExists(database, tableName), s"$database.$tableName should exist")
+    assert(tableExists(DEFAULT_DATABASE, tableName), s"$DEFAULT_DATABASE.$tableName should exist")
   }
 
   /**
@@ -1318,17 +1318,17 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(s"${tableName}_rt", basePath)
     spark.sql(
       s"""
-         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, price DOUBLE, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'mor', primaryKey = 'id', preCombineField = 'ts')
          |PARTITIONED BY (datestr string)
          |LOCATION '$basePath'
          |""".stripMargin)
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 10.0, 1000, '2025-01-01')")
-    assert(tableExists(database, tableName))
-    assert(tableExists(database, s"${tableName}_ro"), s"_ro view should be auto-created for MOR")
-    assert(tableExists(database, s"${tableName}_rt"), s"_rt view should be auto-created for MOR")
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'r1', 10.0, 1000, '2025-01-01')")
+    assert(tableExists(DEFAULT_DATABASE, tableName))
+    assert(tableExists(DEFAULT_DATABASE, s"${tableName}_ro"), s"_ro view should be auto-created for MOR")
+    assert(tableExists(DEFAULT_DATABASE, s"${tableName}_rt"), s"_rt view should be auto-created for MOR")
   }
 
   /** CREATE TABLE IF NOT EXISTS creates the table when it is absent. */
@@ -1337,12 +1337,12 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, getBasePath(tableName))
     spark.sql(
       s"""
-         |CREATE TABLE IF NOT EXISTS $database.$tableName (
+         |CREATE TABLE IF NOT EXISTS $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |""".stripMargin)
-    assert(tableExists(database, tableName))
+    assert(tableExists(DEFAULT_DATABASE, tableName))
   }
 
   /** CREATE TABLE IF NOT EXISTS is a no-op when the table already exists. */
@@ -1351,15 +1351,15 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, getBasePath(tableName))
     val ddl =
       s"""
-         |CREATE TABLE IF NOT EXISTS $database.$tableName (
+         |CREATE TABLE IF NOT EXISTS $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |""".stripMargin
     spark.sql(ddl)
-    assert(tableExists(database, tableName))
+    assert(tableExists(DEFAULT_DATABASE, tableName))
     spark.sql(ddl)
-    assert(tableExists(database, tableName))
+    assert(tableExists(DEFAULT_DATABASE, tableName))
   }
 
   /** CREATE TABLE with composite primary key + multi-field partitioning (ComplexKeyGenerator). */
@@ -1369,7 +1369,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, basePath)
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tableName (
+         |CREATE TABLE $DEFAULT_DATABASE.$tableName (
          |  id INT, region STRING, name STRING, price DOUBLE, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (
@@ -1380,9 +1380,9 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
          |PARTITIONED BY (datestr string, hour string)
          |LOCATION '$basePath'
          |""".stripMargin)
-    assert(tableExists(database, tableName))
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'us', 'r1', 10.0, 1000, '2025-01-01', '00')")
-    assert(spark.sql(s"SELECT * FROM $database.$tableName").count() == 1)
+    assert(tableExists(DEFAULT_DATABASE, tableName))
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'us', 'r1', 10.0, 1000, '2025-01-01', '00')")
+    assert(spark.sql(s"SELECT * FROM $DEFAULT_DATABASE.$tableName").count() == 1)
   }
 
   /** CREATE TABLE with COMMENT propagates the comment into the catalog metadata. */
@@ -1391,14 +1391,14 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, getBasePath(tableName))
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tableName (
+         |CREATE TABLE $DEFAULT_DATABASE.$tableName (
          |  id INT COMMENT 'row id', name STRING COMMENT 'rider name', ts BIGINT
          |) USING hudi
          |COMMENT 'integ test table for DDL coverage'
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |""".stripMargin)
     val md = spark.sessionState.catalog.getTableMetadata(
-      new TableIdentifier(tableName, Some(database)))
+      new TableIdentifier(tableName, Some(DEFAULT_DATABASE)))
     assert(md.comment.contains("integ test table for DDL coverage"),
       s"expected table comment to be set, got: ${md.comment}")
   }
@@ -1409,7 +1409,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, getBasePath(tableName))
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tableName (
+         |CREATE TABLE $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
@@ -1417,7 +1417,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     assertThrowsContaining("already exists") {
       spark.sql(
         s"""
-           |CREATE TABLE $database.$tableName (
+           |CREATE TABLE $DEFAULT_DATABASE.$tableName (
            |  id INT, name STRING, ts BIGINT
            |) USING hudi
            |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
@@ -1437,14 +1437,14 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tgt, getBasePath(tgt))
     spark.sql(
       s"""
-         |CREATE TABLE $database.$src (
+         |CREATE TABLE $DEFAULT_DATABASE.$src (
          |  id INT, name STRING, price DOUBLE, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |""".stripMargin)
-    spark.sql(s"CREATE TABLE $database.$tgt LIKE $database.$src USING hudi")
-    assert(tableExists(database, tgt))
-    assert(spark.sql(s"SELECT * FROM $database.$tgt").count() == 0)
+    spark.sql(s"CREATE TABLE $DEFAULT_DATABASE.$tgt LIKE $DEFAULT_DATABASE.$src USING hudi")
+    assert(tableExists(DEFAULT_DATABASE, tgt))
+    assert(spark.sql(s"SELECT * FROM $DEFAULT_DATABASE.$tgt").count() == 0)
   }
 
   /** CREATE TABLE LIKE with explicit LOCATION produces an external table at that path. */
@@ -1456,15 +1456,15 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tgt, tgtPath)
     spark.sql(
       s"""
-         |CREATE TABLE $database.$src (
+         |CREATE TABLE $DEFAULT_DATABASE.$src (
          |  id INT, name STRING, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |""".stripMargin)
-    spark.sql(s"CREATE TABLE $database.$tgt LIKE $database.$src USING hudi LOCATION '$tgtPath'")
-    assert(tableExists(database, tgt))
+    spark.sql(s"CREATE TABLE $DEFAULT_DATABASE.$tgt LIKE $DEFAULT_DATABASE.$src USING hudi LOCATION '$tgtPath'")
+    assert(tableExists(DEFAULT_DATABASE, tgt))
     val md = spark.sessionState.catalog.getTableMetadata(
-      new TableIdentifier(tgt, Some(database)))
+      new TableIdentifier(tgt, Some(DEFAULT_DATABASE)))
     assert(md.location.toString.contains(tgt), s"expected location to contain $tgt; got ${md.location}")
   }
 
@@ -1478,9 +1478,9 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     val srcPath = getBasePath(src)
     cleanup(src, srcPath)
     cleanup(tgt, getBasePath(tgt))
-    createHiveTestTable(database, src, srcPath, isPartitionedDataset = true, includeHoodieMetafields = false)
-    spark.sql(s"CREATE TABLE $database.$tgt LIKE $database.$src USING hudi")
-    assert(tableExists(database, tgt))
+    createHiveTestTable(DEFAULT_DATABASE, src, srcPath, isPartitionedDataset = true, includeHoodieMetafields = false)
+    spark.sql(s"CREATE TABLE $DEFAULT_DATABASE.$tgt LIKE $DEFAULT_DATABASE.$src USING hudi")
+    assert(tableExists(DEFAULT_DATABASE, tgt))
   }
 
   /** CREATE TABLE LIKE IF NOT EXISTS is a no-op when the target already exists. */
@@ -1491,14 +1491,14 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tgt, getBasePath(tgt))
     spark.sql(
       s"""
-         |CREATE TABLE $database.$src (
+         |CREATE TABLE $DEFAULT_DATABASE.$src (
          |  id INT, name STRING, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |""".stripMargin)
-    spark.sql(s"CREATE TABLE $database.$tgt LIKE $database.$src USING hudi")
-    spark.sql(s"CREATE TABLE IF NOT EXISTS $database.$tgt LIKE $database.$src USING hudi")
-    assert(tableExists(database, tgt))
+    spark.sql(s"CREATE TABLE $DEFAULT_DATABASE.$tgt LIKE $DEFAULT_DATABASE.$src USING hudi")
+    spark.sql(s"CREATE TABLE IF NOT EXISTS $DEFAULT_DATABASE.$tgt LIKE $DEFAULT_DATABASE.$src USING hudi")
+    assert(tableExists(DEFAULT_DATABASE, tgt))
   }
 
   /** CREATE TABLE LIKE without IF NOT EXISTS on an existing target must throw. */
@@ -1509,14 +1509,14 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tgt, getBasePath(tgt))
     spark.sql(
       s"""
-         |CREATE TABLE $database.$src (
+         |CREATE TABLE $DEFAULT_DATABASE.$src (
          |  id INT, name STRING, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |""".stripMargin)
-    spark.sql(s"CREATE TABLE $database.$tgt LIKE $database.$src USING hudi")
+    spark.sql(s"CREATE TABLE $DEFAULT_DATABASE.$tgt LIKE $DEFAULT_DATABASE.$src USING hudi")
     assertThrowsContaining("already exists") {
-      spark.sql(s"CREATE TABLE $database.$tgt LIKE $database.$src USING hudi")
+      spark.sql(s"CREATE TABLE $DEFAULT_DATABASE.$tgt LIKE $DEFAULT_DATABASE.$src USING hudi")
     }
   }
 
@@ -1527,7 +1527,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(src, getBasePath(src))
     cleanup(tgt, getBasePath(tgt))
     assertThrowsContaining(src) {
-      spark.sql(s"CREATE TABLE $database.$tgt LIKE $database.$src USING hudi")
+      spark.sql(s"CREATE TABLE $DEFAULT_DATABASE.$tgt LIKE $DEFAULT_DATABASE.$src USING hudi")
     }
   }
 
@@ -1541,15 +1541,15 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     val tgt = "hudi_ddl_ctas_tgt_cow"
     cleanup(src, getBasePath(src))
     cleanup(tgt, getBasePath(tgt))
-    createInserts(database, src, SaveMode.Overwrite, isHudiTable = true)
+    createInserts(DEFAULT_DATABASE, src, SaveMode.Overwrite, isHudiTable = true)
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tgt USING hudi
+         |CREATE TABLE $DEFAULT_DATABASE.$tgt USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'uuid', preCombineField = 'ts')
-         |AS SELECT * FROM $database.$src
+         |AS SELECT * FROM $DEFAULT_DATABASE.$src
          |""".stripMargin)
-    assert(tableExists(database, tgt))
-    assert(spark.sql(s"SELECT * FROM $database.$tgt").count() == 20)
+    assert(tableExists(DEFAULT_DATABASE, tgt))
+    assert(spark.sql(s"SELECT * FROM $DEFAULT_DATABASE.$tgt").count() == 20)
   }
 
   /** CTAS for a MOR table creates the base table plus the _ro and _rt views. */
@@ -1560,16 +1560,16 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tgt, getBasePath(tgt))
     cleanup(s"${tgt}_ro", getBasePath(tgt))
     cleanup(s"${tgt}_rt", getBasePath(tgt))
-    createInserts(database, src, SaveMode.Overwrite, isHudiTable = true)
+    createInserts(DEFAULT_DATABASE, src, SaveMode.Overwrite, isHudiTable = true)
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tgt USING hudi
+         |CREATE TABLE $DEFAULT_DATABASE.$tgt USING hudi
          |TBLPROPERTIES (type = 'mor', primaryKey = 'uuid', preCombineField = 'ts')
-         |AS SELECT * FROM $database.$src
+         |AS SELECT * FROM $DEFAULT_DATABASE.$src
          |""".stripMargin)
-    assert(tableExists(database, tgt))
-    assert(tableExists(database, s"${tgt}_ro"), s"_ro view should be auto-created for MOR CTAS")
-    assert(tableExists(database, s"${tgt}_rt"), s"_rt view should be auto-created for MOR CTAS")
+    assert(tableExists(DEFAULT_DATABASE, tgt))
+    assert(tableExists(DEFAULT_DATABASE, s"${tgt}_ro"), s"_ro view should be auto-created for MOR CTAS")
+    assert(tableExists(DEFAULT_DATABASE, s"${tgt}_rt"), s"_rt view should be auto-created for MOR CTAS")
   }
 
   /** CTAS sourcing rows from a non-Hudi (Hive) table. */
@@ -1578,15 +1578,15 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     val tgt = "hudi_ddl_ctas_tgt_from_hive"
     cleanup(src, getBasePath(src))
     cleanup(tgt, getBasePath(tgt))
-    createInserts(database, src, SaveMode.Overwrite, isHudiTable = false)
+    createInserts(DEFAULT_DATABASE, src, SaveMode.Overwrite, isHudiTable = false)
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tgt USING hudi
+         |CREATE TABLE $DEFAULT_DATABASE.$tgt USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'uuid', preCombineField = 'ts')
-         |AS SELECT * FROM $database.$src
+         |AS SELECT * FROM $DEFAULT_DATABASE.$src
          |""".stripMargin)
-    assert(tableExists(database, tgt))
-    assert(spark.sql(s"SELECT * FROM $database.$tgt").count() == 20)
+    assert(tableExists(DEFAULT_DATABASE, tgt))
+    assert(spark.sql(s"SELECT * FROM $DEFAULT_DATABASE.$tgt").count() == 20)
   }
 
   /** CTAS with an explicit PARTITIONED BY clause produces a partitioned target table. */
@@ -1595,17 +1595,17 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     val tgt = "hudi_ddl_ctas_tgt_partitioned"
     cleanup(src, getBasePath(src))
     cleanup(tgt, getBasePath(tgt))
-    createInserts(database, src, SaveMode.Overwrite, isHudiTable = true)
+    createInserts(DEFAULT_DATABASE, src, SaveMode.Overwrite, isHudiTable = true)
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tgt USING hudi
+         |CREATE TABLE $DEFAULT_DATABASE.$tgt USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'uuid', preCombineField = 'ts')
          |PARTITIONED BY (partitionpath)
-         |AS SELECT * FROM $database.$src
+         |AS SELECT * FROM $DEFAULT_DATABASE.$src
          |""".stripMargin)
-    assert(tableExists(database, tgt))
+    assert(tableExists(DEFAULT_DATABASE, tgt))
     val md = spark.sessionState.catalog.getTableMetadata(
-      new TableIdentifier(tgt, Some(database)))
+      new TableIdentifier(tgt, Some(DEFAULT_DATABASE)))
     assert(md.partitionColumnNames.contains("partitionpath"),
       s"expected partition columns to contain 'partitionpath'; got ${md.partitionColumnNames}")
   }
@@ -1619,15 +1619,15 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     val tgt = "hudi_ddl_ctas_tgt_auto_key"
     cleanup(src, getBasePath(src))
     cleanup(tgt, getBasePath(tgt))
-    createInserts(database, src, SaveMode.Overwrite, isHudiTable = true)
+    createInserts(DEFAULT_DATABASE, src, SaveMode.Overwrite, isHudiTable = true)
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tgt USING hudi
+         |CREATE TABLE $DEFAULT_DATABASE.$tgt USING hudi
          |TBLPROPERTIES (type = 'cow', preCombineField = 'ts')
-         |AS SELECT * FROM $database.$src
+         |AS SELECT * FROM $DEFAULT_DATABASE.$src
          |""".stripMargin)
-    assert(tableExists(database, tgt))
-    assert(spark.sql(s"SELECT * FROM $database.$tgt").count() == 20)
+    assert(tableExists(DEFAULT_DATABASE, tgt))
+    assert(spark.sql(s"SELECT * FROM $DEFAULT_DATABASE.$tgt").count() == 20)
   }
 
   /**
@@ -1639,20 +1639,20 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     val tgt = "hudi_ddl_ctas_tgt_props"
     cleanup(src, getBasePath(src))
     cleanup(tgt, getBasePath(tgt))
-    createInserts(database, src, SaveMode.Overwrite, isHudiTable = true)
+    createInserts(DEFAULT_DATABASE, src, SaveMode.Overwrite, isHudiTable = true)
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tgt USING hudi
+         |CREATE TABLE $DEFAULT_DATABASE.$tgt USING hudi
          |TBLPROPERTIES (
          |  type = 'cow',
          |  primaryKey = 'uuid',
          |  preCombineField = 'ts',
          |  'user.business.unit' = 'rides'
          |)
-         |AS SELECT * FROM $database.$src
+         |AS SELECT * FROM $DEFAULT_DATABASE.$src
          |""".stripMargin)
     val md = spark.sessionState.catalog.getTableMetadata(
-      new TableIdentifier(tgt, Some(database)))
+      new TableIdentifier(tgt, Some(DEFAULT_DATABASE)))
     assert(md.properties.get("user.business.unit").contains("rides"),
       s"user property did not round-trip; got ${md.properties}")
   }
@@ -1664,7 +1664,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     assertThrowsContaining("Compaction is not supported on a CopyOnWrite table") {
       spark.sql(
         s"""
-           |CREATE TABLE $database.$tgt USING hudi
+           |CREATE TABLE $DEFAULT_DATABASE.$tgt USING hudi
            |TBLPROPERTIES (
            |  type = 'cow',
            |  primaryKey = 'id',
@@ -1685,15 +1685,15 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, getBasePath(tableName))
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tableName (
+         |CREATE TABLE $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |""".stripMargin)
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000)")
-    assert(tableExists(database, tableName))
-    spark.sql(s"DROP TABLE $database.$tableName")
-    assert(!tableExists(database, tableName))
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'r1', 1000)")
+    assert(tableExists(DEFAULT_DATABASE, tableName))
+    spark.sql(s"DROP TABLE $DEFAULT_DATABASE.$tableName")
+    assert(!tableExists(DEFAULT_DATABASE, tableName))
   }
 
   /** DROP TABLE on an EXTERNAL table removes the catalog entry but preserves the data on disk. */
@@ -1703,15 +1703,15 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, basePath)
     spark.sql(
       s"""
-         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |LOCATION '$basePath'
          |""".stripMargin)
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000)")
-    spark.sql(s"DROP TABLE $database.$tableName")
-    assert(!tableExists(database, tableName))
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'r1', 1000)")
+    spark.sql(s"DROP TABLE $DEFAULT_DATABASE.$tableName")
+    assert(!tableExists(DEFAULT_DATABASE, tableName))
     val fs = new Path(basePath).getFileSystem(spark.sparkContext.hadoopConfiguration)
     assert(fs.exists(new Path(basePath, ".hoodie")),
       s"data at $basePath should be preserved after DROP on external table")
@@ -1728,19 +1728,19 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(s"${tableName}_rt", basePath)
     spark.sql(
       s"""
-         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'mor', primaryKey = 'id', preCombineField = 'ts')
          |LOCATION '$basePath'
          |""".stripMargin)
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000)")
-    assert(tableExists(database, s"${tableName}_ro"))
-    assert(tableExists(database, s"${tableName}_rt"))
-    spark.sql(s"DROP TABLE $database.$tableName PURGE")
-    assert(!tableExists(database, tableName))
-    assert(!tableExists(database, s"${tableName}_ro"), s"_ro view should be dropped with base table")
-    assert(!tableExists(database, s"${tableName}_rt"), s"_rt view should be dropped with base table")
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'r1', 1000)")
+    assert(tableExists(DEFAULT_DATABASE, s"${tableName}_ro"))
+    assert(tableExists(DEFAULT_DATABASE, s"${tableName}_rt"))
+    spark.sql(s"DROP TABLE $DEFAULT_DATABASE.$tableName PURGE")
+    assert(!tableExists(DEFAULT_DATABASE, tableName))
+    assert(!tableExists(DEFAULT_DATABASE, s"${tableName}_ro"), s"_ro view should be dropped with base table")
+    assert(!tableExists(DEFAULT_DATABASE, s"${tableName}_rt"), s"_rt view should be dropped with base table")
   }
 
   /** DROP TABLE IF EXISTS succeeds when the table is present. */
@@ -1749,21 +1749,21 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, getBasePath(tableName))
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tableName (
+         |CREATE TABLE $DEFAULT_DATABASE.$tableName (
          |  id INT, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |""".stripMargin)
-    spark.sql(s"DROP TABLE IF EXISTS $database.$tableName")
-    assert(!tableExists(database, tableName))
+    spark.sql(s"DROP TABLE IF EXISTS $DEFAULT_DATABASE.$tableName")
+    assert(!tableExists(DEFAULT_DATABASE, tableName))
   }
 
   /** DROP TABLE IF EXISTS is a no-op when the table is absent. */
   def testDropTableIfExistsWhenAbsent(): Unit = {
     val tableName = "hudi_ddl_drop_if_exists_absent"
     cleanup(tableName, getBasePath(tableName))
-    spark.sql(s"DROP TABLE IF EXISTS $database.$tableName")
-    assert(!tableExists(database, tableName))
+    spark.sql(s"DROP TABLE IF EXISTS $DEFAULT_DATABASE.$tableName")
+    assert(!tableExists(DEFAULT_DATABASE, tableName))
   }
 
   /** DROP TABLE PURGE on an external table removes data on disk in addition to the catalog entry. */
@@ -1773,15 +1773,15 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, basePath)
     spark.sql(
       s"""
-         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |LOCATION '$basePath'
          |""".stripMargin)
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000)")
-    spark.sql(s"DROP TABLE $database.$tableName PURGE")
-    assert(!tableExists(database, tableName))
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'r1', 1000)")
+    spark.sql(s"DROP TABLE $DEFAULT_DATABASE.$tableName PURGE")
+    assert(!tableExists(DEFAULT_DATABASE, tableName))
     val fs = new Path(basePath).getFileSystem(spark.sparkContext.hadoopConfiguration)
     assert(!fs.exists(new Path(basePath, ".hoodie")),
       s"PURGE should remove on-disk data at $basePath")
@@ -1792,7 +1792,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     val tableName = "hudi_ddl_drop_absent_throws"
     cleanup(tableName, getBasePath(tableName))
     assertThrowsContaining(tableName) {
-      spark.sql(s"DROP TABLE $database.$tableName")
+      spark.sql(s"DROP TABLE $DEFAULT_DATABASE.$tableName")
     }
   }
 
@@ -1806,17 +1806,17 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, basePath)
     spark.sql(
       s"""
-         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |LOCATION '$basePath'
          |""".stripMargin)
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000)")
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'r1', 1000)")
     val fs = new Path(basePath).getFileSystem(spark.sparkContext.hadoopConfiguration)
     fs.delete(new Path(basePath), true)
-    spark.sql(s"DROP TABLE $database.$tableName")
-    assert(!tableExists(database, tableName))
+    spark.sql(s"DROP TABLE $DEFAULT_DATABASE.$tableName")
+    assert(!tableExists(DEFAULT_DATABASE, tableName))
   }
 
   /**
@@ -1834,19 +1834,19 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(s"${tableName}_rt", basePath)
     spark.sql(
       s"""
-         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'mor', primaryKey = 'id', preCombineField = 'ts')
          |LOCATION '$basePath'
          |""".stripMargin)
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000)")
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'r1', 1000)")
     val fs = new Path(basePath).getFileSystem(spark.sparkContext.hadoopConfiguration)
     fs.delete(new Path(basePath), true)
-    spark.sql(s"DROP TABLE $database.$tableName PURGE")
-    assert(!tableExists(database, tableName))
-    spark.sql(s"DROP TABLE IF EXISTS $database.${tableName}_ro")
-    spark.sql(s"DROP TABLE IF EXISTS $database.${tableName}_rt")
+    spark.sql(s"DROP TABLE $DEFAULT_DATABASE.$tableName PURGE")
+    assert(!tableExists(DEFAULT_DATABASE, tableName))
+    spark.sql(s"DROP TABLE IF EXISTS $DEFAULT_DATABASE.${tableName}_ro")
+    spark.sql(s"DROP TABLE IF EXISTS $DEFAULT_DATABASE.${tableName}_rt")
   }
 
   // ===========================================================================
@@ -1859,16 +1859,16 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, getBasePath(tableName))
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tableName (
+         |CREATE TABLE $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |""".stripMargin)
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000), (2, 'r2', 2000)")
-    assert(spark.sql(s"SELECT * FROM $database.$tableName").count() == 2)
-    spark.sql(s"TRUNCATE TABLE $database.$tableName")
-    assert(tableExists(database, tableName))
-    assert(spark.sql(s"SELECT * FROM $database.$tableName").count() == 0)
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'r1', 1000), (2, 'r2', 2000)")
+    assert(spark.sql(s"SELECT * FROM $DEFAULT_DATABASE.$tableName").count() == 2)
+    spark.sql(s"TRUNCATE TABLE $DEFAULT_DATABASE.$tableName")
+    assert(tableExists(DEFAULT_DATABASE, tableName))
+    assert(spark.sql(s"SELECT * FROM $DEFAULT_DATABASE.$tableName").count() == 0)
   }
 
   /** TRUNCATE without a PARTITION clause on a partitioned table empties all partitions. */
@@ -1878,18 +1878,18 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, basePath)
     spark.sql(
       s"""
-         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |PARTITIONED BY (datestr string)
          |LOCATION '$basePath'
          |""".stripMargin)
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000, '2025-01-01')")
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (2, 'r2', 2000, '2025-01-02')")
-    assert(spark.sql(s"SELECT * FROM $database.$tableName").count() == 2)
-    spark.sql(s"TRUNCATE TABLE $database.$tableName")
-    assert(spark.sql(s"SELECT * FROM $database.$tableName").count() == 0)
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'r1', 1000, '2025-01-01')")
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (2, 'r2', 2000, '2025-01-02')")
+    assert(spark.sql(s"SELECT * FROM $DEFAULT_DATABASE.$tableName").count() == 2)
+    spark.sql(s"TRUNCATE TABLE $DEFAULT_DATABASE.$tableName")
+    assert(spark.sql(s"SELECT * FROM $DEFAULT_DATABASE.$tableName").count() == 0)
   }
 
   /** TRUNCATE TABLE ... PARTITION (k=v) drops only the specified partition's data. */
@@ -1899,17 +1899,17 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, basePath)
     spark.sql(
       s"""
-         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |PARTITIONED BY (datestr string)
          |LOCATION '$basePath'
          |""".stripMargin)
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000, '2025-01-01')")
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (2, 'r2', 2000, '2025-01-02')")
-    spark.sql(s"TRUNCATE TABLE $database.$tableName PARTITION (datestr = '2025-01-01')")
-    val remaining = spark.sql(s"SELECT * FROM $database.$tableName").count()
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'r1', 1000, '2025-01-01')")
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (2, 'r2', 2000, '2025-01-02')")
+    spark.sql(s"TRUNCATE TABLE $DEFAULT_DATABASE.$tableName PARTITION (datestr = '2025-01-01')")
+    val remaining = spark.sql(s"SELECT * FROM $DEFAULT_DATABASE.$tableName").count()
     assert(remaining == 1, s"expected 1 row remaining after partition truncate, got $remaining")
   }
 
@@ -1920,19 +1920,19 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, basePath)
     spark.sql(
       s"""
-         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |PARTITIONED BY (datestr string)
          |LOCATION '$basePath'
          |""".stripMargin)
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000, '2025-01-01')")
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (2, 'r2', 2000, '2025-01-02')")
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (3, 'r3', 3000, '2025-01-03')")
-    spark.sql(s"TRUNCATE TABLE $database.$tableName PARTITION (datestr = '2025-01-01')")
-    spark.sql(s"TRUNCATE TABLE $database.$tableName PARTITION (datestr = '2025-01-02')")
-    val remaining = spark.sql(s"SELECT * FROM $database.$tableName").count()
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'r1', 1000, '2025-01-01')")
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (2, 'r2', 2000, '2025-01-02')")
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (3, 'r3', 3000, '2025-01-03')")
+    spark.sql(s"TRUNCATE TABLE $DEFAULT_DATABASE.$tableName PARTITION (datestr = '2025-01-01')")
+    spark.sql(s"TRUNCATE TABLE $DEFAULT_DATABASE.$tableName PARTITION (datestr = '2025-01-02')")
+    val remaining = spark.sql(s"SELECT * FROM $DEFAULT_DATABASE.$tableName").count()
     assert(remaining == 1, s"expected 1 row remaining (datestr=2025-01-03), got $remaining")
   }
 
@@ -1943,16 +1943,16 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, basePath)
     spark.sql(
       s"""
-         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |LOCATION '$basePath'
          |""".stripMargin)
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000), (2, 'r2', 2000)")
-    spark.sql(s"TRUNCATE TABLE $database.$tableName")
-    assert(tableExists(database, tableName))
-    assert(spark.sql(s"SELECT * FROM $database.$tableName").count() == 0)
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'r1', 1000), (2, 'r2', 2000)")
+    spark.sql(s"TRUNCATE TABLE $DEFAULT_DATABASE.$tableName")
+    assert(tableExists(DEFAULT_DATABASE, tableName))
+    assert(spark.sql(s"SELECT * FROM $DEFAULT_DATABASE.$tableName").count() == 0)
   }
 
   /** TRUNCATE on a MOR table clears base files and log files across file groups. */
@@ -1964,16 +1964,16 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(s"${tableName}_rt", basePath)
     spark.sql(
       s"""
-         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'mor', primaryKey = 'id', preCombineField = 'ts')
          |LOCATION '$basePath'
          |""".stripMargin)
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000), (2, 'r2', 2000)")
-    spark.sql(s"TRUNCATE TABLE $database.$tableName")
-    assert(tableExists(database, tableName))
-    assert(spark.sql(s"SELECT * FROM $database.$tableName").count() == 0)
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'r1', 1000), (2, 'r2', 2000)")
+    spark.sql(s"TRUNCATE TABLE $DEFAULT_DATABASE.$tableName")
+    assert(tableExists(DEFAULT_DATABASE, tableName))
+    assert(spark.sql(s"SELECT * FROM $DEFAULT_DATABASE.$tableName").count() == 0)
   }
 
   /** TRUNCATE TABLE on a non-existent table must throw. */
@@ -1981,7 +1981,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     val tableName = "hudi_ddl_truncate_absent"
     cleanup(tableName, getBasePath(tableName))
     assertThrowsContaining(tableName) {
-      spark.sql(s"TRUNCATE TABLE $database.$tableName")
+      spark.sql(s"TRUNCATE TABLE $DEFAULT_DATABASE.$tableName")
     }
   }
 
@@ -1991,13 +1991,13 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, getBasePath(tableName))
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tableName (
+         |CREATE TABLE $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |""".stripMargin)
     assertThrowsContaining("not partitioned") {
-      spark.sql(s"TRUNCATE TABLE $database.$tableName PARTITION (datestr = '2025-01-01')")
+      spark.sql(s"TRUNCATE TABLE $DEFAULT_DATABASE.$tableName PARTITION (datestr = '2025-01-01')")
     }
   }
 
@@ -2020,17 +2020,17 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     // Bootstrap the table with one partition via a Hudi write
     spark.sql(
       s"""
-         |CREATE EXTERNAL TABLE IF NOT EXISTS $database.$tableName (
+         |CREATE EXTERNAL TABLE IF NOT EXISTS $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |PARTITIONED BY (datestr string)
          |LOCATION '$basePath'
          |""".stripMargin)
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (1, 'r1', 1000, '2025-01-01')")
-    spark.sql(s"INSERT INTO $database.$tableName VALUES (2, 'r2', 2000, '2025-01-02')")
-    spark.sql(s"MSCK REPAIR TABLE $database.$tableName")
-    val partitions = spark.sql(s"SHOW PARTITIONS $database.$tableName").count()
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'r1', 1000, '2025-01-01')")
+    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (2, 'r2', 2000, '2025-01-02')")
+    spark.sql(s"MSCK REPAIR TABLE $DEFAULT_DATABASE.$tableName")
+    val partitions = spark.sql(s"SHOW PARTITIONS $DEFAULT_DATABASE.$tableName").count()
     assert(partitions == 2, s"expected 2 partitions after REPAIR, got $partitions")
   }
 
@@ -2039,7 +2039,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     val tableName = "hudi_ddl_repair_absent"
     cleanup(tableName, getBasePath(tableName))
     assertThrowsContaining(tableName) {
-      spark.sql(s"MSCK REPAIR TABLE $database.$tableName")
+      spark.sql(s"MSCK REPAIR TABLE $DEFAULT_DATABASE.$tableName")
     }
   }
 
@@ -2049,13 +2049,13 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     cleanup(tableName, getBasePath(tableName))
     spark.sql(
       s"""
-         |CREATE TABLE $database.$tableName (
+         |CREATE TABLE $DEFAULT_DATABASE.$tableName (
          |  id INT, name STRING, ts BIGINT
          |) USING hudi
          |TBLPROPERTIES (type = 'cow', primaryKey = 'id', preCombineField = 'ts')
          |""".stripMargin)
     assertThrowsContaining("only works on partitioned tables") {
-      spark.sql(s"MSCK REPAIR TABLE $database.$tableName")
+      spark.sql(s"MSCK REPAIR TABLE $DEFAULT_DATABASE.$tableName")
     }
   }
 
