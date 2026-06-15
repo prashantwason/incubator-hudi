@@ -69,7 +69,7 @@ trait RunOperationsBase {
   def getBasePath(tableName: String): String = {
     val dc = spark.sparkContext.conf.get("spark.drogon.dc", "phx")
     val routerPath = getPathPrefixForDatacenter(dc)
-    routerPath + BASE_PATH_CONST + tableName
+    routerPath + BASE_PATH_CONST + database + "/" + tableName
   }
 
   private def getPathPrefixForDatacenter(datacenter: String): String = {
