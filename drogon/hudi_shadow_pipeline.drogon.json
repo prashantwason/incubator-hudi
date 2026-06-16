@@ -113,7 +113,7 @@
     "EXECUTOR_MEMORY_OVERHEAD": "1g",
     "HIVE_DATABASE": "huditmp",
     "HIVE_TABLE_NAME": "",
-    "HUDI_VERSION": "0.16.8",
+    "HUDI_VERSION": "0.16.9",
     "INSTANTS_PER_FETCH": "1",
     "KEY_GENERATOR": "org.apache.hudi.keygen.SimpleKeyGenerator",
     "MAX_COMMITS_TO_SYNC": "-1",
