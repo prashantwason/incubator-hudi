@@ -520,19 +520,25 @@ public class HoodieTableConfig extends HoodieConfig {
     }
 
     // Inject the partition-related table configs that the legacy writers omitted. These tables
-    // are partitioned on disk as `<base>/yyyy/MM/dd/`, so PARTITION_FIELDS=datestr plus the slash-
-    // encoded extractor and DROP_PARTITION_COLUMNS=true reproduce the schema the reader needs.
+    // are partitioned on disk as `<base>/yyyy/MM/dd/` while HMS registers them as `datestr=yyyy-MM-dd`,
+    // so PARTITION_FIELDS=datestr plus the slash-encoded extractor and DROP_PARTITION_COLUMNS=true
+    // reproduce the schema the reader needs. SLASH_SEPARATED_DATE_PARTITIONING=true is required so the
+    // predicate-pushdown path (SparkHoodieTableFileIndex.composeRelativePartitionPath) builds the
+    // on-disk prefix `yyyy/MM/dd` instead of `yyyy-MM-dd`; without it the partition-prefix existence
+    // check fails and every partition is pruned, yielding 0 rows.
     props.setProperty(PARTITION_FIELDS.key(), "datestr");
     props.setProperty(DROP_PARTITION_COLUMNS.key(), "true");
     props.setProperty(PARTITION_EXTRACTOR_CLASS.key(),
         "org.apache.hudi.hive.SlashEncodedDayPartitionValueExtractor");
+    props.setProperty(SLASH_SEPARATED_DATE_PARTITIONING.key(), "true");
 
     // Loud WARN so it's obvious in driver logs which tables tripped the inject path.
     String basePath = (metaPath == null || metaPath.getParent() == null)
         ? "" : metaPath.getParent().toString();
-    LOG.warn("Added configs to ingestion dataset {}.{} at {}: {}=datestr, {}=true, {}=org.apache.hudi.hive.SlashEncodedDayPartitionValueExtractor",
+    LOG.warn("Added configs to ingestion dataset {}.{} at {}: {}=datestr, {}=true, {}=org.apache.hudi.hive.SlashEncodedDayPartitionValueExtractor, {}=true",
         props.getProperty(DATABASE_NAME.key(), ""), props.getProperty(NAME.key(), ""), basePath,
-        PARTITION_FIELDS.key(), DROP_PARTITION_COLUMNS.key(), PARTITION_EXTRACTOR_CLASS.key());
+        PARTITION_FIELDS.key(), DROP_PARTITION_COLUMNS.key(), PARTITION_EXTRACTOR_CLASS.key(),
+        SLASH_SEPARATED_DATE_PARTITIONING.key());
   }
 
   private static Properties getOrderedPropertiesWithTableChecksum(Properties props) {
