@@ -80,6 +80,7 @@ public class SparkRDDWriteClient<T> extends
     super(context, writeConfig, timelineService, SparkUpgradeDowngradeHelper.getInstance());
     DistributedRegistryUtil.createWrapperFileSystemRegistries(context, writeConfig);
     this.tableServiceClient = new SparkRDDTableServiceClient<T>(context, writeConfig, getTimelineServer());
+    log.info("Final hudi write config: {}", this.config.getProps());
     checkSpeculativeExecution();
   }
 
