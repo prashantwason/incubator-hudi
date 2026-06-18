@@ -94,7 +94,7 @@ class RunHudiProcedures extends RunOperationsBase {
   }
 
   def testHudiUpgradeOrDowngradeProcedure(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_cow_test_upgrade_downgrade_procedure"
     val basePath = getBasePath(tableName)
     cleanup(tableName, basePath)
@@ -129,7 +129,7 @@ class RunHudiProcedures extends RunOperationsBase {
   }
 
   def testCompactionProcedure(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_mor_test_run_compaction_procedure"
     val basePath = getBasePath(tableName)
     cleanup(tableName, basePath)

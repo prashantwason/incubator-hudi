@@ -37,7 +37,7 @@ import scala.collection.JavaConverters._
  */
 class RunHudiIndexDDL extends RunOperationsBase {
   private val log = LoggerFactory.getLogger(getClass)
-  val DEFAULT_DATABASE = "rawdatatmp"
+  lazy val DEFAULT_DATABASE: String = getDatabase()
 
   // -------- happy-path tests --------
 

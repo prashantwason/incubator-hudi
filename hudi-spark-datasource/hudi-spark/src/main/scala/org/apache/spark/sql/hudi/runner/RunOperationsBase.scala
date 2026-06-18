@@ -298,8 +298,11 @@ trait RunOperationsBase {
 
   def readSqlFromResource(resourceName: String): String = {
     val resourceURL = Source.fromResource(resourceName)
-    try resourceURL.mkString // Read the entire file content as a string
-    finally resourceURL.close()
+    try {
+      // Substitute ${DATABASE} with the configured database so SQL resources are isolated per run
+      // (the same db used by cleanup()), instead of a hardcoded namespace that collides across runs.
+      resourceURL.mkString.replace("${DATABASE}", database)
+    } finally resourceURL.close()
   }
 
   def startAndGetHoodieTimer(): HoodieTimer = {

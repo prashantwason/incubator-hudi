@@ -63,7 +63,7 @@ import scala.collection.JavaConverters._
  */
 class RunLegacyTableCompatTests extends RunOperationsBase {
   private val log = LoggerFactory.getLogger(getClass)
-  val DEFAULT_DATABASE = "rawdatatmp"
+  lazy val DEFAULT_DATABASE: String = getDatabase()
 
   /** Build a metaClient for the table at basePath (used to inspect or modify on-disk hoodie.properties). */
   private def buildMetaClient(basePath: String): HoodieTableMetaClient = {

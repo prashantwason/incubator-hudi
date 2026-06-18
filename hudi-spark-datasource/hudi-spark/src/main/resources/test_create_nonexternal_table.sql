@@ -13,7 +13,7 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
-CREATE TABLE IF NOT EXISTS rawdatatmp.hudi_trips_nonexternal_table_test (
+CREATE TABLE IF NOT EXISTS ${DATABASE}.hudi_trips_nonexternal_table_test (
     `_hoodie_commit_time`    string,
     `_hoodie_commit_seqno`   string,
     `_hoodie_record_key`     string,

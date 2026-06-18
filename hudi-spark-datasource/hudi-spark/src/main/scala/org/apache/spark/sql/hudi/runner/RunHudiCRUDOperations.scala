@@ -60,7 +60,7 @@ class RunHudiCRUDOperations extends RunOperationsBase {
   }
 
   def testHudiInsertSqlCommand(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val tableName = "hudi_trips_cow_test_insert_sql"
     val basePath = getBasePath(tableName)
     cleanup(tableName, basePath)
@@ -101,7 +101,7 @@ class RunHudiCRUDOperations extends RunOperationsBase {
    * shows the complete pass/fail grid even when an early cell breaks.
    */
   def testHudiUpdateSqlCommand(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val results = ListBuffer[(String, Option[Throwable])]()
     for {
       optimized <- Seq(true, false)
@@ -150,7 +150,7 @@ class RunHudiCRUDOperations extends RunOperationsBase {
    * No column-style dimension because DELETE has no SET clause.
    */
   def testHudiDeleteSqlCommand(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val results = ListBuffer[(String, Option[Throwable])]()
     for {
       optimized <- Seq(true, false)
@@ -196,7 +196,7 @@ class RunHudiCRUDOperations extends RunOperationsBase {
    * routing (base file vs. log file) is not a stable contract.
    */
   def testHudiMergeIntoSqlCommand(): Unit = {
-    val database = "rawdatatmp"
+    val database = getDatabase()
     val results = ListBuffer[(String, Option[Throwable])]()
     for {
       optimized <- Seq(true, false)

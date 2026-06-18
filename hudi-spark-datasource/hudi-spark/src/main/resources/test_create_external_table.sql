@@ -13,7 +13,7 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
-CREATE EXTERNAL TABLE IF NOT EXISTS rawdatatmp.hudi_trips_external_table_test (
+CREATE EXTERNAL TABLE IF NOT EXISTS ${DATABASE}.hudi_trips_external_table_test (
     `_hoodie_commit_time`    string,
     `_hoodie_commit_seqno`   string,
     `_hoodie_record_key`     string,
@@ -22,7 +22,7 @@ CREATE EXTERNAL TABLE IF NOT EXISTS rawdatatmp.hudi_trips_external_table_test (
     `uuid`                   string,
     `trip_uuid`              string
 )
-    LOCATION "/user/hudi/integration_tests/hudi_trips_external_table_test"
+    LOCATION "/user/hudi/integration_tests/${DATABASE}/hudi_trips_external_table_test"
     ROW FORMAT SERDE 'org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe'
     STORED AS INPUTFORMAT 'com.uber.hoodie.hadoop.HoodieInputFormat'
         OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat'

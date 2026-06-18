@@ -13,13 +13,13 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
-CREATE TABLE rawdatatmp.hudi_trips_cow_from_select_source
+CREATE TABLE ${DATABASE}.hudi_trips_cow_from_select_source
 USING hudi
 TBLPROPERTIES (
     type = 'cow',
     primaryKey = 'id'
 )
 PARTITIONED BY (datestr)
-LOCATION '/user/hudi/integration_tests/hudi_trips_cow_from_select_source'
+LOCATION '/user/hudi/integration_tests/${DATABASE}/hudi_trips_cow_from_select_source'
 AS
 SELECT CAST(1 AS INT) AS id, CAST('a1' AS STRING) AS name, CAST(10 AS DOUBLE) AS price, CAST(1000 AS BIGINT) AS ts, CAST('2025-04-21' AS STRING) AS datestr;

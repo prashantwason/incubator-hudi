@@ -61,7 +61,7 @@ import scala.util.Try
  */
 class RunHudiTableDDLOperations extends RunOperationsBase {
   private val log = LoggerFactory.getLogger(getClass)
-  val DEFAULT_DATABASE = "rawdatatmp"
+  lazy val DEFAULT_DATABASE: String = getDatabase()
 
   // ===========================================================================
   // SHOW PARTITIONS — ShowHoodieTablePartitionsCommand

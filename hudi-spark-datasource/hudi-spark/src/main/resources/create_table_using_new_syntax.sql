@@ -13,7 +13,7 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
-CREATE EXTERNAL TABLE IF NOT EXISTS rawdatatmp.hudi_trips_cow_using_new_syntax (
+CREATE EXTERNAL TABLE IF NOT EXISTS ${DATABASE}.hudi_trips_cow_using_new_syntax (
     id INT,
     name STRING,
     price DOUBLE,
@@ -25,4 +25,4 @@ TBLPROPERTIES (
     preCombineField = 'ts'
 )
 PARTITIONED BY (datestr string)
-LOCATION '/user/hudi/integration_tests/hudi_trips_cow_using_new_syntax';
+LOCATION '/user/hudi/integration_tests/${DATABASE}/hudi_trips_cow_using_new_syntax';
