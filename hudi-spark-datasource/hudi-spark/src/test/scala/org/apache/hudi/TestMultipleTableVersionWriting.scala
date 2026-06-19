@@ -54,8 +54,9 @@ class TestMultipleTableVersionWriting extends HoodieSparkWriterTestBase {
 
     val df = spark.range(1).selectExpr("1 as id", "1 as name", "1 as partition")
 
-    // should succeed when writing with auto upgrade enabled (default)
+    // should succeed when writing with auto upgrade enabled
     df.write.format("hudi")
+      .option(HoodieWriteConfig.AUTO_UPGRADE_VERSION.key, "true")
       .mode(SaveMode.Append)
       .save(basePath)
 

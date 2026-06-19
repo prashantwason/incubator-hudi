@@ -57,6 +57,8 @@ class TestEightToNineUpgrade extends RecordLevelIndexTestBase {
       PAYLOAD_CLASS_NAME.key -> payloadClass,
       RECORD_MERGE_IMPL_CLASSES.key -> mergerClasses,
       HoodieWriteConfig.WRITE_TABLE_VERSION.key -> "8",
+      // this test migrates the table from version 8 to 9, so auto upgrade must be enabled
+      HoodieWriteConfig.AUTO_UPGRADE_VERSION.key -> "true",
       HoodieStorageConfig.LOGFILE_DATA_BLOCK_FORMAT.key -> "parquet"
     )
     val orderingValue = if (classOf[PostgresDebeziumAvroPayload].getName.equals(payloadClass)) "_event_lsn" else "timestamp"
@@ -169,6 +171,8 @@ class TestEightToNineUpgrade extends RecordLevelIndexTestBase {
     update.write.format("hudi").
       option(OPERATION.key(), "upsert").
       option(HoodieCompactionConfig.INLINE_COMPACT.key(), "false").
+      // this update migrates the table from version 8 to 9, so auto upgrade must be enabled
+      option(HoodieWriteConfig.AUTO_UPGRADE_VERSION.key(), "true").
       mode(SaveMode.Append).
       save(basePath)
     orderingValue = DebeziumConstants.FLATTENED_FILE_COL_NAME + "," + DebeziumConstants.FLATTENED_POS_COL_NAME

@@ -161,7 +161,7 @@ public class HoodieWriteConfig extends HoodieConfig {
 
   public static final ConfigProperty<Boolean> AUTO_UPGRADE_VERSION = ConfigProperty
       .key("hoodie.write.auto.upgrade")
-      .defaultValue(true)
+      .defaultValue(false)
       .sinceVersion("1.0.0")
       .withDocumentation("If enabled, writers automatically migrate the table to the specified write table version "
           + "if the current table version is lower.");

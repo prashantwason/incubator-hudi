@@ -1417,6 +1417,8 @@ public class TestInputFormat {
   void testStreamWriteAndReadWithUpgrade(HoodieTableType tableType) throws Exception {
     Map<String, String> options = new HashMap<>();
     options.put(FlinkOptions.WRITE_TABLE_VERSION.key(), HoodieTableVersion.SIX.versionCode() + "");
+    // enable auto upgrade so the later write can migrate the table from version SIX to EIGHT
+    options.put(HoodieWriteConfig.AUTO_UPGRADE_VERSION.key(), "true");
     // init and write data with table version SIX
     beforeEach(tableType, options);
     TestData.writeData(TestData.DATA_SET_INSERT, conf);

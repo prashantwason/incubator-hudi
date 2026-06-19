@@ -486,7 +486,9 @@ class TestPayloadDeprecationFlow extends SparkClientFunctionalTestHarness {
       .options(serviceOpts)
 
     val writerWithVersion = tableVersion match {
+      // When a target write version is requested, allow the table to migrate to it.
       case Some(version) => writer.option(HoodieWriteConfig.WRITE_TABLE_VERSION.key(), version)
+        .option(HoodieWriteConfig.AUTO_UPGRADE_VERSION.key(), "true")
       case None => writer
     }
 

@@ -214,6 +214,9 @@ public class HoodieMetadataWriteUtils {
     HoodieWriteConfig.Builder builder = HoodieWriteConfig.newBuilder()
         .withEngineType(writeConfig.getEngineType())
         .withWriteTableVersion(writeConfig.getWriteVersion().versionCode())
+        // The metadata table must follow the data table's auto-upgrade policy. Otherwise, when the data table is
+        // upgraded the metadata table would be left behind (it relies on the default value otherwise).
+        .withAutoUpgradeVersion(writeConfig.autoUpgrade())
         .withMergeAllowDuplicateOnInserts(false)
         .withConsistencyGuardConfig(ConsistencyGuardConfig.newBuilder()
             .withConsistencyCheckEnabled(writeConfig.getConsistencyGuardConfig().isConsistencyCheckEnabled())

@@ -94,7 +94,9 @@ class TestSevenToEightUpgrade extends RecordLevelIndexTestBase {
 
     // auto upgrade the table
     // assert table version is eight and the partition fields in table config has partition type
-    hudiOpts = hudiOpts ++ Map(HoodieWriteConfig.WRITE_TABLE_VERSION.key -> "8")
+    hudiOpts = hudiOpts ++ Map(
+      HoodieWriteConfig.WRITE_TABLE_VERSION.key -> "8",
+      HoodieWriteConfig.AUTO_UPGRADE_VERSION.key -> "true")
     doWriteAndValidateDataAndRecordIndex(hudiOpts,
       operation = UPSERT_OPERATION_OPT_VAL,
       saveMode = SaveMode.Append,
@@ -341,9 +343,11 @@ class TestSevenToEightUpgrade extends RecordLevelIndexTestBase {
 
       val hudiOptsUpgrade = hudiOptsV6 ++ Map(
         HoodieWriteConfig.WRITE_TABLE_VERSION.key -> HoodieTableVersion.current().versionCode().toString,
+        // explicitly enable auto upgrade so the v6 table migrates to the current version
+        HoodieWriteConfig.AUTO_UPGRADE_VERSION.key -> "true",
         HoodieLockConfig.LOCK_PROVIDER_CLASS_NAME.key -> "org.apache.hudi.client.transaction.lock.InProcessLockProvider",
         HoodieWriteConfig.WRITE_CONCURRENCY_MODE.key -> "OPTIMISTIC_CONCURRENCY_CONTROL"
-      ) - HoodieWriteConfig.AUTO_UPGRADE_VERSION.key
+      )
 
       doWriteAndValidateDataAndRecordIndex(hudiOptsUpgrade,
         operation = UPSERT_OPERATION_OPT_VAL,
