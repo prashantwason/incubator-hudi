@@ -248,7 +248,14 @@ public class HoodieCleanConfig extends HoodieConfig {
       .key("hoodie.clean.max.commits.to.clean")
       .defaultValue(Long.MAX_VALUE)
       .markAdvanced()
-      .withDocumentation("Maximum number of commits to clean in one clean commit. Applicable only when the clean policy is based on KEEP_LATEST_COMMITS or KEEP_LATEST_HOURS");
+      // Uber 0.14 compat: older `hoodie.cleaner.max.commits.clean` property name.
+      // At Uber, we can explore removing or deprecating this alternative once all rawdata ingestion
+      // workloads are onboarded to the Table service platform; typically only those workloads
+      // specify this config key for inline clean.
+      .withAlternatives("hoodie.cleaner.max.commits.clean")
+      .withDocumentation("Maximum number of commits to clean in one clean commit. Applicable only when the clean policy is based on KEEP_LATEST_COMMITS or KEEP_LATEST_HOURS.\n"
+          + "[UBER]\n"
+          + "Also accepts the Uber 0.14 property name `hoodie.cleaner.max.commits.clean`.");
 
   public static final ConfigProperty<Long> INTERVAL_TO_CREATE_EMPTY_CLEAN_HOURS = ConfigProperty
       .key("hoodie.write.empty.clean.interval.hours")
