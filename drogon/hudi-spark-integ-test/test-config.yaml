@@ -1,0 +1,281 @@
+test_suites:
+  - name: hudi
+    spark_conf_overrides:
+      spark.executor.instances: "8"
+      spark.executor.memory: "4g"
+      spark.driver.memory: "8g"
+    test_cases:
+      - name: testHudiDFInsertTable
+      - name: testHudiDFUpsertTable
+      - name: testHudiSqlQuery
+      - name: testHudiDFQuery
+      - name: testRepeatedSQLQueriesOnHudiDataset
+      - name: testHudiDropTableCommand
+      - name: testInsertingDataWithoutDatabase
+      - name: testStackedDataFrameAPIOperationsOnHudi
+      - name: testHudiCreateTableWithDataFrameAPI
+      - name: testHudiVersion
+
+  - name: hive
+    spark_conf_overrides:
+      spark.executor.instances: "8"
+      spark.executor.memory: "4g"
+      spark.driver.memory: "8g"
+    test_cases:
+      - name: testHiveTableWrites
+      - name: testHiveTableRead
+      - name: testDropHiveTable
+
+  - name: hudi-spark-hive
+    spark_conf_overrides:
+      spark.executor.instances: "8"
+      spark.executor.memory: "4g"
+      spark.driver.memory: "8g"
+    test_cases:
+      - name: testHiveExternalCatalog
+      - name: testCreateOrReplaceView
+      - name: testShowPartitionCommandOnRawdataDataset
+
+  - name: hudi-hive
+    spark_conf_overrides:
+      spark.executor.instances: "32"
+      spark.executor.memory: "8g"
+      spark.driver.memory: "16g"
+    test_cases:
+      - name: testJoinQueryOnHudiTables
+      - name: testJoinQueryOnHiveTables
+      - name: testJoinQueryOnHudiAndHiveTables
+      - name: testJoinQueryOnTwoHudiProductionTables
+      - name: testJoinQueryOnHudiAndHiveProductionTables
+      - name: testJoinQueryOnHudiAndHivePartitionedProductionTables
+      - name: testJoinQueryOnTwoHiveProductionTables
+
+  - name: hudi-crud
+    spark_conf_overrides:
+      spark.executor.instances: "12"
+      spark.executor.memory: "6g"
+      spark.driver.memory: "8g"
+    test_cases:
+      - name: testHudiCreateTableCommand
+      - name: testNewHudiCreateSQLFromHudiSource
+      - name: testHudiInsertSqlCommand
+      - name: testHudiUpdateSqlCommand
+      - name: testHudiDeleteSqlCommand
+      - name: testHudiMergeIntoSqlCommand
+      - name: testInsertOverwriteWithSourceHudi
+      - name: testInsertOverwriteWithSourceHive
+      - name: insertOverwriteToHudiDataset
+      - name: testSparkHoodieConfigPropagationDisablesMetadataTable
+
+  - name: hudi-procedures
+    spark_conf_overrides:
+      spark.executor.instances: "12"
+      spark.executor.memory: "6g"
+      spark.driver.memory: "8g"
+    test_cases:
+      - name: testHudiShowCommitsProcedure
+      - name: testHudiCleanProcedure
+      - name: testHudiArchivalProcedure
+      - name: testHudiClusteringProcedure
+      - name: testHudiUpgradeOrDowngradeProcedure
+      - name: testCompactionProcedure
+      - name: testHudiRepairOverwritePropsProcedure
+
+  - name: hudi-comparison
+    spark_conf_overrides:
+      spark.executor.instances: "40"
+      spark.executor.memory: "10g"
+      spark.driver.memory: "20g"
+    test_cases:
+      - name: testPartitionPruning
+        spark_conf_overrides:
+          spark.executor.instances: "100"
+      - name: testQueriesOnHudiAndNonPartitions
+      - name: testPointQueries
+      - name: testLoadingBasepaths
+      - name: testIncrementalQueries
+
+  - name: hudi-support-non-hoodie
+    spark_conf_overrides:
+      spark.executor.instances: "16"
+      spark.executor.memory: "6g"
+      spark.driver.memory: "12g"
+    test_cases:
+      - name: testReadingNonHoodiePartitions
+      - name: testDatasetWithMissingHoodiePartitionMetadataFile
+
+  - name: hudi-schema-evolution
+    spark_conf_overrides:
+      spark.executor.instances: "8"
+      spark.executor.memory: "4g"
+      spark.driver.memory: "8g"
+    test_cases:
+      - name: testAddColumns
+      - name: testChangingRequiredColumnAsNullable
+      - name: testBlockingColumnDeletionUsingReconcile
+      - name: testSparkSqlProviderConfigInHMS
+
+  - name: hudi-error-handling
+    spark_conf_overrides:
+      spark.executor.instances: "8"
+      spark.executor.memory: "4g"
+      spark.driver.memory: "8g"
+    test_cases:
+      - name: testInsertIntoHudiFromHudiUnionWithInvalidColumn
+      - name: testDeeplyNestedUnionWithInvalidColumn
+      - name: testInsertWithSelectStarAndInvalidColumn
+      - name: testErrorMessageContainsColumnName
+
+  - name: hudi-table-ddl
+    spark_conf_overrides:
+      spark.executor.instances: "12"
+      spark.executor.memory: "6g"
+      spark.driver.memory: "8g"
+    test_cases:
+      - name: testShowPartitionsNonPartitioned
+      - name: testShowPartitionsSinglePartition
+      - name: testShowPartitionsMultiLevel
+      - name: testShowPartitionsWithSpecFilter
+      - name: testShowPartitionsSlashSeparatedDate
+      - name: testShowPartitionsAfterDropAndRecreate
+      - name: testShowPartitionsAfterInsertOverwrite
+      - name: testAddColumnsCow
+      - name: testAddColumnsMor
+      - name: testAddColumnsWithCommentCow
+      - name: testAddColumnsWithCommentMor
+      - name: testAddColumnsDuplicateColumnFailsCow
+      - name: testAddColumnsDuplicateColumnFailsMor
+      - name: testAddColumnsRefreshesRoRtForMor
+      - name: testAddColumnsOnPartitionedTableCow
+      - name: testAddColumnsOnPartitionedTableMor
+      - name: testChangeColumnCommentCow
+      - name: testChangeColumnCommentMor
+      - name: testChangeColumnTypeIncompatibleFailsCow
+      - name: testChangeColumnTypeIncompatibleFailsMor
+      - name: testChangeColumnUnderOccCow
+      - name: testChangeColumnUnderOccMor
+      - name: testAlterDoesNotTriggerServicesCow
+      - name: testRenameColumnCow
+      - name: testRenameColumnMor
+      - name: testRenameColumnSchemaOnReadDisabledFailsCow
+      - name: testRenameTableCow
+      - name: testRenameTableMor
+      - name: testRenameTableManagedNoLocationCow
+      - name: testRenameTableManagedNoLocationMor
+      - name: testRenameTableExternalLocationPreservedCow
+      - name: testRenameTableExternalLocationPreservedMor
+      - name: testAddPartitionOnNonPartitionedFailsCow
+      - name: testAddPartitionWithLocationFailsCow
+      - name: testAddPartitionIfNotExistsCow
+      - name: testAddPartitionSinglePartitionHiveStyleTrueCow
+      - name: testAddPartitionSinglePartitionHiveStyleFalseCow
+      - name: testAddPartitionMultiLevelHiveStyleTrueCow
+      - name: testAddPartitionMultiLevelHiveStyleFalseCow
+      - name: testAddPartitionUrlEncodeTrueCow
+      - name: testAddPartitionUrlEncodeFalseCow
+      - name: testDropPartitionOnNonPartitionedFailsCow
+      - name: testDropPartitionOnNonPartitionedFailsMor
+      - name: testDropSinglePartitionUrlEncodeTrueCow
+      - name: testDropSinglePartitionUrlEncodeFalseCow
+      - name: testDropMultiLevelPartitionHiveStyleTrueCow
+      - name: testDropMultiLevelPartitionHiveStyleFalseCow
+      - name: testDropPartitionWildcardsCow
+      - name: testDropPartitionWildcardsMor
+      - name: testDropPartitionBlockedByPendingClusteringCow
+      - name: testDropPartitionBlockedByPendingClusteringMor
+      - name: testDropPartitionBlockedByPendingCompactionMor
+      - name: testDropPartitionBlockedByPendingLogCompactionMor
+      - name: testDropPartitionPreservesSchemaInCommitMetadataCow
+      - name: testDropPartitionPreservesSchemaInCommitMetadataMor
+      - name: testCreateManagedCowTable
+      - name: testCreateManagedMorTable
+      - name: testCreateExternalCowTablePartitioned
+      - name: testCreateExternalMorTablePartitionedRoRtViews
+      - name: testCreateTableIfNotExistsWhenAbsent
+      - name: testCreateTableIfNotExistsWhenPresent
+      - name: testCreateTableWithComplexKeyGenerator
+      - name: testCreateTableWithComment
+      - name: testCreateTableThrowsWhenAlreadyExists
+      - name: testCreateTableLikeFromHudiManagedToManaged
+      - name: testCreateTableLikeFromHudiToExternalWithLocation
+      - name: testCreateTableLikeFromHiveSource
+      - name: testCreateTableLikeIfNotExistsWhenPresent
+      - name: testCreateTableLikeThrowsWhenTargetExists
+      - name: testCreateTableLikeThrowsWhenSourceMissing
+      - name: testCtasCowFromHudiSource
+      # Disabled pending HUDI-9343 (MOR CTAS without LOCATION fails during metaSync refreshTable)
+      # - name: testCtasMorFromHudiSourceCreatesRoRt
+      - name: testCtasFromHiveSource
+      - name: testCtasWithExplicitPartitionBy
+      - name: testCtasWithAutoRecordKeyGen
+      - name: testCtasWithTblpropertiesFiltered
+      - name: testCtasThrowsOnCowWithCompactionEnabled
+      - name: testDropManagedTable
+      - name: testDropExternalTablePreservesData
+      - name: testDropMorTableDropsRoRt
+      - name: testDropTableIfExistsWhenPresent
+      - name: testDropTableIfExistsWhenAbsent
+      - name: testDropTableWithPurge
+      - name: testDropTableThrowsWhenAbsent
+      - name: testDropExternalTableWithLostPath
+      - name: testDropMorTableWithLostPath
+      - name: testTruncateNonPartitionedTable
+      - name: testTruncatePartitionedTableAllPartitions
+      - name: testTruncatePartitionedTableSinglePartition
+      - name: testTruncatePartitionedTableMultiplePartitions
+      - name: testTruncateExternalTable
+      - name: testTruncateMorTable
+      - name: testTruncateThrowsOnNonExistent
+      - name: testTruncatePartitionThrowsOnNonPartitionedTable
+      - name: testMsckRepairExternalTableSyncsAddedFiles
+      - name: testMsckRepairThrowsOnNonExistent
+      - name: testMsckRepairThrowsOnNonPartitionedTable
+
+  - name: hudi-index-ddl
+    spark_conf_overrides:
+      spark.executor.instances: "12"
+      spark.executor.memory: "6g"
+      spark.driver.memory: "8g"
+    test_cases:
+      - name: testCreateAndDropRecordIndex
+      - name: testCreateAndDropSecondaryIndex
+      - name: testCreateAndDropColumnStatsExpressionIndex
+      - name: testRefreshIndex
+      - name: testCreateIndexDuplicateFails
+      - name: testDropIndexMissingFails
+      - name: testCreateColumnStatsWithoutExpressionFails
+
+  - name: hudi-legacy-table-compat
+    spark_conf_overrides:
+      spark.executor.instances: "8"
+      spark.executor.memory: "4g"
+      spark.driver.memory: "8g"
+    test_cases:
+      - name: testAppendWithQualifiedTableNameSucceeds
+      - name: testAppendWithMissingOnDiskRecordKeyBackfills
+      - name: testAppendWithQualifiedNameAndMissingRecordKeyBothApply
+      - name: testAppendOnPreSeededLegacyProperties
+
+  - name: hudi-random-production-sqls
+    spark_conf_overrides:
+      spark.executor.instances: "120"
+      spark.executor.memory: "12g"
+      spark.driver.memory: "24g"
+    test_cases:
+      - name: testRunTopSQLs
+        disabled: true
+      - name: testRunSQLWithAccessControlIssue
+      - name: testRunSQLWithAccessControlFailure
+      - name: testTimestampSecondsToMillisConvertion
+      - name: testRunSQLWithSchemaNotFoundDatasets
+      - name: testRunSQLWithDotPartitions
+      - name: testRunSQLWithDotInvalidFiles
+      - name: testRunInsertOverwriteOnHiveTable
+      - name: testProdSqlOnEmptyDataset
+      - name: testRangeQueriesOnSpecificDerivedDataset
+      - name: testWrongNumberOfColumnsFound
+      - name: testEmptyHudiPartitions
+      - name: testAdtechSqlNotReturningNewFields
+      - name: testCustomPartitionedDatasetOnCld
+        disabled: true
+      - name: testCustomPartitionedGeneratedDatasets
