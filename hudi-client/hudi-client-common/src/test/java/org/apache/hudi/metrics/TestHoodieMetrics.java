@@ -363,6 +363,8 @@ public class TestHoodieMetrics {
     assertDoesNotThrow(() -> metricsOff.updateCommitMetrics(0L, 0L, metadata, "commit"));
     assertDoesNotThrow(() -> metricsOff.updateRollbackMetrics(0L, 0L));
     assertDoesNotThrow(() -> metricsOff.updateCleanMetrics(0L, 0));
+    assertDoesNotThrow(() -> metricsOff.emitCleanFailure());
+    assertDoesNotThrow(() -> metricsOff.emitCleanFileDeletionFailure(0L));
     assertDoesNotThrow(() -> metricsOff.updateFinalizeWriteMetrics(0L, 0L));
     assertDoesNotThrow(() -> metricsOff.updateIndexMetrics("action", 0L));
     assertDoesNotThrow(() -> metricsOff.updateSourceReadAndIndexMetrics("action", 0L));
@@ -704,5 +706,36 @@ public class TestHoodieMetrics {
     hoodieMetrics.emitConflictResolutionByCategory(
         HoodieWriteConflictException.ConflictCategory.TABLE_SERVICE_VS_TABLE_SERVICE);
     assertEquals(1, metrics.getRegistry().getCounters().get(tableServiceVsTableService).getCount());
+  }
+
+  @Test
+  public void testEmitCleanFailureMetric() {
+    hoodieMetrics.emitCleanFailure();
+
+    String metricName = hoodieMetrics.getMetricsName(
+        HoodieTimeline.CLEAN_ACTION, HoodieMetrics.CLEAN_FAILURE_STR);
+    assertEquals(1L, metrics.getRegistry().getGauges().get(metricName).getValue());
+  }
+
+  @Test
+  public void testCleanFileDeletionFailureMetric() {
+    long numFailedFiles = 5;
+    hoodieMetrics.emitCleanFileDeletionFailure(numFailedFiles);
+
+    String metricName = hoodieMetrics.getMetricsName(
+        HoodieTimeline.CLEAN_ACTION, HoodieMetrics.CLEAN_FILE_DELETION_FAILURE_STR);
+    assertEquals(numFailedFiles, metrics.getRegistry().getGauges().get(metricName).getValue());
+  }
+
+  @Test
+  public void testCleanFileDeletionFailureMetricWhenMetricsDisabled() {
+    HoodieMetrics disabledMetrics = buildMetricsOff();
+    disabledMetrics.emitCleanFileDeletionFailure(5);
+
+    String metricName = disabledMetrics.getMetricsName(
+        HoodieTimeline.CLEAN_ACTION, HoodieMetrics.CLEAN_FILE_DELETION_FAILURE_STR);
+    if (disabledMetrics.getMetrics() != null) {
+      assertNull(disabledMetrics.getMetrics().getRegistry().getGauges().get(metricName));
+    }
   }
 }

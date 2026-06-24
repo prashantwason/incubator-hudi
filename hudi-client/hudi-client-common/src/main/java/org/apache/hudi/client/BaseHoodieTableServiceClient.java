@@ -861,45 +861,70 @@ public abstract class BaseHoodieTableServiceClient<I, T, O> extends BaseHoodieCl
       return null;
     }
     final Timer.Context timerContext = metrics.getCleanCtx();
-    HoodieTable initialTable = createTable(config, storageConf);
-    HoodieTable table;
-    if (CleanerUtils.rollbackFailedWrites(config.getFailedWritesCleanPolicy(),
-        HoodieTimeline.CLEAN_ACTION, () -> rollbackFailedWrites(initialTable.getMetaClient()))) {
-      // if rollback occurred, reload the table
-      table = createTable(config, storageConf);
-    } else {
-      table = initialTable;
-    }
-    Option<String> inflightClean = table.getActiveTimeline().getCleanerTimeline().filterInflightsAndRequested().firstInstant().map(HoodieInstant::requestedTime);
-    Option<String> cleanInstantTime = Option.empty();
-    if (config.allowMultipleCleans() || inflightClean.isEmpty()) {
-      log.info("Cleaner started for table {}", config.getBasePath());
-      // proceed only if multiple clean schedules are enabled or if there are no pending cleans.
-      if (scheduleInline) {
-        cleanInstantTime = scheduleCleaning(table, suppliedCleanInstant);
-      }
-
-      if (shouldDelegateToTableServiceManager(config, ActionType.clean)) {
-        log.info("Cleaning is not yet supported with Table Service Manager.");
-        return null;
-      }
-    }
-
     HoodieCleanMetadata metadata;
-    if (inflightClean.isPresent() || cleanInstantTime.isPresent()) {
-      table.getMetaClient().reloadActiveTimeline();
-      // Proceeds to execute any requested or inflight clean instances in the timeline
-      String cleanInstantToExecute = cleanInstantTime.isPresent() ? cleanInstantTime.get() : inflightClean.get();
-      metadata = table.clean(context, cleanInstantToExecute);
-      releaseResources(cleanInstantToExecute);
-    } else {
-      metadata = null;
+    try {
+      HoodieTable initialTable = createTable(config, storageConf);
+      HoodieTable table;
+      if (CleanerUtils.rollbackFailedWrites(config.getFailedWritesCleanPolicy(),
+          HoodieTimeline.CLEAN_ACTION, () -> rollbackFailedWrites(initialTable.getMetaClient()))) {
+        // if rollback occurred, reload the table
+        table = createTable(config, storageConf);
+      } else {
+        table = initialTable;
+      }
+      Option<String> inflightClean = table.getActiveTimeline().getCleanerTimeline().filterInflightsAndRequested().firstInstant().map(HoodieInstant::requestedTime);
+      Option<String> cleanInstantTime = Option.empty();
+      if (config.allowMultipleCleans() || inflightClean.isEmpty()) {
+        log.info("Cleaner started for table {}", config.getBasePath());
+        // proceed only if multiple clean schedules are enabled or if there are no pending cleans.
+        if (scheduleInline) {
+          cleanInstantTime = scheduleCleaning(table, suppliedCleanInstant);
+        }
+
+        if (shouldDelegateToTableServiceManager(config, ActionType.clean)) {
+          log.info("Cleaning is not yet supported with Table Service Manager.");
+          return null;
+        }
+      }
+
+      if (inflightClean.isPresent() || cleanInstantTime.isPresent()) {
+        table.getMetaClient().reloadActiveTimeline();
+        // Proceeds to execute any requested or inflight clean instances in the timeline
+        String cleanInstantToExecute = cleanInstantTime.isPresent() ? cleanInstantTime.get() : inflightClean.get();
+        metadata = table.clean(context, cleanInstantToExecute);
+        releaseResources(cleanInstantToExecute);
+      } else {
+        metadata = null;
+      }
+    } catch (Exception e) {
+      metrics.emitCleanFailure();
+      throw e;
     }
     if (timerContext != null && metadata != null) {
       long durationMs = metrics.getDurationInMs(timerContext.stop());
       metrics.updateCleanMetrics(durationMs, metadata.getTotalFilesDeleted());
       log.info("Cleaned {} files Earliest Retained Instant :{} cleanerElapsedMs: {}",
           metadata.getTotalFilesDeleted(), metadata.getEarliestCommitToRetain(), durationMs);
+
+      long totalFailedDeletions = 0;
+      if (metadata.getPartitionMetadata() != null) {
+        totalFailedDeletions += metadata.getPartitionMetadata().values().stream()
+            .mapToLong(partitionMetadata -> partitionMetadata.getFailedDeleteFiles() != null
+                ? partitionMetadata.getFailedDeleteFiles().size()
+                : 0)
+            .sum();
+      }
+      if (metadata.getBootstrapPartitionMetadata() != null) {
+        totalFailedDeletions += metadata.getBootstrapPartitionMetadata().values().stream()
+            .mapToLong(partitionMetadata -> partitionMetadata.getFailedDeleteFiles() != null
+                ? partitionMetadata.getFailedDeleteFiles().size()
+                : 0)
+            .sum();
+      }
+      if (totalFailedDeletions > 0) {
+        metrics.emitCleanFileDeletionFailure(totalFailedDeletions);
+        log.warn("Clean operation completed with {} failed file deletions", totalFailedDeletions);
+      }
     }
     return metadata;
   }

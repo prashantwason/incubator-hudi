@@ -66,6 +66,8 @@ public class HoodieMetrics {
   public static final String TOTAL_RECORDS_DELETED = "totalRecordsDeleted";
   public static final String TOTAL_CORRUPTED_LOG_BLOCKS_STR = "totalCorruptedLogBlocks";
   public static final String TOTAL_ROLLBACK_LOG_BLOCKS_STR = "totalRollbackLogBlocks";
+  public static final String CLEAN_FAILURE_STR = "failure";
+  public static final String CLEAN_FILE_DELETION_FAILURE_STR = "cleanFileDeletionFailure";
   public static final String DURATION_STR = "duration";
   public static final String DELETE_FILES_NUM_STR = "numFilesDeleted";
   public static final String DELETE_INSTANTS_NUM_STR = "numInstantsArchived";
@@ -385,6 +387,19 @@ public class HoodieMetrics {
               DELETE_FILES_NUM_STR, numFilesDeleted));
       metrics.registerGauge(getMetricsName(HoodieTimeline.CLEAN_ACTION, DURATION_STR), durationInMs);
       metrics.registerGauge(getMetricsName(HoodieTimeline.CLEAN_ACTION, DELETE_FILES_NUM_STR), numFilesDeleted);
+    }
+  }
+
+  public void emitCleanFailure() {
+    if (config.isMetricsOn()) {
+      metrics.registerGauge(getMetricsName(HoodieTimeline.CLEAN_ACTION, CLEAN_FAILURE_STR), 1);
+    }
+  }
+
+  public void emitCleanFileDeletionFailure(long numFailedFiles) {
+    if (config.isMetricsOn()) {
+      metrics.registerGauge(
+          getMetricsName(HoodieTimeline.CLEAN_ACTION, CLEAN_FILE_DELETION_FAILURE_STR), numFailedFiles);
     }
   }
 
