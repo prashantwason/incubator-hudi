@@ -51,10 +51,13 @@ class RunHudiComparisonTests extends RunOperationsBase {
       "rawdata.kafka_hp_scheduled_ride_job_state_changes_nodedup")
     val baseDate = LocalDate.of(2018, 2, 1)
     val xPartitions = 28
-    executeRowCount(datasets, baseDate, xPartitions)
+    // Only 4 of the 28 days in the window currently have data on this dataset.
+    executeRowCount(datasets, baseDate, xPartitions, expectedPartitions = 4)
   }
 
-  private def executeRowCount(datasets: Seq[String], baseDate: LocalDate, xPartitions: Int): Unit = {
+  private def executeRowCount(datasets: Seq[String], baseDate: LocalDate, xPartitions: Int,
+                              expectedPartitions: Int = -1): Unit = {
+    val expected = if (expectedPartitions < 0) xPartitions else expectedPartitions
     val startDateFormatted = baseDate.format(formatter)
     val endDateFormatted = baseDate.plusDays(xPartitions).format(formatter)
     log.info(s"Start date is $startDateFormatted and end date is $endDateFormatted")
@@ -73,7 +76,7 @@ class RunHudiComparisonTests extends RunOperationsBase {
         currList = currList.sorted
         logList += s"Duration to collect row counts for last $xPartitions partitions in $dataset is $duration ms"
         logList ++= currList
-        assert(results.size() == xPartitions, s"Expected $xPartitions partitions but got ${results.size()}")
+        assert(results.size() == expected, s"Expected $expected partitions but got ${results.size()}")
       } catch {
         case e: Exception =>
           log.error(s"Error running row counts test on $dataset", e)
