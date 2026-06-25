@@ -19,6 +19,7 @@
 package org.apache.hudi.hadoop;
 
 import org.apache.hudi.common.engine.HoodieLocalEngineContext;
+import org.apache.hudi.common.config.HoodieMetadataConfig;
 import org.apache.hudi.common.model.HoodieBaseFile;
 import org.apache.hudi.common.model.HoodiePartitionMetadata;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
@@ -30,7 +31,6 @@ import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.TableNotFoundException;
 import org.apache.hudi.hadoop.fs.HadoopFSUtils;
 import org.apache.hudi.hadoop.utils.HoodieHiveUtils;
-import org.apache.hudi.hadoop.utils.HoodieInputFormatUtils;
 import org.apache.hudi.storage.HoodieStorage;
 import org.apache.hudi.storage.StorageConfiguration;
 import org.apache.hudi.storage.StoragePath;
@@ -213,6 +213,8 @@ public class HoodieROTablePathFilter implements Configurable, PathFilter, Serial
 
           final Configuration conf = getConf();
           final String timestampAsOf = conf.get(TIMESTAMP_AS_OF.key());
+          // Disable MDT so the view lists files directly from storage, avoiding stale-MDT mismatches.
+          final HoodieMetadataConfig fsMetadataConfig = HoodieMetadataConfig.newBuilder().enable(false).build();
           if (nonEmpty(timestampAsOf)) {
             validateTimestampAsOf(metaClient, timestampAsOf);
 
@@ -220,11 +222,11 @@ public class HoodieROTablePathFilter implements Configurable, PathFilter, Serial
             // access old version files. For example, in spark side, using "hoodie.datasource.read.paths"
             // which contains old version files, if not specify this value, these files will be filtered.
             fsView = FileSystemViewManager.createInMemoryFileSystemViewWithTimeline(engineContext,
-                metaClient, HoodieInputFormatUtils.buildMetadataConfig(conf),
+                metaClient, fsMetadataConfig,
                 completedTimeline.findInstantsBeforeOrEquals(timestampAsOf));
           } else {
             fsView = FileSystemViewManager.createInMemoryFileSystemViewWithTimeline(engineContext,
-                metaClient, HoodieInputFormatUtils.buildMetadataConfig(conf), completedTimeline.getCommitsTimeline());
+                metaClient, fsMetadataConfig, completedTimeline.getCommitsTimeline());
           }
           String partition = HadoopFSUtils.getRelativePartitionPath(new Path(metaClient.getBasePath().toString()), folder);
           List<HoodieBaseFile> latestFiles = fsView.getLatestBaseFiles(partition).collect(Collectors.toList());

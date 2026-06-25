@@ -32,6 +32,7 @@ import org.apache.hudi.common.testutils.HoodieTestUtils
 import org.apache.hudi.config.{HoodiePreCommitValidatorConfig, HoodieWriteConfig}
 import org.apache.hudi.exception.{HoodieUpsertException, HoodieValidationException}
 import org.apache.hudi.keygen.{NonpartitionedKeyGenerator, TimestampBasedKeyGenerator}
+import org.apache.hudi.metadata.HoodieTableMetadata
 import org.apache.hudi.storage.StoragePath
 import org.apache.hudi.testutils.{DataSourceTestUtils, SparkClientFunctionalTestHarness}
 import org.apache.hudi.testutils.HoodieClientTestUtils.createMetaClient
@@ -43,6 +44,7 @@ import org.apache.spark.sql.functions.{col, lit}
 import org.apache.spark.sql.types.StringType
 import org.junit.jupiter.api.Assertions.{assertEquals, assertFalse, assertThrows, assertTrue}
 import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.function.Executable
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.{Arguments, CsvSource, MethodSource, ValueSource}
@@ -410,6 +412,50 @@ class TestCOWDataSourceStorage extends SparkClientFunctionalTestHarness {
   def assertRecordCount(basePath: String, expectedRecordCount: Long): Unit = {
     val snapshotDF = spark.read.format("org.apache.hudi").load(basePath)
     assertEquals(expectedRecordCount, snapshotDF.count())
+  }
+
+  /** RO path filter must list from the filesystem, not the MDT, so a corrupted MDT still reads all base files. */
+  @Test
+  def testROPathFilterUsesFilesystemListingWithCorruptedMetadata(): Unit = {
+    val options: Map[String, String] = commonOpts ++ Map(
+      HoodieMetadataConfig.ENABLE.key -> "true")
+
+    val dataGen = new HoodieTestDataGenerator(0xDEED)
+    val storage = HoodieTestUtils.getStorage(new StoragePath(basePath))
+
+    val records0 = recordsToStrings(dataGen.generateInserts("000", 100)).asScala.toList
+    val inputDF0 = spark.read.json(spark.sparkContext.parallelize(records0, 2))
+    inputDF0.write.format("org.apache.hudi")
+      .options(options)
+      .option(DataSourceWriteOptions.OPERATION.key, DataSourceWriteOptions.INSERT_OPERATION_OPT_VAL)
+      .mode(SaveMode.Overwrite)
+      .save(basePath)
+    assertTrue(HoodieDataSourceHelpers.hasNewCommits(storage, basePath, "000"))
+
+    // Upsert so file groups get newer base-file versions, leaving older versions on disk.
+    val records1 = recordsToStrings(dataGen.generateUpdates("001", 100)).asScala.toList
+    val inputDF1 = spark.read.json(spark.sparkContext.parallelize(records1, 2))
+    inputDF1.write.format("org.apache.hudi")
+      .options(options)
+      .option(DataSourceWriteOptions.OPERATION.key, DataSourceWriteOptions.UPSERT_OPERATION_OPT_VAL)
+      .mode(SaveMode.Append)
+      .save(basePath)
+
+    // Corrupt the MDT: drop its files partition so an MDT-backed view would return the wrong file set.
+    val mdtFilesPartition = new StoragePath(
+      HoodieTableMetadata.getMetadataTableBasePath(basePath), "files")
+    assertTrue(storage.deleteDirectory(mdtFilesPartition), "MDT files partition should have been deleted")
+
+    // Snapshot read that lists via HoodieROTablePathFilter. The filter lists the filesystem directly,
+    // so the corrupted MDT is ignored and every latest base file is still read.
+    val df = spark.read.format("org.apache.hudi")
+      .option(HoodieMetadataConfig.ENABLE.key, "false")
+      .option(DataSourceReadOptions.FILE_INDEX_LIST_FILE_STATUSES_USING_RO_PATH_FILTER.key, "true")
+      .option(DataSourceReadOptions.QUERY_TYPE.key, DataSourceReadOptions.QUERY_TYPE_SNAPSHOT_OPT_VAL)
+      .load(basePath)
+    // Each key returned exactly once: no latest base file dropped, no stale version double-counted.
+    assertEquals(100, df.count())
+    assertEquals(100, df.select("_row_key").distinct().count())
   }
 }
 
