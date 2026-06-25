@@ -151,10 +151,14 @@ public final class HoodieMetadataConfig extends HoodieConfig {
       .defaultValue(String.valueOf(2 * 60 * 60))
       .markAdvanced()
       .sinceVersion("1.2.0")
+      // Uber 0.14 compat: older `hoodie.metadata.compact.inline.max.delta.seconds` property name.
+      .withAlternatives(METADATA_PREFIX + ".compact.inline.max.delta.seconds")
       .withDocumentation("Number of elapsed seconds after the last compaction, before scheduling a "
       + "new one (for metadata table). "
       + "This config takes effect only for the compaction triggering strategy based on the elapsed time, "
-      + "i.e., TIME_ELAPSED, NUM_AND_TIME, and NUM_OR_TIME.");
+      + "i.e., TIME_ELAPSED, NUM_AND_TIME, and NUM_OR_TIME.\n"
+      + "[UBER]\n"
+      + "Also accepts the Uber 0.14 property name `hoodie.metadata.compact.inline.max.delta.seconds`.");
 
   // Compaction trigger strategy
   public static final ConfigProperty<String> COMPACT_TRIGGER_STRATEGY = ConfigProperty
@@ -162,8 +166,12 @@ public final class HoodieMetadataConfig extends HoodieConfig {
       .defaultValue("NUM_COMMITS")
       .markAdvanced()
       .sinceVersion("1.2.0")
+      // Uber 0.14 compat: older `hoodie.metadata.compact.inline.trigger.strategy` property name.
+      .withAlternatives(METADATA_PREFIX + ".compact.inline.trigger.strategy")
       .withDocumentation("Controls how compaction scheduling is triggered for metadata table,"
-      + "by time or num delta commits or combination of both. ");
+      + "by time or num delta commits or combination of both. \n"
+      + "[UBER]\n"
+      + "Also accepts the Uber 0.14 property name `hoodie.metadata.compact.inline.trigger.strategy`.");
 
   public static final ConfigProperty<String> ENABLE_LOG_COMPACTION_ON_METADATA_TABLE = ConfigProperty
       .key(METADATA_PREFIX + ".log.compaction.enable")
