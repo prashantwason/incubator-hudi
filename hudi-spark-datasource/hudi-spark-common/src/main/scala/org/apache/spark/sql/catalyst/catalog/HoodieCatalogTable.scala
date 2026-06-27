@@ -249,7 +249,15 @@ class HoodieCatalogTable(val spark: SparkSession, var table: CatalogTable) exten
     val globalTableConfigs = mappingSparkDatasourceConfigsToTableConfigs(globalProps)
     val globalSqlOptions = mapHoodieConfigsToSqlOptions(globalTableConfigs)
 
-    val sqlOptions = withDefaultSqlOptions(globalSqlOptions ++
+    // Honor spark.hoodie.* session confs (e.g. hoodie.write.table.version injected by
+    // HoodieSparkPlugin) at CREATE time. The catalog create path otherwise only consults global
+    // props + TBLPROPERTIES + defaults, so a session-level table version would be ignored here.
+    // Precedence: explicit TBLPROPERTIES > session spark.hoodie.* > global props > defaults.
+    val sessionTableConfigs = mappingSparkDatasourceConfigsToTableConfigs(
+      extractSparkPrefixedHoodieConfigs(spark.sessionState.conf.getAllConfs))
+    val sessionSqlOptions = mapHoodieConfigsToSqlOptions(sessionTableConfigs)
+
+    val sqlOptions = withDefaultSqlOptions(globalSqlOptions ++ sessionSqlOptions ++
       mapHoodieConfigsToSqlOptions(catalogProperties))
 
     // get final schema and parameters

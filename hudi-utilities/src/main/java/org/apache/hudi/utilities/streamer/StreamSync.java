@@ -440,6 +440,12 @@ public class StreamSync implements Serializable, Closeable {
 
   HoodieTableMetaClient initializeEmptyTable(HoodieTableMetaClient.TableBuilder tableBuilder, String partitionColumns,
                             StorageConfiguration<?> storageConf) throws IOException {
+    // Validate the optional --write-table-version CLI override against the table versions Hudi
+    // supports (there is no v7); reuses the valid-values set declared on WRITE_TABLE_VERSION so the
+    // allowed set stays in one place. Throws IllegalArgumentException for an unsupported value.
+    if (cfg.writeTableVersion >= 0) {
+      WRITE_TABLE_VERSION.checkValues(String.valueOf(cfg.writeTableVersion));
+    }
     this.commitsTimelineOpt = Option.empty();
     this.allCommitsTimelineOpt = Option.empty();
 
@@ -468,7 +474,9 @@ public class StreamSync implements Serializable, Closeable {
         .setRecordMergeMode(mergeMode)
         .setBaseFileFormat(cfg.baseFileFormat)
         .setPartitionFields(partitionColumns)
-        .setTableVersion(ConfigUtils.getIntWithAltKeys(props, WRITE_TABLE_VERSION))
+        // The --write-table-version CLI arg (cfg.writeTableVersion) takes precedence when provided
+        // (>= 0); otherwise fall back to the hoodie.write.table.version property (or its default).
+        .setTableVersion(cfg.writeTableVersion >= 0 ? cfg.writeTableVersion : ConfigUtils.getIntWithAltKeys(props, WRITE_TABLE_VERSION))
         .setRecordKeyFields(props.getProperty(DataSourceWriteOptions.RECORDKEY_FIELD().key()))
         .setPopulateMetaFields(props.getBoolean(HoodieTableConfig.POPULATE_META_FIELDS.key(),
             HoodieTableConfig.POPULATE_META_FIELDS.defaultValue()))

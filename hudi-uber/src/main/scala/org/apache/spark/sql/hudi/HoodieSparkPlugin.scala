@@ -17,6 +17,8 @@
 package org.apache.spark.sql.hudi
 
 import org.apache.hudi.common.config.HoodieCommonConfig
+import org.apache.hudi.common.table.HoodieTableVersion
+import org.apache.hudi.config.HoodieWriteConfig
 import org.apache.hudi.DataSourceReadOptions
 import org.apache.hudi.HoodieVersion
 import org.apache.spark.SparkContext
@@ -83,6 +85,17 @@ private class HoodieSparkDriverPlugin extends DriverPlugin with Logging{
       val reconcileSchemaVal = "true"
       logInfo(s"Reconcile schema config is not provided so injecting configuration: $reconcileSchemaKey = $reconcileSchemaVal")
       conf.set(reconcileSchemaKey, reconcileSchemaVal)
+    }
+
+    // Default new tables to table version 6 (instead of the newest supported version) unless the
+    // user explicitly requests another version. Injected as a spark.* prefixed conf so it is
+    // normalized to hoodie.write.table.version on the read / DML-write paths.
+    val writeTableVersionKey = s"spark.${HoodieWriteConfig.WRITE_TABLE_VERSION.key}"
+    if (!conf.contains(writeTableVersionKey)) {
+      val writeTableVersionVal = HoodieTableVersion.SIX.versionCode().toString
+      logInfo(s"Write table version config is not provided so injecting configuration: " +
+        s"$writeTableVersionKey = $writeTableVersionVal")
+      conf.set(writeTableVersionKey, writeTableVersionVal)
     }
 
     // MAKE_NEW_COLUMNS_NULLABLE does not exist in v1.2 HoodieCommonConfig

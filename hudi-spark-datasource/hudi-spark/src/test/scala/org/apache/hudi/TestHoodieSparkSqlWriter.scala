@@ -22,7 +22,7 @@ import org.apache.hudi.client.SparkRDDWriteClient
 import org.apache.hudi.common.config.{HoodieConfig, HoodieMetadataConfig, RecordMergeMode}
 import org.apache.hudi.common.model.{DefaultHoodieRecordPayload, HoodieFileFormat, HoodieRecord, HoodieRecordPayload, HoodieReplaceCommitMetadata, HoodieTableType, WriteOperationType}
 import org.apache.hudi.common.schema.HoodieSchema
-import org.apache.hudi.common.table.{HoodieTableConfig, HoodieTableMetaClient, TableSchemaResolver}
+import org.apache.hudi.common.table.{HoodieTableConfig, HoodieTableMetaClient, HoodieTableVersion, TableSchemaResolver}
 import org.apache.hudi.common.table.timeline.TimelineUtils
 import org.apache.hudi.common.testutils.HoodieTestDataGenerator
 import org.apache.hudi.config.{HoodieBootstrapConfig, HoodieIndexConfig, HoodieWriteConfig}
@@ -259,6 +259,107 @@ class TestHoodieSparkSqlWriter extends HoodieSparkWriterTestBase {
         .setConf(HadoopFSUtils.getStorageConf(spark.sessionState.newHadoopConf())).build()
       assertEquals(metaClient.getTableConfig.getTableVersion.versionCode(), tableVersion)
     }
+  }
+
+  /**
+   * Regression test for the DataSource write path honoring session-level Hudi confs.
+   *
+   * HoodieSparkPlugin injects the v6 default as a `spark.hoodie.write.table.version` *session* conf
+   * (not a write option). The plain `df.write.format("hudi")` path previously ignored session confs,
+   * so a new table fell back to the newest version at creation time. `DefaultSource.createRelation`
+   * now harvests `spark.hoodie.*` session confs (stripping the `spark.` prefix) before writing, with
+   * explicit `.option(...)` keeping precedence. This asserts both contracts:
+   *  1. the session default (v6) drives table creation when no version option is supplied; and
+   *  2. an explicit `hoodie.write.table.version` option overrides the session default.
+   *
+   * Note this must go through `df.write.format("hudi")` (not `HoodieSparkSqlWriter.write` directly),
+   * since the harvesting lives in `DefaultSource`.
+   */
+  @Test
+  def testDataSourceWriteHonorsSparkHoodieSessionTableVersion(): Unit = {
+    val sessionKey = s"spark.${HoodieWriteConfig.WRITE_TABLE_VERSION.key}"
+    spark.conf.set(sessionKey, "6")
+    try {
+      val df = spark.createDataFrame(Seq(StringLongTest(UUID.randomUUID().toString, new Date().getTime)))
+
+      // (1) No explicit version option -> the spark.hoodie.* session default (v6) drives creation.
+      val sessionDefaultPath = s"$tempBasePath/session_default"
+      df.write.format("hudi")
+        .option(HoodieWriteConfig.TBL_NAME.key, hoodieFooTableName)
+        .option("hoodie.datasource.write.recordkey.field", "uuid")
+        .option("hoodie.datasource.write.partitionpath.field", "ts")
+        .mode(SaveMode.Overwrite)
+        .save(sessionDefaultPath)
+      assertEquals(6, readTableVersionCode(sessionDefaultPath),
+        "df.write must honor the spark.hoodie.write.table.version session default")
+
+      // (2) An explicit option must win over the session default.
+      val explicitPath = s"$tempBasePath/explicit_override"
+      df.write.format("hudi")
+        .option(HoodieWriteConfig.TBL_NAME.key, hoodieFooTableName)
+        .option("hoodie.datasource.write.recordkey.field", "uuid")
+        .option("hoodie.datasource.write.partitionpath.field", "ts")
+        .option(HoodieWriteConfig.WRITE_TABLE_VERSION.key, "8")
+        .mode(SaveMode.Overwrite)
+        .save(explicitPath)
+      assertEquals(8, readTableVersionCode(explicitPath),
+        "an explicit hoodie.write.table.version option must override the session default")
+    } finally {
+      spark.conf.unset(sessionKey)
+    }
+  }
+
+  private def readTableVersionCode(basePath: String): Int =
+    HoodieTableMetaClient.builder().setBasePath(basePath)
+      .setConf(HadoopFSUtils.getStorageConf(spark.sessionState.newHadoopConf())).build()
+      .getTableConfig.getTableVersion.versionCode()
+
+  /**
+   * Verifies how `hoodie.write.table.version` flows through
+   * `HoodieSparkSqlWriterInternal.mergeParamsAndGetHoodieConfig` - the method that
+   * [[HoodieSparkSqlWriter.write]] uses on the datasource / DML-write path to merge options before a
+   * write. Two behaviours are asserted:
+   *  1. When `hoodie.write.table.version=6` is supplied via optParams it is preserved into BOTH the
+   *     returned params map and the returned HoodieConfig. This is the value that later drives
+   *     `HoodieTableMetaClient.newTableBuilder().setTableVersion(...)`, i.e. a new table created at v6.
+   *  2. When it is NOT supplied, the method does not inject a default for it (only ~30 other configs
+   *     get `setDefaultValue` in `parametersWithWriteDefaults`), so the key is absent from the
+   *     returned map and callers fall back to the WRITE_TABLE_VERSION ConfigProperty default.
+   */
+  @Test
+  def testMergeParamsPropagatesWriteTableVersion(): Unit = {
+    val versionKey = HoodieWriteConfig.WRITE_TABLE_VERSION.key
+    val six = HoodieTableVersion.SIX.versionCode().toString
+
+    // (1) hoodie.write.table.version=6 supplied in optParams must survive the merge.
+    val (paramsWithV6, configWithV6) =
+      invokeMergeParamsAndGetHoodieConfig(commonTableModifier.updated(versionKey, six))
+    assertEquals(six, paramsWithV6.getOrElse(versionKey, null),
+      s"$versionKey=6 from optParams should be propagated into the returned params map")
+    assertEquals(six, configWithV6.getString(HoodieWriteConfig.WRITE_TABLE_VERSION),
+      s"returned HoodieConfig should resolve $versionKey to 6")
+
+    // (2) When not supplied, the merge does not add the key; callers fall back to the config default.
+    val (paramsNoVersion, configNoVersion) = invokeMergeParamsAndGetHoodieConfig(commonTableModifier)
+    assertFalse(paramsNoVersion.contains(versionKey),
+      s"$versionKey should not be injected as a default by mergeParamsAndGetHoodieConfig")
+    assertEquals(HoodieTableVersion.current().versionCode().toString,
+      configNoVersion.getStringOrDefault(HoodieWriteConfig.WRITE_TABLE_VERSION),
+      s"absent $versionKey should fall back to the WRITE_TABLE_VERSION ConfigProperty default")
+  }
+
+  /**
+   * Invokes the private `mergeParamsAndGetHoodieConfig` for a new-table write (null tableConfig,
+   * Overwrite mode, non-streaming) via reflection so the merge flow can be asserted in isolation.
+   */
+  private def invokeMergeParamsAndGetHoodieConfig(optParams: Map[String, String]): (Map[String, String], HoodieConfig) = {
+    val method = classOf[HoodieSparkSqlWriterInternal].getDeclaredMethods
+      .find(_.getName == "mergeParamsAndGetHoodieConfig")
+      .getOrElse(fail("mergeParamsAndGetHoodieConfig not found on HoodieSparkSqlWriterInternal"))
+    method.setAccessible(true)
+    method.invoke(new HoodieSparkSqlWriterInternal(), optParams, null.asInstanceOf[HoodieTableConfig],
+      SaveMode.Overwrite, java.lang.Boolean.FALSE)
+      .asInstanceOf[(Map[String, String], HoodieConfig)]
   }
 
   /**

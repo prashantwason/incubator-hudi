@@ -254,6 +254,13 @@ public class HoodieStreamer implements Serializable {
     @Parameter(names = {"--table-type"}, description = "Type of table. COPY_ON_WRITE (or) MERGE_ON_READ", required = true)
     public String tableType;
 
+    // Optional CLI override for the write table version. When provided (>= 0) it takes precedence
+    // over the hoodie.write.table.version property and pins the version the table is created at
+    // (applied in StreamSync#initializeEmptyTable). The default of -1 means "not provided", in which
+    // case the hoodie.write.table.version property (or its default) is used instead.
+    @Parameter(names = {"--write-table-version"}, description = "Write table version either it is 6 or 8 or 9", required = false)
+    public int writeTableVersion = -1;
+
     @Parameter(names = {"--base-file-format"}, description = "File format for the base files. PARQUET (or) HFILE", required = false)
     public String baseFileFormat = "PARQUET";
 

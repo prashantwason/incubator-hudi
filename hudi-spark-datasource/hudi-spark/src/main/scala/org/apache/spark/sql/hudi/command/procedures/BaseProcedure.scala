@@ -27,7 +27,10 @@ import org.apache.hudi.index.HoodieIndex.IndexType
 import org.apache.spark.api.java.JavaSparkContext
 import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.hudi.HoodieSqlCommonUtils.extractSparkPrefixedHoodieConfigs
 import org.apache.spark.sql.types._
+
+import scala.collection.JavaConverters._
 
 abstract class BaseProcedure extends Procedure {
   val spark: SparkSession = SparkSession.active
@@ -36,7 +39,13 @@ abstract class BaseProcedure extends Procedure {
   protected def sparkSession: SparkSession = spark
 
   protected def getWriteConfig(basePath: String): HoodieWriteConfig = {
+    // Honor spark.hoodie.* session configs (e.g. spark.hoodie.write.table.version injected by
+    // HoodieSparkPlugin): strip the "spark." prefix and feed them into the write config so writes
+    // driven by procedures (metadata table creation, rollback, etc.) pick them up instead of
+    // falling back to defaults. Explicit path/index settings below stay authoritative.
+    val sparkHoodieConfigs = extractSparkPrefixedHoodieConfigs(spark.sessionState.conf.getAllConfs)
     HoodieWriteConfig.newBuilder
+      .withProps(sparkHoodieConfigs.asJava)
       .withPath(basePath)
       .withIndexConfig(HoodieIndexConfig.newBuilder.withIndexType(IndexType.BLOOM).build)
       .build

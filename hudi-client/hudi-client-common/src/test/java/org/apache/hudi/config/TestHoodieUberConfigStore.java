@@ -318,6 +318,25 @@ public class TestHoodieUberConfigStore {
   }
 
   @Test
+  public void testApplyConfigStoreStampsAppliedMarker() throws IOException {
+    createConfigFile("hudi_config_enforced.conf", "hoodie.test.enforced.key=enforced_value\n");
+    createConfigFile("hudi_config_fallback.conf", "");
+    HoodieUberConfigStore.setTestConfigStorePath(testConfigStorePath);
+
+    HoodieWriteConfig inputConfig = HoodieWriteConfig.newBuilder()
+        .withPath("/tmp/test-table")
+        .build();
+    assertFalse(inputConfig.getProps().containsKey(HoodieUberConfigStore.CONFIG_STORE_APPLIED_MARKER));
+
+    HoodieWriteConfig result = HoodieUberConfigStore.applyConfigStore(hadoopConf, inputConfig);
+
+    // The enriched config carries the enforced value and the "applied" marker that lets callers
+    // (e.g. HoodieBackedTableMetadataWriter) skip re-applying the store.
+    assertEquals("enforced_value", result.getProps().getProperty("hoodie.test.enforced.key"));
+    assertEquals("true", result.getProps().getProperty(HoodieUberConfigStore.CONFIG_STORE_APPLIED_MARKER));
+  }
+
+  @Test
   public void testGetConfigStorePath() throws IOException {
     createConfigFile("hudi_config_enforced.conf", "");
     createConfigFile("hudi_config_fallback.conf", "");

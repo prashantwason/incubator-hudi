@@ -117,6 +117,7 @@
             "--hoodie-conf", "${hoodie_conf88}",
             "--hoodie-conf", "${hoodie_conf89}",
             "--hoodie-conf", "${hoodie_conf90}",
+            "--hoodie-conf", "${HOODIE_WRITE_TABLE_VERSION_CONF}",
             "--max-pending-compactions", "${max_pending_compactions}",
             "--min-sync-interval-seconds", "${min_sync_interval_seconds}",
             "--op", "${op}",
@@ -128,7 +129,8 @@
             "--table-type", "${table_type}",
             "--target-base-path", "${target_base_path}",
             "--target-table", "${target_table}",
-            "--transformer-class", "${transformer_class}"
+            "--transformer-class", "${transformer_class}",
+            "--write-table-version", "${WRITE_TABLE_VERSION}"
         ],
         "conf": {
             "spark.yarn.maxAppAttempts": "1",
@@ -265,6 +267,7 @@
         "hoodie_conf88": "foo=bar",
         "hoodie_conf89": "foo=bar",
         "hoodie_conf90": "foo=bar",
+        "HOODIE_WRITE_TABLE_VERSION_CONF": "hoodie.write.table.version=6",
         "max_pending_compactions": "5",
         "min_sync_interval_seconds": "0",
         "op": "UPSERT",
@@ -277,6 +280,7 @@
         "target_base_path": "/user/hive/warehouse/tmp.db/hoodie_dfs_test",
         "target_table": "tmp.hoodie_dfs_test",
         "transformer_class": "org.apache.hudi.utilities.transform.SqlQueryBasedTransformer",
+        "WRITE_TABLE_VERSION": "6",
         "spark_env": "SPARK_33",
         "queue": "adhoc",
         "proxy_user": "hudi",

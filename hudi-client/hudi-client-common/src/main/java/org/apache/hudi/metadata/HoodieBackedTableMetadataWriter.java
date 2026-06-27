@@ -75,6 +75,7 @@ import org.apache.hudi.common.util.StringUtils;
 import org.apache.hudi.common.util.ValidationUtils;
 import org.apache.hudi.common.util.collection.CloseableMappingIterator;
 import org.apache.hudi.common.util.collection.Pair;
+import org.apache.hudi.config.HoodieUberConfigStore;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieIOException;
@@ -216,6 +217,15 @@ public abstract class HoodieBackedTableMetadataWriter<I, O> implements HoodieTab
                                             HoodieEngineContext engineContext,
                                             Option<String> inflightInstantTimestamp,
                                             boolean streamingWritesEnabled) {
+    // Apply the config store here so metadata writers created directly (e.g. the create/init
+    // metadata table procedures or CLI), bypassing the write client, still pick up fallback and
+    // enforced configs. Skip when the config was already enriched upstream (e.g. in
+    // BaseHoodieClient), detected via the marker the config store stamps onto enriched configs.
+    if (!Boolean.parseBoolean(writeConfig.getProps().getProperty(
+            HoodieUberConfigStore.CONFIG_STORE_APPLIED_MARKER, "false"))) {
+      writeConfig = HoodieUberConfigStore.applyConfigStore(
+          storageConf.unwrapAs(org.apache.hadoop.conf.Configuration.class), writeConfig);
+    }
     this.dataWriteConfig = writeConfig;
     this.engineContext = engineContext;
     this.storageConf = storageConf;

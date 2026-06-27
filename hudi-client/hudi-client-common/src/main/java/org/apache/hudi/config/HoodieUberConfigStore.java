@@ -68,6 +68,13 @@ public class HoodieUberConfigStore {
   private static final String ENFORCED_CONFIG_FILE = "hudi_config_enforced.conf";
   private static final String FALLBACK_CONFIG_FILE = "hudi_config_fallback.conf";
 
+  // Marker stamped onto a write config once the config store has been applied. Callers that may
+  // receive an already-enriched config (e.g. HoodieBackedTableMetadataWriter, which can be handed a
+  // config from a write client that BaseHoodieClient already enriched) check this key to decide
+  // whether to apply the store. Lives only in the write-config props, not in persisted table
+  // properties.
+  public static final String CONFIG_STORE_APPLIED_MARKER = "hoodie.uber.configstore.applied";
+
   // Detect if running in a test environment (Maven Surefire)
   private static final boolean IS_TESTING = detectTestEnvironment();
 
@@ -228,6 +235,9 @@ public class HoodieUberConfigStore {
         LOG.debug("Applied enforced config: {}={}", key, newValue);
       }
     }
+
+    // Stamp the marker so a subsequent applyConfigStore() on this config is a no-op.
+    resultProps.setProperty(CONFIG_STORE_APPLIED_MARKER, "true");
 
     // Build and return the updated config
     String basePath = resultProps.getProperty(HoodieWriteConfig.BASE_PATH.key());

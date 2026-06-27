@@ -35,7 +35,7 @@ import org.apache.hudi.util.SparkConfigUtils
 
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession, SQLContext}
 import org.apache.spark.sql.execution.streaming.{Sink, Source}
-import org.apache.spark.sql.hudi.HoodieSqlCommonUtils.isUsingHiveCatalog
+import org.apache.spark.sql.hudi.HoodieSqlCommonUtils.{extractSparkPrefixedHoodieConfigs, isUsingHiveCatalog}
 import org.apache.spark.sql.hudi.streaming.{HoodieEarliestOffsetRangeLimit, HoodieLatestOffsetRangeLimit, HoodieSpecifiedOffsetRangeLimit, HoodieStreamSourceV1, HoodieStreamSourceV2}
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.streaming.OutputMode
@@ -164,11 +164,20 @@ class DefaultSource extends RelationProvider
                               mode: SaveMode,
                               optParams: Map[String, String],
                               df: DataFrame): BaseRelation = {
+    // Honor spark.hoodie.* session confs (e.g. spark.hoodie.write.table.version injected by
+    // HoodieSparkPlugin) on the DataSource write path. Unlike the read createRelation, the write
+    // path otherwise only sees the explicit DataFrame/DataSource options, so a session-level Hudi
+    // config (notably the v6 default table version) would be dropped and table creation would fall
+    // back to the newest version. Strip the "spark." prefix to the canonical hoodie.* keys, the
+    // same way HoodieCatalogTable and BaseProcedure already do on their write paths. Explicit
+    // options take precedence on conflict, so a caller's .option(...) always wins.
+    val sessionHoodieConfigs = extractSparkPrefixedHoodieConfigs(sqlContext.getAllConfs)
+    val effectiveParams = sessionHoodieConfigs ++ optParams
     try {
-      if (optParams.get(OPERATION.key).contains(BOOTSTRAP_OPERATION_OPT_VAL)) {
-        HoodieSparkSqlWriter.bootstrap(sqlContext, mode, optParams, df)
+      if (effectiveParams.get(OPERATION.key).contains(BOOTSTRAP_OPERATION_OPT_VAL)) {
+        HoodieSparkSqlWriter.bootstrap(sqlContext, mode, effectiveParams, df)
       } else {
-        val (success, _, _, _, _, _) = HoodieSparkSqlWriter.write(sqlContext, mode, optParams, df)
+        val (success, _, _, _, _, _) = HoodieSparkSqlWriter.write(sqlContext, mode, effectiveParams, df)
         if (!success) {
           throw new HoodieException("Failed to write to Hudi")
         }
