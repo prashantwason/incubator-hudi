@@ -57,11 +57,6 @@ case class CreateIndexCommand(table: CatalogTable,
 
     if (indexType.equals(HoodieTableMetadataUtil.PARTITION_NAME_COLUMN_STATS)
       || indexType.equals(HoodieTableMetadataUtil.PARTITION_NAME_BLOOM_FILTERS)) {
-      if (indexType.equals(HoodieTableMetadataUtil.PARTITION_NAME_COLUMN_STATS) &&
-        options.asJava.getOrDefault(EXPRESSION_OPTION, ExpressionIndexSparkFunctions.IDENTITY_FUNCTION).equals(ExpressionIndexSparkFunctions.IDENTITY_FUNCTION)) {
-        throw new HoodieIndexException("Column stats index without expression on any column can be created using datasource configs. " +
-          "Please refer https://hudi.apache.org/docs/metadata for more info")
-      }
       new HoodieSparkIndexClient(sparkSession).create(metaClient, indexName, indexType, columnsMap, options.asJava, table.properties.asJava)
     } else if (indexName.equals(HoodieTableMetadataUtil.PARTITION_NAME_RECORD_INDEX)) {
       ValidationUtils.checkArgument(CreateIndexCommand.matchesRecordKeys(columnsMap.keySet().asScala.toSet, metaClient.getTableConfig),

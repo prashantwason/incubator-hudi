@@ -29,6 +29,7 @@ import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.index.HoodieIndexUtils;
 import org.apache.hudi.index.HoodieSparkIndexClient;
 import org.apache.hudi.metadata.HoodieIndexVersion;
+import org.apache.hudi.metadata.MetadataPartitionType;
 import org.apache.hudi.testutils.HoodieClientTestBase;
 
 import org.apache.spark.api.java.JavaRDD;
@@ -36,12 +37,18 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import org.apache.hudi.client.transaction.lock.InProcessLockProvider;
+import org.apache.hudi.common.config.HoodieMetadataConfig;
+import org.apache.hudi.config.HoodieLockConfig;
+
 import static org.apache.hudi.index.expression.ExpressionIndexSparkFunctions.IDENTITY_FUNCTION;
+import static org.apache.hudi.index.expression.HoodieExpressionIndex.EXPRESSION_OPTION;
 import static org.apache.hudi.metadata.HoodieTableMetadataUtil.PARTITION_NAME_COLUMN_STATS;
 import static org.apache.hudi.metadata.HoodieTableMetadataUtil.PARTITION_NAME_EXPRESSION_INDEX;
 import static org.apache.hudi.metadata.HoodieTableMetadataUtil.PARTITION_NAME_EXPRESSION_INDEX_PREFIX;
@@ -153,6 +160,107 @@ public class TestHoodieSparkIndex extends HoodieClientTestBase {
         .withSourceFields(sourceFields)
         .withIndexOptions(indexOptions)
         .build();
+  }
+
+  // ---- isNativeColumnStats routing tests ----
+
+  @Test
+  public void testIsNativeColumnStatsNoOptions() {
+    assertTrue(HoodieSparkIndexClient.isNativeColumnStats(Collections.emptyMap()),
+        "Empty options should route to native column stats");
+  }
+
+  @Test
+  public void testIsNativeColumnStatsIdentityExpr() {
+    Map<String, String> options = Collections.singletonMap(EXPRESSION_OPTION, IDENTITY_FUNCTION);
+    assertTrue(HoodieSparkIndexClient.isNativeColumnStats(options),
+        "expr=identity should route to native column stats");
+  }
+
+  @Test
+  public void testIsNativeColumnStatsRealExpr() {
+    Map<String, String> options = Collections.singletonMap(EXPRESSION_OPTION, "from_unixtime");
+    assertFalse(HoodieSparkIndexClient.isNativeColumnStats(options),
+        "expr=from_unixtime should route to expression index, not native column stats");
+  }
+
+  // ---- createNativeColumnStats registration test ----
+
+  @Test
+  public void testCreateNativeColumnStatsRegistersIndexDefinition() throws Exception {
+    initMetaClient(HoodieTableType.COPY_ON_WRITE);
+    HoodieWriteConfig cfg = getConfigBuilder()
+        .withMetadataConfig(HoodieMetadataConfig.newBuilder().enable(true).withMetadataIndexColumnStats(false).build())
+        .withLockConfig(HoodieLockConfig.newBuilder().withLockProvider(InProcessLockProvider.class).build())
+        .build();
+    HoodieTestDataGenerator dataGen = new HoodieTestDataGenerator(0x42);
+
+    // Write some records so the metadata table is initialized
+    try (SparkRDDWriteClient client = getHoodieWriteClient(cfg)) {
+      String commitTime = "001";
+      WriteClientTestUtils.startCommitWithTime(client, commitTime);
+      List<HoodieRecord> records = dataGen.generateInserts(commitTime, 100);
+      JavaRDD<HoodieRecord> writeRecords = jsc.parallelize(records, 1);
+      List<WriteStatus> statuses = client.upsert(writeRecords, commitTime).collect();
+      assertNoWriteErrors(statuses);
+      client.commit(commitTime, jsc.parallelize(statuses, 1));
+    }
+    metaClient = HoodieTableMetaClient.reload(metaClient);
+
+    HoodieSparkIndexClient indexClient = new HoodieSparkIndexClient(cfg, context);
+    Map<String, Map<String, String>> columns = new HashMap<>();
+    columns.put("rider", Collections.emptyMap());
+
+    // create with no options → should use native column_stats path
+    indexClient.create(metaClient, "idx_rider", PARTITION_NAME_COLUMN_STATS,
+        columns, Collections.emptyMap(), Collections.emptyMap());
+
+    HoodieTableMetaClient reloadedClient = HoodieTableMetaClient.builder()
+        .setBasePath(metaClient.getBasePath()).setConf(metaClient.getStorageConf()).build();
+    assertTrue(reloadedClient.getTableConfig().getMetadataPartitions().contains(MetadataPartitionType.COLUMN_STATS.getPartitionPath()),
+        "column_stats partition should be present after CREATE INDEX with no expr option");
+    // must NOT create an expression index partition
+    assertFalse(reloadedClient.getTableConfig().getMetadataPartitions().stream()
+            .anyMatch(p -> p.startsWith(PARTITION_NAME_EXPRESSION_INDEX_PREFIX)),
+        "No expr-index- partition should be created for native column stats");
+  }
+
+  @Test
+  public void testCreateNativeColumnStatsWithIdentityExprRegistersIndexDefinition() throws Exception {
+    initMetaClient(HoodieTableType.COPY_ON_WRITE);
+    HoodieWriteConfig cfg = getConfigBuilder()
+        .withMetadataConfig(HoodieMetadataConfig.newBuilder().enable(true).withMetadataIndexColumnStats(false).build())
+        .withLockConfig(HoodieLockConfig.newBuilder().withLockProvider(InProcessLockProvider.class).build())
+        .build();
+    HoodieTestDataGenerator dataGen = new HoodieTestDataGenerator(0x43);
+
+    try (SparkRDDWriteClient client = getHoodieWriteClient(cfg)) {
+      String commitTime = "001";
+      WriteClientTestUtils.startCommitWithTime(client, commitTime);
+      List<HoodieRecord> records = dataGen.generateInserts(commitTime, 100);
+      JavaRDD<HoodieRecord> writeRecords = jsc.parallelize(records, 1);
+      List<WriteStatus> statuses = client.upsert(writeRecords, commitTime).collect();
+      assertNoWriteErrors(statuses);
+      client.commit(commitTime, jsc.parallelize(statuses, 1));
+    }
+    metaClient = HoodieTableMetaClient.reload(metaClient);
+
+    HoodieSparkIndexClient indexClient = new HoodieSparkIndexClient(cfg, context);
+    Map<String, Map<String, String>> columns = new HashMap<>();
+    columns.put("rider", Collections.emptyMap());
+    Map<String, String> options = Collections.singletonMap(EXPRESSION_OPTION, IDENTITY_FUNCTION);
+
+    // create with expr=identity → should also use native column_stats path
+    indexClient.create(metaClient, "idx_rider", PARTITION_NAME_COLUMN_STATS,
+        columns, options, Collections.emptyMap());
+
+    HoodieTableMetaClient reloadedClient = HoodieTableMetaClient.builder()
+        .setBasePath(metaClient.getBasePath()).setConf(metaClient.getStorageConf()).build();
+    assertTrue(reloadedClient.getTableConfig().getMetadataPartitions().contains(MetadataPartitionType.COLUMN_STATS.getPartitionPath()),
+        "column_stats partition should be present after CREATE INDEX with expr=identity");
+    assertFalse(reloadedClient.getTableConfig().getMetadataPartitions().stream()
+            .anyMatch(p -> p.startsWith(PARTITION_NAME_EXPRESSION_INDEX_PREFIX)),
+        "No expr-index- partition should be created for identity column stats");
   }
 
   private String getIndexFullName(String indexName, String indexType) {
