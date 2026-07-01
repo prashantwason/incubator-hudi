@@ -18,6 +18,12 @@
 
 package org.apache.hudi.index;
 
+import org.apache.hudi.client.SparkRDDWriteClient;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.util.Option;
+import org.apache.hudi.exception.HoodieRollbackException;
+import org.apache.hudi.storage.StoragePath;
+
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -30,7 +36,14 @@ import static org.apache.hudi.metadata.HoodieTableMetadataUtil.PARTITION_NAME_CO
 import static org.apache.hudi.metadata.HoodieTableMetadataUtil.PARTITION_NAME_EXPRESSION_INDEX_PREFIX;
 import static org.apache.hudi.metadata.HoodieTableMetadataUtil.PARTITION_NAME_RECORD_INDEX;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.when;
 
 public class TestHoodieSparkIndexClient {
 
@@ -60,5 +73,26 @@ public class TestHoodieSparkIndexClient {
     Map<String, String> overrides = HoodieSparkIndexClient.getDropOverrideConfigs(PARTITION_NAME_EXPRESSION_INDEX_PREFIX + "my_idx");
     assertTrue(overrides.isEmpty(),
         "Dropping an expression index should have no override configs");
+  }
+
+  /**
+   * Fail-fast: if rolling back stale inflight writes fails, rollbackInflightWrites must propagate
+   * the exception (so CREATE INDEX aborts) rather than swallowing it. Uses a spy over the
+   * package-private getWriteClient() seam to inject a failing write client deterministically.
+   */
+  @Test
+  public void testRollbackInflightWritesPropagatesFailure() {
+    HoodieSparkIndexClient indexClient =
+        spy(new HoodieSparkIndexClient(Option.empty(), Option.empty(), Option.empty()));
+
+    SparkRDDWriteClient mockWriteClient = mock(SparkRDDWriteClient.class);
+    doThrow(new HoodieRollbackException("injected rollback failure"))
+        .when(mockWriteClient).rollbackFailedWrites(any());
+    doReturn(mockWriteClient).when(indexClient).getWriteClient(any(), any(), any(), any());
+
+    HoodieTableMetaClient metaClient = mock(HoodieTableMetaClient.class);
+    when(metaClient.getBasePath()).thenReturn(new StoragePath("file:///tmp/test-table"));
+
+    assertThrows(HoodieRollbackException.class, () -> indexClient.rollbackInflightWrites(metaClient));
   }
 }

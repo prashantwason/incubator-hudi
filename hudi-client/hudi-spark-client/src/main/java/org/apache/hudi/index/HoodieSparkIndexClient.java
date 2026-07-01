@@ -218,6 +218,27 @@ public class HoodieSparkIndexClient extends BaseHoodieIndexClient {
     }
   }
 
+  /**
+   * Rolls back stale inflight writes (heartbeat-expired only) before record index creation.
+   *
+   * <p>Opt-in: invoked by {@code CreateIndexCommand} when the {@code rollbackStaleInflightCommits}
+   * option is set. Reuses {@link #getWriteClient} so the OCC/LAZY/metadata-partition config matches
+   * index creation. Under the LAZY failed-writes-cleaning policy, only inflight commits whose
+   * heartbeats have expired are rolled back; inflight commits with an active heartbeat (genuine
+   * concurrent writers) are preserved. Compaction and clustering are excluded by
+   * {@code rollbackFailedWrites}.
+   *
+   * <p>Fail-fast: rollback failures propagate to the caller (aborting CREATE INDEX) rather than
+   * being swallowed.
+   */
+  public void rollbackInflightWrites(HoodieTableMetaClient metaClient) {
+    log.info("Rolling back stale inflight writes before record index creation for table: {}", metaClient.getBasePath());
+    try (SparkRDDWriteClient writeClient = getWriteClient(metaClient, Option.empty(), Option.empty(), Collections.emptyMap())) {
+      writeClient.rollbackFailedWrites(metaClient);
+      metaClient.reloadActiveTimeline();
+    }
+  }
+
   private void drop(HoodieTableMetaClient metaClient, String indexName, Option<HoodieIndexDefinition> indexDefinitionOpt) {
     log.info("Dropping index {}", indexName);
     try (SparkRDDWriteClient writeClient = getWriteClient(metaClient, indexDefinitionOpt, Option.empty(), Collections.emptyMap())) {
@@ -250,8 +271,8 @@ public class HoodieSparkIndexClient extends BaseHoodieIndexClient {
     return Collections.emptyMap();
   }
 
-  private SparkRDDWriteClient getWriteClient(HoodieTableMetaClient metaClient, Option<HoodieIndexDefinition> indexDefinitionOpt,
-                                             Option<String> indexTypeOpt, Map<String, String> configs) {
+  SparkRDDWriteClient getWriteClient(HoodieTableMetaClient metaClient, Option<HoodieIndexDefinition> indexDefinitionOpt,
+                                     Option<String> indexTypeOpt, Map<String, String> configs) {
     try {
       String schemaStr;
       if (writeConfigOpt.isPresent() && StringUtils.nonEmpty(writeConfigOpt.get().getSchema())) {

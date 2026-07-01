@@ -51,17 +51,19 @@ case class CreateIndexCommand(table: CatalogTable,
   override def run(sparkSession: SparkSession): Seq[Row] = {
     val tableId = table.identifier
     val metaClient = createHoodieTableMetaClient(tableId, sparkSession)
+    val indexClient = new HoodieSparkIndexClient(sparkSession)
     val columnsMap: java.util.LinkedHashMap[String, java.util.Map[String, String]] =
       new util.LinkedHashMap[String, java.util.Map[String, String]]()
     columns.map(c => columnsMap.put(c._1.mkString("."), c._2.asJava))
 
     if (indexType.equals(HoodieTableMetadataUtil.PARTITION_NAME_COLUMN_STATS)
       || indexType.equals(HoodieTableMetadataUtil.PARTITION_NAME_BLOOM_FILTERS)) {
-      new HoodieSparkIndexClient(sparkSession).create(metaClient, indexName, indexType, columnsMap, options.asJava, table.properties.asJava)
+      indexClient.create(metaClient, indexName, indexType, columnsMap, options.asJava, table.properties.asJava)
     } else if (indexName.equals(HoodieTableMetadataUtil.PARTITION_NAME_RECORD_INDEX)) {
       ValidationUtils.checkArgument(CreateIndexCommand.matchesRecordKeys(columnsMap.keySet().asScala.toSet, metaClient.getTableConfig),
         "Input columns should match configured record key columns: " + metaClient.getTableConfig.getRecordKeyFieldProp)
-      new HoodieSparkIndexClient(sparkSession).create(metaClient, indexName, HoodieTableMetadataUtil.PARTITION_NAME_RECORD_INDEX, columnsMap, options.asJava, table.properties.asJava)
+      maybeRollbackStaleInflight(indexClient, metaClient)
+      indexClient.create(metaClient, indexName, HoodieTableMetadataUtil.PARTITION_NAME_RECORD_INDEX, columnsMap, options.asJava, table.properties.asJava)
     } else if (StringUtils.isNullOrEmpty(indexType)) {
       val columnNames = columnsMap.keySet().asScala.toSet
       val derivedIndexType: String = if (CreateIndexCommand.matchesRecordKeys(columnNames, metaClient.getTableConfig)) {
@@ -69,7 +71,11 @@ case class CreateIndexCommand(table: CatalogTable,
       } else {
         HoodieTableMetadataUtil.PARTITION_NAME_SECONDARY_INDEX
       }
-      new HoodieSparkIndexClient(sparkSession).create(metaClient, indexName, derivedIndexType, columnsMap, options.asJava, table.properties.asJava)
+      // Only honor the rollback option when the derived index is a record index.
+      if (derivedIndexType.equals(HoodieTableMetadataUtil.PARTITION_NAME_RECORD_INDEX)) {
+        maybeRollbackStaleInflight(indexClient, metaClient)
+      }
+      indexClient.create(metaClient, indexName, derivedIndexType, columnsMap, options.asJava, table.properties.asJava)
     } else {
       throw new HoodieIndexException(String.format("%s is not supported", indexType))
     }
@@ -79,9 +85,27 @@ case class CreateIndexCommand(table: CatalogTable,
     sparkSession.sessionState.catalog.invalidateCachedTable(tableId)
     Seq.empty
   }
+
+  /**
+   * Opt-in rollback of stale (heartbeat-expired) inflight writes before record index creation.
+   * Runs only when the rollbackStaleInflightCommits option is set to true. Fail-fast: any rollback
+   * failure propagates and aborts CREATE INDEX.
+   */
+  private def maybeRollbackStaleInflight(indexClient: HoodieSparkIndexClient,
+                                         metaClient: HoodieTableMetaClient): Unit = {
+    if (java.lang.Boolean.parseBoolean(options.getOrElse(CreateIndexCommand.ROLLBACK_STALE_INFLIGHT_COMMITS_OPTION, "false"))) {
+      indexClient.rollbackInflightWrites(metaClient)
+    }
+  }
 }
 
 object CreateIndexCommand {
+
+  /**
+   * CREATE INDEX option key. When set to true for a record index, stale (heartbeat-expired) inflight
+   * commits are rolled back before the index is created. Defaults to false.
+   */
+  val ROLLBACK_STALE_INFLIGHT_COMMITS_OPTION = "rollbackStaleInflightCommits"
 
   /**
    * Returns true if the input columns are same as the set of the primary keys for the table.
