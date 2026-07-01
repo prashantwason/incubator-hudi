@@ -21,10 +21,10 @@ import org.apache.hudi.common.config.TypedProperties
 import org.apache.hudi.hive.HiveSyncConfig
 import org.apache.hudi.testutils.HoodieClientTestUtils.getSparkConfForTest
 
-import org.apache.hadoop.hive.metastore.api.{Database, EnvironmentContext, FieldSchema, Partition, SerDeInfo, StorageDescriptor, Table}
+import org.apache.hadoop.hive.metastore.api.{Database, EnvironmentContext, FieldSchema, NoSuchObjectException, Partition, SerDeInfo, StorageDescriptor, Table}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.util.Utils
-import org.junit.jupiter.api.Assertions.{assertEquals, assertFalse, assertNotNull, assertTrue}
+import org.junit.jupiter.api.Assertions.{assertEquals, assertFalse, assertNotNull, assertThrows, assertTrue}
 import org.scalactic.source
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
 
@@ -201,6 +201,106 @@ class TestSparkCatalogMetaStoreClient extends FunSuite with BeforeAndAfterAll {
       assertTrue(client.tableExists(databaseName, tableName))
       assertEquals("v1", client.getTable(databaseName, tableName).getParameters.get("comment"))
     }
+  }
+
+  test("getPartition by values returns the partition when present and throws when absent") {
+    withTempDir { tmp =>
+      val client = newClient()
+      val databaseName = generateName("db")
+      val tableName = generateName("tbl")
+
+      client.createDatabase(new Database(databaseName, "test database", new File(tmp, databaseName).toURI.toString, new util.HashMap[String, String]()))
+      client.createTable(newTable(databaseName, tableName, new File(tmp, tableName).toURI.toString,
+        Seq("id" -> "int"), Seq("dt" -> "string")))
+
+      val location = new File(tmp, s"$tableName/dt=2024-01-01").toURI.toString
+      client.add_partitions(util.Collections.singletonList(
+        newPartition(databaseName, tableName, Seq("2024-01-01"), location)), false, true)
+
+      val found = client.getPartition(databaseName, tableName, util.Collections.singletonList("2024-01-01"))
+      assertNotNull(found)
+      assertEquals(Seq("2024-01-01"), found.getValues.asScala.toSeq)
+      assertTrue(found.getSd.getLocation.endsWith("dt=2024-01-01"))
+
+      assertThrows(classOf[NoSuchObjectException],
+        () => client.getPartition(databaseName, tableName, util.Collections.singletonList("2024-12-31")))
+    }
+  }
+
+  test("getPartition by partition name returns the partition when present and throws when absent") {
+    withTempDir { tmp =>
+      val client = newClient()
+      val databaseName = generateName("db")
+      val tableName = generateName("tbl")
+
+      client.createDatabase(new Database(databaseName, "test database", new File(tmp, databaseName).toURI.toString, new util.HashMap[String, String]()))
+      client.createTable(newTable(databaseName, tableName, new File(tmp, tableName).toURI.toString,
+        Seq("id" -> "int"), Seq("dt" -> "string")))
+
+      client.add_partitions(util.Collections.singletonList(
+        newPartition(databaseName, tableName, Seq("2024-01-01"),
+          new File(tmp, s"$tableName/dt=2024-01-01").toURI.toString)), false, true)
+
+      val found = client.getPartition(databaseName, tableName, "dt=2024-01-01")
+      assertNotNull(found)
+      assertEquals(Seq("2024-01-01"), found.getValues.asScala.toSeq)
+
+      assertThrows(classOf[NoSuchObjectException],
+        () => client.getPartition(databaseName, tableName, "dt=2024-12-31"))
+    }
+  }
+
+  test("add_partitions with an empty list is a no-op") {
+    withTempDir { tmp =>
+      val client = newClient()
+      val databaseName = generateName("db")
+      val tableName = generateName("tbl")
+
+      client.createDatabase(new Database(databaseName, "test database", new File(tmp, databaseName).toURI.toString, new util.HashMap[String, String]()))
+      client.createTable(newTable(databaseName, tableName, new File(tmp, tableName).toURI.toString,
+        Seq("id" -> "int"), Seq("dt" -> "string")))
+
+      val added = client.add_partitions(new util.ArrayList[Partition](), false, true)
+      assertTrue(added.isEmpty)
+      assertTrue(client.listPartitions(databaseName, tableName, (-1).toShort).isEmpty)
+    }
+  }
+
+  test("dropPartition on a missing partition returns true (ignoreIfNotExists)") {
+    withTempDir { tmp =>
+      val client = newClient()
+      val databaseName = generateName("db")
+      val tableName = generateName("tbl")
+
+      client.createDatabase(new Database(databaseName, "test database", new File(tmp, databaseName).toURI.toString, new util.HashMap[String, String]()))
+      client.createTable(newTable(databaseName, tableName, new File(tmp, tableName).toURI.toString,
+        Seq("id" -> "int"), Seq("dt" -> "string")))
+
+      assertTrue(client.dropPartition(databaseName, tableName, "dt=2024-12-31", false))
+    }
+  }
+
+  test("getDatabase round-trips name, description and properties") {
+    withTempDir { tmp =>
+      val client = newClient()
+      val databaseName = generateName("db")
+      val props = new util.HashMap[String, String]()
+      props.put("k1", "v1")
+
+      client.createDatabase(new Database(databaseName, "desc", new File(tmp, databaseName).toURI.toString, props))
+      val db = client.getDatabase(databaseName)
+      assertEquals(databaseName, db.getName)
+      assertEquals("desc", db.getDescription)
+      assertEquals("v1", db.getParameters.get("k1"))
+    }
+  }
+
+  test("setMetaConf is a no-op and unsupported methods throw") {
+    val client = newClient()
+    // setMetaConf must not throw (HoodieHiveSyncClient.setMetaConf forwards audit configs).
+    client.setMetaConf("hive.metastore.callerContext.enabled", "true")
+    // Methods outside the supported subset throw UnsupportedOperationException.
+    assertThrows(classOf[UnsupportedOperationException], () => client.getAllDatabases())
   }
 
   private def newClient(): SparkCatalogMetaStoreClient = {

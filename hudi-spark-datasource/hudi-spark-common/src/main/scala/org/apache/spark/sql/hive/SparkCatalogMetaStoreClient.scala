@@ -20,7 +20,7 @@ package org.apache.spark.sql.hive
 import org.apache.hudi.hive.HiveSyncConfig
 
 import org.apache.hadoop.hive.metastore.IMetaStoreClient
-import org.apache.hadoop.hive.metastore.api.{Database, EnvironmentContext, FieldSchema, Partition, SerDeInfo, StorageDescriptor, Table}
+import org.apache.hadoop.hive.metastore.api.{Database, EnvironmentContext, FieldSchema, NoSuchObjectException, Partition, SerDeInfo, StorageDescriptor, Table}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.catalog.{CatalogDatabase, CatalogStorageFormat, CatalogTable, CatalogTablePartition, CatalogTableType}
@@ -176,10 +176,29 @@ class SparkCatalogMetaStoreClient(syncConfig: HiveSyncConfig)
   override def add_partition(arg0: org.apache.hadoop.hive.metastore.api.Partition): org.apache.hadoop.hive.metastore.api.Partition = unsupported[org.apache.hadoop.hive.metastore.api.Partition]()
   override def add_partitions(arg0: java.util.List[org.apache.hadoop.hive.metastore.api.Partition]): Int = unsupported[Int]()
   override def add_partitions_pspec(arg0: org.apache.hadoop.hive.metastore.partition.spec.PartitionSpecProxy): Int = unsupported[Int]()
-  override def getPartition(arg0: String, arg1: String, arg2: java.util.List[String]): org.apache.hadoop.hive.metastore.api.Partition = unsupported[org.apache.hadoop.hive.metastore.api.Partition]()
+  override def getPartition(dbName: String, tableName: String, partVals: java.util.List[String]): org.apache.hadoop.hive.metastore.api.Partition = {
+    // Used by Hudi hive-sync (HivePartitionUtil.partitionExists during DROP PARTITION). Delegate to
+    // the Spark external catalog; throw NoSuchObjectException when absent so callers that expect the
+    // standard IMetaStoreClient contract treat it as "partition does not exist" rather than erroring.
+    val tbl = getTable(dbName, tableName)
+    val partitionKeys = tbl.getPartitionKeys.asScala.map(_.getName).toList
+    val spec = partitionKeys.zip(partVals.asScala.toList).toMap
+    externalCatalog.getPartitionOption(dbName, tableName, spec)
+      .map(fromCatalogPartition(_, dbName, tableName, partitionKeys))
+      .getOrElse(throw new NoSuchObjectException(
+        s"partition (${spec.mkString(", ")}) not found for table $dbName.$tableName"))
+  }
   override def exchange_partition(arg0: java.util.Map[String, String], arg1: String, arg2: String, arg3: String, arg4: String): org.apache.hadoop.hive.metastore.api.Partition = unsupported[org.apache.hadoop.hive.metastore.api.Partition]()
   override def exchange_partitions(arg0: java.util.Map[String, String], arg1: String, arg2: String, arg3: String, arg4: String): java.util.List[org.apache.hadoop.hive.metastore.api.Partition] = unsupported[java.util.List[org.apache.hadoop.hive.metastore.api.Partition]]()
-  override def getPartition(arg0: String, arg1: String, arg2: String): org.apache.hadoop.hive.metastore.api.Partition = unsupported[org.apache.hadoop.hive.metastore.api.Partition]()
+  override def getPartition(dbName: String, tableName: String, partName: String): org.apache.hadoop.hive.metastore.api.Partition = {
+    val tbl = getTable(dbName, tableName)
+    val partitionKeys = tbl.getPartitionKeys.asScala.map(_.getName).toList
+    val spec = parsePartitionClause(partName)
+    externalCatalog.getPartitionOption(dbName, tableName, spec)
+      .map(fromCatalogPartition(_, dbName, tableName, partitionKeys))
+      .getOrElse(throw new NoSuchObjectException(
+        s"partition ($partName) not found for table $dbName.$tableName"))
+  }
   override def getPartitionWithAuthInfo(arg0: String, arg1: String, arg2: java.util.List[String], arg3: String, arg4: java.util.List[String]): org.apache.hadoop.hive.metastore.api.Partition = unsupported[org.apache.hadoop.hive.metastore.api.Partition]()
   override def listPartitionSpecs(arg0: String, arg1: String, arg2: Int): org.apache.hadoop.hive.metastore.partition.spec.PartitionSpecProxy = unsupported[org.apache.hadoop.hive.metastore.partition.spec.PartitionSpecProxy]()
   override def listPartitions(arg0: String, arg1: String, arg2: java.util.List[String], arg3: Short): java.util.List[org.apache.hadoop.hive.metastore.api.Partition] = unsupported[java.util.List[org.apache.hadoop.hive.metastore.api.Partition]]()
