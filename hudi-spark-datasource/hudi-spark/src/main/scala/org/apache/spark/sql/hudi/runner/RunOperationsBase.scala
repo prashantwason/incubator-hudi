@@ -22,8 +22,12 @@ import org.apache.hudi.{DataSourceWriteOptions, HoodieSparkSQLUtils, QuickstartU
 import org.apache.hudi.DataSourceWriteOptions.{PARTITIONPATH_FIELD, PRECOMBINE_FIELD, RECORDKEY_FIELD}
 import org.apache.hudi.QuickstartUtils.DataGenerator
 import org.apache.hudi.common.table.HoodieTableConfig
+import org.apache.hudi.common.table.HoodieTableMetaClient
+import org.apache.hudi.common.table.HoodieTableVersion
+import org.apache.hudi.common.table.timeline.versioning.TimelineLayoutVersion
 import org.apache.hudi.common.util.HoodieTimer
 import org.apache.hudi.exception.HoodieException
+import org.apache.hudi.hadoop.fs.HadoopFSUtils
 import org.apache.hudi.hive.{HiveStylePartitionValueExtractor, HiveSyncConfigHolder}
 import org.apache.hudi.hive.ddl.HiveSyncMode
 import org.apache.hudi.keygen.constant.KeyGeneratorOptions
@@ -86,15 +90,21 @@ trait RunOperationsBase {
   }
 
   def cleanup(tableName: String, basePath: String, isMor: Boolean): Unit = {
-    spark.sql(s"DROP TABLE IF EXISTS $database.$tableName")
     val tablePathObj = new Path(basePath)
     val fs = tablePathObj.getFileSystem(spark.sparkContext.hadoopConfiguration)
-    //drop table is not dropping the data for hudi datasets.
-    fs.delete(tablePathObj, true)
-    log.info(s"Cleaned up table: $database.$tableName at path $basePath")
-    if (isMor) {
-      spark.sql(s"DROP TABLE IF EXISTS $database.${tableName}_rt")
-      spark.sql(s"DROP TABLE IF EXISTS $database.${tableName}_ro")
+    val metaFolder = new Path(basePath, HoodieTableMetaClient.METAFOLDER_NAME)
+    try {
+      if (fs.exists(metaFolder)) {
+        assertHoodieTableConfig(database, tableName, basePath)
+      }
+    } finally {
+      spark.sql(s"DROP TABLE IF EXISTS $database.$tableName")
+      fs.delete(tablePathObj, true)
+      log.info(s"Cleaned up table: $database.$tableName at path $basePath")
+      if (isMor) {
+        spark.sql(s"DROP TABLE IF EXISTS $database.${tableName}_rt")
+        spark.sql(s"DROP TABLE IF EXISTS $database.${tableName}_ro")
+      }
     }
   }
 
@@ -146,6 +156,31 @@ trait RunOperationsBase {
       options(optionsMap).
       mode(saveMode).
       save(basePath)
+    assertHoodieTableConfig(database, tableName, basePath)
+  }
+
+  /**
+   * Reads the on-disk hoodie.properties (HoodieTableConfig) for a freshly written Hudi table and
+   * asserts the core identity/key fields were persisted as expected. Called from the common write
+   * path so every Hudi table created via writeToHudiTable is validated.
+   */
+  def assertHoodieTableConfig(database: String, tableName: String, basePath: String): Unit = {
+    val metaClient = HoodieTableMetaClient.builder()
+      .setBasePath(basePath)
+      .setConf(HadoopFSUtils.getStorageConfWithCopy(spark.sparkContext.hadoopConfiguration))
+      .build()
+    val tableConfig = metaClient.getTableConfig
+
+    assert(tableConfig.getTableName == tableName,
+      s"hoodie.table.name expected '$tableName' but got '${tableConfig.getTableName}'")
+    assert(tableConfig.getDatabaseName == database,
+      s"hoodie.database.name expected '$database' but got '${tableConfig.getDatabaseName}'")
+    assert(tableConfig.getTableVersion.versionCode() == HoodieTableVersion.SIX.versionCode(),
+      s"hoodie.table.version expected ${HoodieTableVersion.SIX.versionCode()} but got ${tableConfig.getTableVersion.versionCode()}")
+    val layoutVersion = tableConfig.getTimelineLayoutVersion
+    assert(layoutVersion.isPresent && layoutVersion.get().getVersion == TimelineLayoutVersion.VERSION_1,
+      s"hoodie.timeline.layout.version expected ${TimelineLayoutVersion.VERSION_1} but got ${if (layoutVersion.isPresent) layoutVersion.get().getVersion else "absent"}")
+    log.info(s"Validated hoodie.properties for $database.$tableName at $basePath")
   }
 
   def writeToHiveTable(inputDF: DataFrame, database: String, tableName: String, saveMode: SaveMode, basePath: String): Unit = {

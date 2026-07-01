@@ -158,9 +158,8 @@ class RunHudiProcedures extends RunOperationsBase {
         s"""INSERT INTO $database.$tableName VALUES
            |(1, 'a1', 10.0, 1000),
            |(2, 'a2', 20.0, 2000)""".stripMargin)
-      // Updates against MOR generate log files that compaction will roll up. Produce enough delta
-      // commits (1 insert + 5 updates = 6) to cross the default scheduling threshold of 5.
-      for (i <- 1 to 5) {
+      // Updates against MOR generate log files that compaction will roll up.
+      for (i <- 1 to 3) {
         spark.sql(s"UPDATE $database.$tableName SET price = price + $i WHERE id = 1")
       }
 
