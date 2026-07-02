@@ -101,6 +101,14 @@ class TestHoodieMetadataConfig {
         .build();
     assertTrue(configWithCustomValue.isGlobalRecordLevelIndexEnabled());
 
+    // set alternate config property
+    props = new Properties();
+    props.put("hoodie.metadata.record.index.create", "true");
+    configWithCustomValue = HoodieMetadataConfig.newBuilder()
+        .fromProperties(props)
+        .build();
+    assertTrue(configWithCustomValue.isGlobalRecordLevelIndexEnabled());
+
     // set latest config property
     props = new Properties();
     props.put(HoodieMetadataConfig.GLOBAL_RECORD_LEVEL_INDEX_ENABLE_PROP.key(), "true");
