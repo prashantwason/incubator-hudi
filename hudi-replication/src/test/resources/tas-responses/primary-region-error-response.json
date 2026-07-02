@@ -1,0 +1,7 @@
+{
+  "datasetPrimaryRegionMap": {},
+  "error": {
+    "errorMessage": "Service unavailable for dataset: test_db.test_table",
+    "code": "SERVICE_UNAVAILABLE"
+  }
+}

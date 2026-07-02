@@ -1,0 +1,16 @@
+{
+  "datasetPrimaryRegionMap": {
+    "test_db.test_table1": {
+      "datasetPrimaryRegions": ["REGION_PHX", "REGION_DCA"]
+    },
+    "test_db.test_table2": {
+      "datasetPrimaryRegions": ["REGION_PHX"]
+    },
+    "test_db.test_table3": {
+      "datasetPrimaryRegions": ["REGION_DCA"]
+    },
+    "test_db.test_table4": {
+      "datasetPrimaryRegions": ["REGION_PHX", "REGION_DCA"]
+    }
+  }
+}

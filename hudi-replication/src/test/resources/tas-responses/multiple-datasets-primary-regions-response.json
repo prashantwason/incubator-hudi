@@ -1,0 +1,20 @@
+{
+  "datasetPrimaryRegionMap": {
+    "test_db.test_table1": {
+      "datasetPrimaryRegions": ["REGION_PHX", "REGION_DCA"]
+    },
+    "test_db.test_table2": {
+      "datasetPrimaryRegions": ["REGION_PHX"]
+    },
+    "test_db.test_table3": {
+      "datasetPrimaryRegions": ["REGION_INVALID"]
+    },
+    "test_db.test_table4": {
+      "datasetPrimaryRegions": ["REGION_DCA"]
+    }
+  },
+  "error": {
+    "code": "GET_PRIMARY_REGION_FOR_DATASETS_RESPONSE_ERROR_CODE_PRIMARY_REGION_NOT_KNOWN",
+    "errorMessage": "The primary region(s) for one or more datasets is not known"
+  }
+}

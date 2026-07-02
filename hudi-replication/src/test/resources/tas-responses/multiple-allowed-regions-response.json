@@ -1,0 +1,1 @@
+{"updateConstraints":{"test_db.test_table":{"allowedRegions":{"REGION_PHX":"UPDATE_ALLOWED_REASON_DATASET_PRIMARY_REGION","REGION_DCA":"UPDATE_ALLOWED_REASON_DATASET_PRIMARY_REGION"},"deniedRegions":{}}}} 
