@@ -73,7 +73,7 @@
     "proxy_user": "hoover",
     "avro_version": "1.11.4",
     "spark_avro_version": "3.3.2-uber-13",
-    "HUDI_VERSION": "0.16.12-test",
+    "HUDI_VERSION": "0.16.16-test",
     "scala_version": "2.12",
     "clac_version": "0.10.1-51881-184ea5016e20",
     "DRIVER_MEMORY": "20g",
