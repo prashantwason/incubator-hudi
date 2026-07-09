@@ -69,7 +69,7 @@ public class HoodieReplicationTimelineComparator {
     List<String> archivalCommits = filterArchivedCommitsGreaterThanECTR(getRemoteCommitsForArchival(localMetaClient.getActiveTimeline().getWriteTimeline(),
             remoteMetaClient.getActiveTimeline().getWriteTimeline())).collect(Collectors.toList());
     return remoteMetaClient
-            .getActiveTimeline()
+            .getRawActiveTimeline()
             .getInstantsAsStream()
             .filter(instant -> archivalCommits.contains(instant.requestedTime()))
             .collect(Collectors.toList());
@@ -97,7 +97,7 @@ public class HoodieReplicationTimelineComparator {
     remoteCommitsForArchival.addAll(getRemoteCommitsForArchival(localMetaClient.getActiveTimeline().getRollbackAndRestoreTimeline(),
             remoteMetaClient.getActiveTimeline().getRollbackAndRestoreTimeline()).collect(Collectors.toList()));
     return remoteMetaClient
-            .getActiveTimeline()
+            .getRawActiveTimeline()
             .getInstantsAsStream()
             .filter(instant -> remoteCommitsForArchival.contains(instant.requestedTime()))
             .collect(Collectors.toList());
@@ -257,11 +257,11 @@ public class HoodieReplicationTimelineComparator {
     Set<String> divergedRemoteCommits =  getAllRemoteOnlyCommits(localTimeline, remoteTimeline).collect(Collectors.toSet());
     Option<String> oldestCommonParent = findOldestCommonParent(localTimeline, remoteTimeline);
     if (oldestCommonParent.isPresent()) {
-      LOG.info("Oldest common parent for table {} : {}", localMetaClient.getTableConfig().getTableName(), oldestCommonParent.get());
+      LOG.info("Oldest common parent for table {} : {}", localMetaClient.getTableName(), oldestCommonParent.get());
       return divergedRemoteCommits.stream().filter(ts -> ts.compareTo(oldestCommonParent.get()) < 0).sorted();
     }
     if (!localTimeline.getInstants().isEmpty()) {
-      LOG.info("Oldest common parent didn't find for table {}, using the earliest commit in localTimeline for comparison", localMetaClient.getTableConfig().getTableName());
+      LOG.info("Oldest common parent didn't find for table {}, using the earliest commit in localTimeline for comparison", localMetaClient.getTableName());
       String oldestCommitInLocalTimeline = localTimeline.getInstants().get(0).requestedTime();
       return divergedRemoteCommits.stream().filter(ts -> ts.compareTo(oldestCommitInLocalTimeline) < 0).sorted();
     }

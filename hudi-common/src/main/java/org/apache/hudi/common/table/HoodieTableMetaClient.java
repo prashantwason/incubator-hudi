@@ -156,6 +156,8 @@ public class HoodieTableMetaClient implements Serializable {
 
   public static final String COMMIT_TIME_KEY = "commitTime";
 
+  private static final String DEFAULT_DB_NAME = "default";
+
   // In-memory cache for archived timeline based on the start instant time
   // Only one entry should be present in this map
   private final Map<String, HoodieArchivedTimeline> archivedTimelineMap = new HashMap<>();
@@ -173,6 +175,7 @@ public class HoodieTableMetaClient implements Serializable {
   private StoragePath timelineHistoryPath;
   protected HoodieTableConfig tableConfig;
   protected HoodieActiveTimeline activeTimeline;
+  protected transient HoodieActiveTimeline rawActiveTimeline;
   private ConsistencyGuardConfig consistencyGuardConfig = ConsistencyGuardConfig.newBuilder().build();
   private FileSystemRetryConfig fileSystemRetryConfig = FileSystemRetryConfig.newBuilder().build();
   protected HoodieMetaserverConfig metaserverConfig;
@@ -600,7 +603,32 @@ public class HoodieTableMetaClient implements Serializable {
    */
   public synchronized HoodieActiveTimeline reloadActiveTimeline() {
     activeTimeline = tableFormat.getTimelineFactory().createActiveTimeline(this);
+    rawActiveTimeline = null;
     return activeTimeline;
+  }
+
+  /**
+   * Get the raw active timeline without layout version filters applied.
+   * Returns ALL instant states (requested, inflight, completed) without any filtering.
+   * Useful for replication APIs that need to see pending instants.
+   *
+   * @return Raw active instants timeline (cached)
+   */
+  public synchronized HoodieActiveTimeline getRawActiveTimeline() {
+    if (rawActiveTimeline == null) {
+      rawActiveTimeline = tableFormat.getTimelineFactory().createActiveTimeline(this, false);
+    }
+    return rawActiveTimeline;
+  }
+
+  /**
+   * Reload RawActiveTimeline and cache.
+   *
+   * @return Raw active instants timeline
+   */
+  public synchronized HoodieActiveTimeline reloadRawActiveTimeline() {
+    rawActiveTimeline = tableFormat.getTimelineFactory().createActiveTimeline(this, false);
+    return rawActiveTimeline;
   }
 
   /**
@@ -929,6 +957,45 @@ public class HoodieTableMetaClient implements Serializable {
 
   public static Builder builder() {
     return new Builder();
+  }
+
+  /**
+   * Returns the fully qualified table name in {@code database.table} format.
+   */
+  public String getFullTableName() {
+    return getDbName() + "." + getTableName();
+  }
+
+  public String getMainTableName() {
+    if (HoodieTableMetadata.isMetadataTable(getBasePath())) {
+      String basePathStr = getBasePath().toString();
+      String dataTableBasePath = HoodieTableMetadata.getDataTableBasePathFromMetadataTable(basePathStr);
+      return new StoragePath(dataTableBasePath).getName();
+    }
+    return getTableName();
+  }
+
+  public String getTableName() {
+    return parseTableName().getRight();
+  }
+
+  public String getDbName() {
+    return parseTableName().getLeft();
+  }
+
+  private Pair<String, String> parseTableName() {
+    String rawTableName = getTableConfig().getTableName();
+    String[] parsedTableName = rawTableName.split("\\.");
+    if (parsedTableName.length == 1) {
+      String databaseName = getTableConfig().getDatabaseName();
+      if (StringUtils.isNullOrEmpty(databaseName)) {
+        databaseName = DEFAULT_DB_NAME;
+      }
+      return Pair.of(databaseName, parsedTableName[0]);
+    }
+    ValidationUtils.checkArgument(parsedTableName.length == 2,
+        String.format("Cannot parse database and table name. Table name found: %s", rawTableName));
+    return Pair.of(parsedTableName[0], parsedTableName[1]);
   }
 
   /**

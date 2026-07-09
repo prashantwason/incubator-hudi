@@ -21,15 +21,14 @@ package org.apache.hudi.replication.util;
 import org.apache.hudi.common.config.TypedProperties;
 import org.apache.hudi.common.table.HoodieTableConfig;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
-import org.apache.hudi.common.util.ConfigUtils;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieIOException;
-import org.apache.hudi.storage.HoodieStorage;
 import org.apache.hudi.storage.StoragePath;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.OutputStream;
+import java.util.Collections;
 import java.util.Map;
 import java.util.Properties;
 
@@ -66,39 +65,26 @@ public class ReplicationPropertiesManager {
    * Write properties to the replication.properties file.
    */
   private void writeProperties(Properties props) throws Exception {
-    HoodieStorage storage = metaClient.getStorage();
-    StoragePath cfgPath = replicationPropertiesFile;
-    StoragePath backupCfgPath = new StoragePath(metaClient.getMetaPath(), REPLICATION_PROPERTIES_FILE_BACKUP);
-    if (storage.exists(cfgPath)) {
-      try (java.io.InputStream in = storage.open(cfgPath);
-           OutputStream out = storage.create(backupCfgPath, true)) {
-        byte[] buf = new byte[8192];
-        int len;
-        while ((len = in.read(buf)) > 0) {
-          out.write(buf, 0, len);
-        }
-      }
-    }
-    try (OutputStream out = storage.create(cfgPath, true)) {
-      props.store(out, REPLICATION_PROPERTIES_FILE);
-    }
+    HoodieTableConfig.update(metaClient.getStorage(), metaClient.getMetaPath(), props,
+        REPLICATION_PROPERTIES_FILE, REPLICATION_PROPERTIES_FILE_BACKUP, REPLICATION_PROPERTIES_LOCK);
   }
 
   /**
    * Read contents of the replication.properties file.
-   * Note: relies on HDFS reader/writer lock/lease on file and not explicitly taking the lock.
+   * Note: relies on HoodieTableConfig.getHoodiePropertiesLock for concurrency safety, not an explicit HDFS lease.
    */
   public Properties readProperties() throws Exception {
     try {
-      return ConfigUtils.fetchConfigs(metaClient.getStorage(), metaClient.getMetaPath(),
-          REPLICATION_PROPERTIES_FILE, REPLICATION_PROPERTIES_FILE_BACKUP, 10, 50);
+      return HoodieTableConfig.fetchConfigs(metaClient.getStorage(), metaClient.getMetaPath(),
+          REPLICATION_PROPERTIES_FILE, REPLICATION_PROPERTIES_FILE_BACKUP);
     } catch (HoodieIOException e) {
       LOG.warn(String.format("File doesn't exist. Creating %s", replicationPropertiesFile));
+      // Add checksum related properties to replication.properties to be compliant with HoodieTableConfig
       Properties replicationProps = new TypedProperties();
       replicationProps.setProperty(HoodieTableConfig.NAME.key(), metaClient.getTableConfig().getTableName());
       replicationProps.setProperty(HoodieTableConfig.TYPE.key(), metaClient.getTableConfig().getTableType().toString());
       try (OutputStream out = metaClient.getStorage().create(replicationPropertiesFile, false)) {
-        replicationProps.store(out, String.format("Bootstrap missing for %s", replicationPropertiesFile.getName()));
+        HoodieTableConfig.storeProperties(replicationProps, out);
       }
       LOG.info(String.format("%s contains %s", replicationPropertiesFile.getName(), replicationProps));
       return replicationProps;
@@ -153,9 +139,8 @@ public class ReplicationPropertiesManager {
    */
   public boolean removeProperty(String key) throws Exception {
     try {
-      Properties props = readProperties();
-      props.remove(key);
-      writeProperties(props);
+      HoodieTableConfig.delete(metaClient.getStorage(), metaClient.getMetaPath(), Collections.singleton(key),
+          REPLICATION_PROPERTIES_FILE, REPLICATION_PROPERTIES_FILE_BACKUP, REPLICATION_PROPERTIES_LOCK);
       return true;
     } catch (Exception e) {
       throw new HoodieException(String.format("Could not update properties file %s", replicationPropertiesFile), e);

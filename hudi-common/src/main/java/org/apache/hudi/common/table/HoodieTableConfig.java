@@ -25,9 +25,11 @@ import org.apache.hudi.common.config.ConfigClassProperty;
 import org.apache.hudi.common.config.ConfigGroups;
 import org.apache.hudi.common.config.ConfigProperty;
 import org.apache.hudi.common.config.HoodieConfig;
+import org.apache.hudi.common.config.LockConfiguration;
 import org.apache.hudi.common.config.OrderedProperties;
 import org.apache.hudi.common.config.RecordMergeMode;
 import org.apache.hudi.common.config.TypedProperties;
+import org.apache.hudi.common.lock.LockProvider;
 import org.apache.hudi.common.model.AWSDmsAvroPayload;
 import org.apache.hudi.common.model.BootstrapIndexType;
 import org.apache.hudi.common.model.DefaultHoodieRecordPayload;
@@ -50,6 +52,7 @@ import org.apache.hudi.common.table.timeline.HoodieInstantTimeGenerator;
 import org.apache.hudi.common.table.timeline.versioning.TimelineLayoutVersion;
 import org.apache.hudi.common.util.BinaryUtil;
 import org.apache.hudi.common.util.ConfigUtils;
+import org.apache.hudi.common.util.HoodiePropertiesLockProvider;
 import org.apache.hudi.common.util.HoodieTableConfigUtils;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.ReflectionUtils;
@@ -85,6 +88,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.ServiceLoader;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -102,6 +106,11 @@ import static org.apache.hudi.common.config.TimestampKeyGeneratorConfig.TIMESTAM
 import static org.apache.hudi.common.config.TimestampKeyGeneratorConfig.TIMESTAMP_OUTPUT_TIMEZONE_FORMAT;
 import static org.apache.hudi.common.config.TimestampKeyGeneratorConfig.TIMESTAMP_TIMEZONE_FORMAT;
 import static org.apache.hudi.common.config.TimestampKeyGeneratorConfig.TIMESTAMP_TYPE_FIELD;
+import static org.apache.hudi.common.config.LockConfiguration.DEFAULT_LOCK_ACQUIRE_NUM_RETRIES;
+import static org.apache.hudi.common.config.LockConfiguration.DEFAULT_LOCK_ACQUIRE_RETRY_WAIT_TIME_IN_MILLIS;
+import static org.apache.hudi.common.config.LockConfiguration.FILESYSTEM_LOCK_PATH_PROP_KEY;
+import static org.apache.hudi.common.config.LockConfiguration.LOCK_ACQUIRE_NUM_RETRIES_PROP_KEY;
+import static org.apache.hudi.common.config.LockConfiguration.LOCK_ACQUIRE_RETRY_WAIT_TIME_IN_MILLIS_PROP_KEY;
 import static org.apache.hudi.common.model.AWSDmsAvroPayload.DELETE_OPERATION_VALUE;
 import static org.apache.hudi.common.model.AWSDmsAvroPayload.OP_FIELD;
 import static org.apache.hudi.common.model.DefaultHoodieRecordPayload.DELETE_KEY;
@@ -110,7 +119,6 @@ import static org.apache.hudi.common.model.HoodieRecordMerger.COMMIT_TIME_BASED_
 import static org.apache.hudi.common.model.HoodieRecordMerger.CUSTOM_MERGE_STRATEGY_UUID;
 import static org.apache.hudi.common.model.HoodieRecordMerger.EVENT_TIME_BASED_MERGE_STRATEGY_UUID;
 import static org.apache.hudi.common.model.HoodieRecordMerger.PAYLOAD_BASED_MERGE_STRATEGY_UUID;
-import static org.apache.hudi.common.util.ConfigUtils.fetchConfigs;
 import static org.apache.hudi.common.util.ConfigUtils.recoverIfNeeded;
 import static org.apache.hudi.common.util.StringUtils.EMPTY_STRING;
 import static org.apache.hudi.common.util.StringUtils.getUTF8Bytes;
@@ -130,6 +138,7 @@ public class HoodieTableConfig extends HoodieConfig {
 
   public static final String HOODIE_PROPERTIES_FILE = "hoodie.properties";
   public static final String HOODIE_PROPERTIES_FILE_BACKUP = "hoodie.properties.backup";
+  public static final String HOODIE_PROPERTIES_LOCK = "hoodie.properties.lock";
   public static final String HOODIE_WRITE_TABLE_NAME_KEY = "hoodie.datasource.write.table.name";
   public static final String HOODIE_TABLE_NAME_KEY = "hoodie.table.name";
   public static final String PARTIAL_UPDATE_UNAVAILABLE_VALUE = "hoodie.write.partial.update.unavailable.value";
@@ -477,7 +486,7 @@ public class HoodieTableConfig extends HoodieConfig {
     StoragePath propertyPath = new StoragePath(metaPath, HOODIE_PROPERTIES_FILE);
     LOG.info("Loading table properties from " + propertyPath);
     try {
-      this.props = fetchConfigs(storage, metaPath, HOODIE_PROPERTIES_FILE, HOODIE_PROPERTIES_FILE_BACKUP, MAX_READ_RETRIES, READ_RETRY_DELAY_MSEC);
+      this.props = ConfigUtils.fetchConfigs(storage, metaPath, HOODIE_PROPERTIES_FILE, HOODIE_PROPERTIES_FILE_BACKUP, MAX_READ_RETRIES, READ_RETRY_DELAY_MSEC);
     } catch (IOException e) {
       throw new HoodieIOException("Could not load properties from " + propertyPath, e);
     }
@@ -589,52 +598,58 @@ public class HoodieTableConfig extends HoodieConfig {
   }
 
   private static void modify(HoodieStorage storage, StoragePath metadataFolder, Properties modifyProps, BiConsumer<Properties, Properties> propsToUpdate,
-                             Set<String> propsToDelete) {
-    StoragePath cfgPath = new StoragePath(metadataFolder, HOODIE_PROPERTIES_FILE);
-    StoragePath backupCfgPath = new StoragePath(metadataFolder, HOODIE_PROPERTIES_FILE_BACKUP);
+                             Set<String> propsToDelete, StoragePath cfgPath, StoragePath backupCfgPath, LockProvider<String> lock) {
     try {
-      // 0. do any recovery from prior attempts.
-      recoverIfNeeded(storage, cfgPath, backupCfgPath);
+      if (lock.tryLock(0, TimeUnit.MILLISECONDS)) {
+        // 0. do any recovery from prior attempts.
+        recoverIfNeeded(storage, cfgPath, backupCfgPath);
 
-      // 1. Read the existing config
-      TypedProperties props = fetchConfigs(storage, metadataFolder, HOODIE_PROPERTIES_FILE, HOODIE_PROPERTIES_FILE_BACKUP, MAX_READ_RETRIES, READ_RETRY_DELAY_MSEC);
+        // 1. Read the existing config
+        TypedProperties props = ConfigUtils.fetchConfigs(storage, metadataFolder, cfgPath.getName(), backupCfgPath.getName(), MAX_READ_RETRIES, READ_RETRY_DELAY_MSEC);
 
-      // 2. backup the existing properties.
-      try (OutputStream out = storage.create(backupCfgPath, false)) {
-        storeProperties(props, out, backupCfgPath);
-      }
-
-      // 3. delete the properties file, reads will go to the backup, until we are done.
-      deleteFile(storage, cfgPath);
-
-      // 4. Upsert and save back.
-      String checksum;
-      try (OutputStream out = storage.create(cfgPath, true)) {
-        propsToUpdate.accept(props, modifyProps);
-        propsToDelete.forEach(propToDelete -> props.remove(propToDelete));
-        checksum = storeProperties(props, out, cfgPath);
-      }
-      LOG.warn(String.format("%s modified to: %s (at %s)", cfgPath.getName(), props, cfgPath.getParent()));
-
-      // 5. verify and remove backup.
-      try (InputStream in = storage.open(cfgPath)) {
-        Properties verifyProps = new Properties();
-        verifyProps.load(in);
-        if (verifyProps.isEmpty() || verifyProps.size() != props.size()
-                || !verifyProps.containsKey(TABLE_CHECKSUM.key())
-                || !verifyProps.getProperty(TABLE_CHECKSUM.key()).equals(checksum)) {
-          // delete the properties file and throw exception indicating update failure
-          // subsequent writes will recover and update, reads will go to the backup until then
-          deleteFile(storage, cfgPath);
-          throw new HoodieIOException(String.format("Checksum property missing or properties do not match. %d vs %d",
-              props.size(), verifyProps.size()));
+        // 2. backup the existing properties.
+        try (OutputStream out = storage.create(backupCfgPath, false)) {
+          storeProperties(props, out, backupCfgPath);
         }
-      }
 
-      // 6. delete the backup properties file
-      deleteFile(storage, backupCfgPath);
+        // 3. delete the properties file, reads will go to the backup, until we are done.
+        deleteFile(storage, cfgPath);
+
+        // 4. Upsert and save back.
+        String checksum;
+        try (OutputStream out = storage.create(cfgPath, true)) {
+          propsToUpdate.accept(props, modifyProps);
+          propsToDelete.forEach(propToDelete -> props.remove(propToDelete));
+          checksum = storeProperties(props, out, cfgPath);
+        }
+        LOG.warn(String.format("%s modified to: %s (at %s)", cfgPath.getName(), props, cfgPath.getParent()));
+
+        // 5. verify and remove backup.
+        try (InputStream in = storage.open(cfgPath)) {
+          Properties verifyProps = new Properties();
+          verifyProps.load(in);
+          if (verifyProps.isEmpty() || verifyProps.size() != props.size()
+                  || !verifyProps.containsKey(TABLE_CHECKSUM.key())
+                  || !verifyProps.getProperty(TABLE_CHECKSUM.key()).equals(checksum)) {
+            // delete the properties file and throw exception indicating update failure
+            // subsequent writes will recover and update, reads will go to the backup until then
+            deleteFile(storage, cfgPath);
+            throw new HoodieIOException(String.format("Checksum property missing or properties do not match. %d vs %d",
+                props.size(), verifyProps.size()));
+          }
+        }
+
+        // 6. delete the backup properties file
+        deleteFile(storage, backupCfgPath);
+      } else {
+        throw new HoodieIOException("Unable to acquire lock for updating configs at " + cfgPath);
+      }
     } catch (IOException e) {
       throw new HoodieIOException("Error updating table configs.", e);
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
+    } finally {
+      lock.unlock();
     }
   }
 
@@ -644,23 +659,83 @@ public class HoodieTableConfig extends HoodieConfig {
   }
 
   /**
+   * Builds a {@link LockProvider} guarding updates to {@code lockFile} within {@code metadataFolder}. Lock tuning
+   * properties (retry count/interval) are sourced from hoodie.properties if present, else defaulted.
+   */
+  public static LockProvider<String> getHoodiePropertiesLock(HoodieStorage storage, StoragePath metadataFolder, String lockFile) {
+    TypedProperties lockProperties;
+    try {
+      lockProperties = ConfigUtils.fetchConfigs(storage, metadataFolder, HOODIE_PROPERTIES_FILE, HOODIE_PROPERTIES_FILE_BACKUP, MAX_READ_RETRIES, READ_RETRY_DELAY_MSEC);
+    } catch (IOException e) {
+      lockProperties = new TypedProperties();
+    }
+    lockProperties.setProperty(FILESYSTEM_LOCK_PATH_PROP_KEY, metadataFolder.toString());
+    if (!lockProperties.containsKey(LOCK_ACQUIRE_NUM_RETRIES_PROP_KEY)) {
+      lockProperties.setProperty(LOCK_ACQUIRE_NUM_RETRIES_PROP_KEY, DEFAULT_LOCK_ACQUIRE_NUM_RETRIES);
+    }
+    if (!lockProperties.containsKey(LOCK_ACQUIRE_RETRY_WAIT_TIME_IN_MILLIS_PROP_KEY)) {
+      lockProperties.setProperty(LOCK_ACQUIRE_RETRY_WAIT_TIME_IN_MILLIS_PROP_KEY, DEFAULT_LOCK_ACQUIRE_RETRY_WAIT_TIME_IN_MILLIS);
+    }
+    return new HoodiePropertiesLockProvider(storage, lockFile, new LockConfiguration(lockProperties));
+  }
+
+  /**
    * Upserts the table config with the set of properties passed in. We implement a fail-safe backup protocol
    * here for safely updating with recovery and also ensuring the table config continues to be readable.
    */
   public static void update(HoodieStorage storage, StoragePath metadataFolder,
                             Properties updatedProps) {
-    modify(storage, metadataFolder, updatedProps, ConfigUtils::upsertProperties, Collections.EMPTY_SET);
+    update(storage, metadataFolder, updatedProps, HOODIE_PROPERTIES_FILE, HOODIE_PROPERTIES_FILE_BACKUP, HOODIE_PROPERTIES_LOCK);
   }
 
   public static void updateAndDeleteProps(HoodieStorage storage, StoragePath metadataFolder,
                                           Properties updatedProps, Set<String> propstoDelete) {
-    modify(storage, metadataFolder, updatedProps, ConfigUtils::upsertProperties, propstoDelete);
+    StoragePath cfgPath = new StoragePath(metadataFolder, HOODIE_PROPERTIES_FILE);
+    StoragePath backupCfgPath = new StoragePath(metadataFolder, HOODIE_PROPERTIES_FILE_BACKUP);
+    LockProvider<String> lock = getHoodiePropertiesLock(storage, metadataFolder, HOODIE_PROPERTIES_LOCK);
+    modify(storage, metadataFolder, updatedProps, ConfigUtils::upsertProperties, propstoDelete, cfgPath, backupCfgPath, lock);
   }
 
   public static void delete(HoodieStorage storage, StoragePath metadataFolder, Set<String> deletedProps) {
+    delete(storage, metadataFolder, deletedProps, HOODIE_PROPERTIES_FILE, HOODIE_PROPERTIES_FILE_BACKUP, HOODIE_PROPERTIES_LOCK);
+  }
+
+  /**
+   * Update an arbitrary config file (not just hoodie.properties) within the metadata folder, guarded by {@code lockFile}.
+   */
+  public static void update(HoodieStorage storage, StoragePath metadataFolder, Properties updatedProps,
+                            String cfgFile, String backupCfgFile, String lockFile) {
+    StoragePath cfgPath = new StoragePath(metadataFolder, cfgFile);
+    StoragePath backupCfgPath = new StoragePath(metadataFolder, backupCfgFile);
+    LockProvider<String> lock = getHoodiePropertiesLock(storage, metadataFolder, lockFile);
+    modify(storage, metadataFolder, updatedProps, ConfigUtils::upsertProperties, Collections.emptySet(), cfgPath, backupCfgPath, lock);
+  }
+
+  /**
+   * Delete properties from an arbitrary config file (not just hoodie.properties) within the metadata folder, guarded by {@code lockFile}.
+   */
+  public static void delete(HoodieStorage storage, StoragePath metadataFolder, Set<String> deletedProps,
+                            String cfgFile, String backupCfgFile, String lockFile) {
+    StoragePath cfgPath = new StoragePath(metadataFolder, cfgFile);
+    StoragePath backupCfgPath = new StoragePath(metadataFolder, backupCfgFile);
     Properties props = new Properties();
     deletedProps.forEach(p -> props.setProperty(p, ""));
-    modify(storage, metadataFolder, props, ConfigUtils::deleteProperties, Collections.EMPTY_SET);
+    LockProvider<String> lock = getHoodiePropertiesLock(storage, metadataFolder, lockFile);
+    modify(storage, metadataFolder, props, ConfigUtils::deleteProperties, Collections.emptySet(), cfgPath, backupCfgPath, lock);
+  }
+
+  /**
+   * Convenience method to fetch configs from an arbitrary config/backup file pair.
+   */
+  public static TypedProperties fetchConfigs(HoodieStorage storage, StoragePath metaPath, String cfgFile, String backupCfgFile) throws IOException {
+    return ConfigUtils.fetchConfigs(storage, metaPath, cfgFile, backupCfgFile, MAX_READ_RETRIES, READ_RETRY_DELAY_MSEC);
+  }
+
+  /**
+   * Public overload of storeProperties for callers that don't have a meaningful property path.
+   */
+  public static String storeProperties(Properties props, OutputStream outputStream) throws IOException {
+    return storeProperties(props, outputStream, new StoragePath("unknown"));
   }
 
   /**
