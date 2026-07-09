@@ -514,7 +514,8 @@ public class TimelineArchiverV1<T extends HoodieAvroPayload, I, K, O> implements
 
   /**
    * Filters out instants that have not yet been replicated to any enabled cross-region destination.
-   * Uses completion time to determine whether an instant has been replicated.
+   * Uses requested time (commit-start time) to determine whether an instant has been replicated,
+   * matching the basis used for replication checkpointing.
    */
   private Stream<HoodieInstant> filterForReplication(Stream<HoodieInstant> instants) {
     for (ReplicationDestination destination : ReplicationDestination.values()) {
@@ -523,11 +524,10 @@ public class TimelineArchiverV1<T extends HoodieAvroPayload, I, K, O> implements
       if (replicationEnabled) {
         Option<String> lastReplicatedTimestamp = ReplicationStatusUtils.getDatasetLastReplicatedTimestamp(metaClient, destination);
         if (lastReplicatedTimestamp.isPresent() && !lastReplicatedTimestamp.get().equals(HoodieTimeline.INIT_INSTANT_TS)) {
-          log.info("Limiting archiving of instants to ones with completion time before last {} cross region replicated instant at {}",
+          log.info("Limiting archiving of instants to ones with requested time before last {} cross region replicated instant at {}",
               destination, lastReplicatedTimestamp.get());
           final String lastReplicated = lastReplicatedTimestamp.get();
-          instants = instants.filter(i ->
-              i.getCompletionTime() != null && compareTimestamps(i.getCompletionTime(), LESSER_THAN, lastReplicated));
+          instants = instants.filter(i -> compareTimestamps(i.requestedTime(), LESSER_THAN, lastReplicated));
         } else {
           log.info("Ignoring checkpoint for limiting archiving as there is no {} cross region replicated instant yet",
               destination);

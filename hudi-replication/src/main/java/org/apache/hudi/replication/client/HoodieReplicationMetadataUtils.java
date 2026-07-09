@@ -18,6 +18,7 @@
 
 package org.apache.hudi.replication.client;
 
+import org.apache.hudi.common.engine.HoodieEngineContext;
 import org.apache.hudi.replication.client.tas.utils.TASPrimaryRegionApiType;
 import org.apache.hudi.replication.table.Region;
 import org.apache.hudi.exception.HoodieBlockWritesException;
@@ -43,15 +44,17 @@ public class HoodieReplicationMetadataUtils {
    * the primary region based on HiveSync replication metadata
    *
    * @param tableName the table name
-   * @param datacenter the datacenter string identifying the current region (e.g. from UBER_DATACENTER env var)
+   * @param context the engine context, used to determine the datacenter the job is running in
    * @param apiType the TAS API type to use for determining primary regions
    */
-  public static void verifyThatJobIsRunningInPrimaryRegion(String tableName, String datacenter, TASPrimaryRegionApiType apiType) throws HoodieBlockWritesException {
+  public static void verifyThatJobIsRunningInPrimaryRegion(String tableName, HoodieEngineContext context, TASPrimaryRegionApiType apiType) throws HoodieBlockWritesException {
+    // parse region from the engine context
     Region region;
     try {
+      String datacenter = context.getDatacenter().get();
       region = Region.getRegionFromString(datacenter);
     } catch (Exception e) {
-      throw new HoodieBlockWritesException("Could not fetch region from datacenter string: " + datacenter,
+      throw new HoodieBlockWritesException("Could not fetch region from the job context",
           e, "failed.to.fetch.region.from.spark");
     }
 

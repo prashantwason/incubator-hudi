@@ -291,12 +291,11 @@ public class TimelineArchiverV2<T extends HoodieAvroPayload, I, K, O> implements
       if (replicationEnabled) {
         Option<String> lastReplicatedTimestamp = ReplicationStatusUtils.getDatasetLastReplicatedTimestamp(metaClient, destination);
         if (lastReplicatedTimestamp.isPresent() && !lastReplicatedTimestamp.get().equals(HoodieTimeline.INIT_INSTANT_TS)) {
-          log.info("Limiting archiving of instants to ones with completion time before last {} cross region replicated instant at {}",
+          log.info("Limiting archiving of instants to ones with requested time before last {} cross region replicated instant at {}",
               destination, lastReplicatedTimestamp.get());
           Option<HoodieInstant> earliestUnreplicated = Option.fromJavaOptional(
               completedCommitsTimeline.filterCompletedInstants().getInstantsAsStream()
-                  .filter(i -> i.getCompletionTime() != null
-                      && i.getCompletionTime().compareTo(lastReplicatedTimestamp.get()) >= 0)
+                  .filter(i -> i.requestedTime().compareTo(lastReplicatedTimestamp.get()) >= 0)
                   .findFirst());
           earliestInstantToRetainCandidates.add(earliestUnreplicated);
         } else {

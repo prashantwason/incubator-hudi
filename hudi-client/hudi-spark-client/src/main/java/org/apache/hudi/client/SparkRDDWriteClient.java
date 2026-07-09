@@ -97,9 +97,8 @@ public class SparkRDDWriteClient<T> extends
     if (config.shouldCheckWritesOnTargets()) {
       try {
         HoodieReplicationConfig replicationConfig = HoodieReplicationConfig.from(config.getProps());
-        String datacenter = System.getenv("UBER_DATACENTER");
         HoodieReplicationMetadataUtils.verifyThatJobIsRunningInPrimaryRegion(
-            config.getTableName(), datacenter, replicationConfig.getTASPrimaryRegionApiType());
+            config.getTableName(), context, replicationConfig.getTASPrimaryRegionApiType());
       } catch (HoodieBlockWritesException e) {
         log.warn(String.format("Writes should be blocked on this dataset %s. Error: %s",
             config.getTableName(), e.getMessage()));

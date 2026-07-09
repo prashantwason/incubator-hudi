@@ -18,6 +18,8 @@
 
 package org.apache.hudi.replication.client;
 
+import org.apache.hudi.common.engine.HoodieEngineContext;
+import org.apache.hudi.common.util.Option;
 import org.apache.hudi.replication.table.Region;
 import org.apache.hudi.replication.client.tas.utils.TASPrimaryRegionApiType;
 import org.apache.hudi.exception.HoodieBlockWritesException;
@@ -39,9 +41,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TestHoodieReplicationMetadataUtils {
-  
+
   private static final String TEST_TABLE_NAME = "test_table";
-  
+
   @Test
   public void testGetReplicationMetadataSuccess() throws Exception {
     String dbName = "test_db";
@@ -65,7 +67,7 @@ public class TestHoodieReplicationMetadataUtils {
     try (MockedConstruction<HoodieTASClient> tasClientMock = Mockito.mockConstruction(HoodieTASClient.class, (mock, context) -> {
       Mockito.when(mock.getReplicationTopology(dbName + "." + tableName)).thenThrow(expectedException);
     })) {
-      Exception thrownException = assertThrows(Exception.class, 
+      Exception thrownException = assertThrows(Exception.class,
           () -> HoodieReplicationMetadataUtils.getReplicationMetadata(dbName, tableName));
       assertEquals(expectedException, thrownException);
     }
@@ -73,70 +75,105 @@ public class TestHoodieReplicationMetadataUtils {
 
   @Test
   public void testVerifyThatJobIsRunningInPrimaryRegionSuccessAndFailure() throws Exception {
+    HoodieEngineContext context = Mockito.mock(HoodieEngineContext.class);
     Set<Region> primaryRegions = new HashSet<>(Arrays.asList(Region.PHX, Region.DCACLD));
-    
-    try (MockedConstruction<HoodieTASClient> tasClientMock = createTasClientMock(primaryRegions)) {
-      assertDoesNotThrow(() -> HoodieReplicationMetadataUtils.verifyThatJobIsRunningInPrimaryRegion(
-          TEST_TABLE_NAME, "PHX", TASPrimaryRegionApiType.PRIMARY_REGION));
 
+    try (MockedConstruction<HoodieTASClient> tasClientMock = createTasClientMock(primaryRegions)) {
+      // Test primary region should succeed
+      setDatacenter(context, "PHX");
+      assertDoesNotThrow(() -> HoodieReplicationMetadataUtils.verifyThatJobIsRunningInPrimaryRegion(
+          TEST_TABLE_NAME, context, TASPrimaryRegionApiType.PRIMARY_REGION));
+
+      // Test non-primary region should fail
+      setDatacenter(context, "DCA");
       assertThrows(HoodieBlockWritesException.class,
           () -> HoodieReplicationMetadataUtils.verifyThatJobIsRunningInPrimaryRegion(
-              TEST_TABLE_NAME, "DCA", TASPrimaryRegionApiType.PRIMARY_REGION));
+              TEST_TABLE_NAME, context, TASPrimaryRegionApiType.PRIMARY_REGION));
     }
   }
 
   @ParameterizedTest
   @EnumSource(TASPrimaryRegionApiType.class)
   public void testVerifyThatJobIsRunningInPrimaryRegionWithDifferentApiTypes(TASPrimaryRegionApiType apiType) throws Exception {
+    HoodieEngineContext context = Mockito.mock(HoodieEngineContext.class);
     Set<Region> primaryRegions = new HashSet<>(Arrays.asList(Region.PHX));
 
     try (MockedConstruction<HoodieTASClient> tasClientMock = createTasClientMock(primaryRegions)) {
+      setDatacenter(context, "PHX");
       assertDoesNotThrow(() -> HoodieReplicationMetadataUtils.verifyThatJobIsRunningInPrimaryRegion(
-          TEST_TABLE_NAME, "PHX", apiType));
+          TEST_TABLE_NAME, context, apiType));
     }
   }
 
   @ParameterizedTest
   @ValueSource(strings = {"", "   ", "invalid"})
   public void testVerifyThatJobIsRunningInPrimaryRegionInvalidDatacenter(String datacenter) throws Exception {
+    HoodieEngineContext context = Mockito.mock(HoodieEngineContext.class);
+
+    if (datacenter.isEmpty() || datacenter.trim().isEmpty()) {
+      Mockito.when(context.getDatacenter()).thenReturn(Option.empty());
+    } else {
+      setDatacenter(context, datacenter);
+    }
+
     HoodieBlockWritesException exception = assertThrows(HoodieBlockWritesException.class,
         () -> HoodieReplicationMetadataUtils.verifyThatJobIsRunningInPrimaryRegion(
-            TEST_TABLE_NAME, datacenter, TASPrimaryRegionApiType.PRIMARY_REGION));
-    
-    assertTrue(exception.getMessage().contains("Could not fetch region from datacenter string"));
+            TEST_TABLE_NAME, context, TASPrimaryRegionApiType.PRIMARY_REGION));
+
+    assertEquals("Could not fetch region from the job context", exception.getMessage());
+  }
+
+  @Test
+  public void testVerifyThatJobIsRunningInPrimaryRegionContextException() throws Exception {
+    HoodieEngineContext context = Mockito.mock(HoodieEngineContext.class);
+    Mockito.when(context.getDatacenter()).thenThrow(new RuntimeException("Context error"));
+
+    HoodieBlockWritesException exception = assertThrows(HoodieBlockWritesException.class,
+        () -> HoodieReplicationMetadataUtils.verifyThatJobIsRunningInPrimaryRegion(
+            TEST_TABLE_NAME, context, TASPrimaryRegionApiType.PRIMARY_REGION));
+
+    assertEquals("Could not fetch region from the job context", exception.getMessage());
   }
 
   @Test
   public void testVerifyThatJobIsRunningInPrimaryRegionTasException() throws Exception {
+    HoodieEngineContext context = Mockito.mock(HoodieEngineContext.class);
+    setDatacenter(context, "PHX");
+
     try (MockedConstruction<HoodieTASClient> tasClientMock = Mockito.mockConstruction(HoodieTASClient.class, (mock, mockContext) -> {
       Mockito.when(mock.isRegionPrimary(Mockito.anyString(), Mockito.any(Region.class), Mockito.any(TASPrimaryRegionApiType.class)))
           .thenThrow(new HoodieException("TAS API error"));
     })) {
       HoodieBlockWritesException exception = assertThrows(HoodieBlockWritesException.class,
           () -> HoodieReplicationMetadataUtils.verifyThatJobIsRunningInPrimaryRegion(
-              TEST_TABLE_NAME, "PHX", TASPrimaryRegionApiType.PRIMARY_REGION));
-      
+              TEST_TABLE_NAME, context, TASPrimaryRegionApiType.PRIMARY_REGION));
+
       assertTrue(exception.getMessage().contains("Failed to check if PHX is primary region for " + TEST_TABLE_NAME));
     }
   }
 
   @Test
-  public void testVerifyThatJobIsRunningInPrimaryRegionNullDatacenter() throws Exception {
+  public void testVerifyThatJobIsRunningInPrimaryRegionNullContext() throws Exception {
     HoodieBlockWritesException exception = assertThrows(HoodieBlockWritesException.class,
         () -> HoodieReplicationMetadataUtils.verifyThatJobIsRunningInPrimaryRegion(
             TEST_TABLE_NAME, null, TASPrimaryRegionApiType.PRIMARY_REGION));
-    
-    assertTrue(exception.getMessage().contains("Could not fetch region from datacenter string"));
+
+    assertEquals("Could not fetch region from the job context", exception.getMessage());
   }
 
   private MockedConstruction<HoodieTASClient> createTasClientMock(Set<Region> primaryRegions) {
     return Mockito.mockConstruction(HoodieTASClient.class, (mock, context) -> {
       Mockito.when(mock.getPrimaryRegions(TEST_TABLE_NAME)).thenReturn(primaryRegions);
+      // Mock the new isRegionPrimary method that takes API type
       Mockito.when(mock.isRegionPrimary(Mockito.anyString(), Mockito.any(Region.class), Mockito.any(TASPrimaryRegionApiType.class)))
           .thenAnswer(invocation -> {
             Region region = invocation.getArgument(1);
             return primaryRegions.contains(region);
           });
     });
+  }
+
+  private void setDatacenter(HoodieEngineContext context, String datacenter) {
+    Mockito.when(context.getDatacenter()).thenReturn(Option.of(datacenter));
   }
 }

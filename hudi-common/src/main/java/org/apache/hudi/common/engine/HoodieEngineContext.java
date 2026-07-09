@@ -111,6 +111,13 @@ public abstract class HoodieEngineContext {
 
   public abstract Option<String> getProperty(EngineProperty key);
 
+  /**
+   * Datacenter on which the application is running.
+   */
+  public Option<String> getDatacenter() {
+    return Option.empty();
+  }
+
   public abstract void setJobStatus(String activeModule, String activityDescription);
 
   public abstract void clearJobStatus();

@@ -229,6 +229,11 @@ public class HoodieSparkEngineContext extends HoodieEngineContext {
   }
 
   @Override
+  public Option<String> getDatacenter() {
+    return Option.ofNullable(javaSparkContext.getConf().get("spark.drogon.dc", null));
+  }
+
+  @Override
   public void setJobStatus(String activeModule, String activityDescription) {
     javaSparkContext.setJobDescription(String.format("%s:%s", activeModule, activityDescription));
   }
