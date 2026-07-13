@@ -23,7 +23,6 @@ import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.timeline.HoodieActiveTimeline;
 import org.apache.hudi.common.table.timeline.HoodieInstant;
 import org.apache.hudi.common.table.timeline.HoodieTimeline;
-import org.apache.hudi.common.table.timeline.HoodieTimelineComparator;
 import org.apache.hudi.common.table.timeline.TimelineMetadataUtils;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.exception.HoodieIOException;
@@ -39,7 +38,7 @@ import java.util.Set;
 import java.util.stream.Stream;
 import java.util.stream.Collectors;
 
-public class HoodieReplicationTimelineComparator implements HoodieTimelineComparator {
+public class HoodieReplicationTimelineComparator {
   private static final org.slf4j.Logger LOG = LoggerFactory.getLogger(HoodieReplicationTimelineComparator.class);
   HoodieTableMetaClient localMetaClient;
   HoodieTableMetaClient remoteMetaClient;
@@ -70,7 +69,7 @@ public class HoodieReplicationTimelineComparator implements HoodieTimelineCompar
     List<String> archivalCommits = filterArchivedCommitsGreaterThanECTR(getRemoteCommitsForArchival(localMetaClient.getActiveTimeline().getWriteTimeline(),
             remoteMetaClient.getActiveTimeline().getWriteTimeline())).collect(Collectors.toList());
     return remoteMetaClient
-            .getRawActiveTimeline()
+            .getActiveTimeline()
             .getInstantsAsStream()
             .filter(instant -> archivalCommits.contains(instant.requestedTime()))
             .collect(Collectors.toList());
@@ -98,7 +97,7 @@ public class HoodieReplicationTimelineComparator implements HoodieTimelineCompar
     remoteCommitsForArchival.addAll(getRemoteCommitsForArchival(localMetaClient.getActiveTimeline().getRollbackAndRestoreTimeline(),
             remoteMetaClient.getActiveTimeline().getRollbackAndRestoreTimeline()).collect(Collectors.toList()));
     return remoteMetaClient
-            .getRawActiveTimeline()
+            .getActiveTimeline()
             .getInstantsAsStream()
             .filter(instant -> remoteCommitsForArchival.contains(instant.requestedTime()))
             .collect(Collectors.toList());
@@ -258,11 +257,11 @@ public class HoodieReplicationTimelineComparator implements HoodieTimelineCompar
     Set<String> divergedRemoteCommits =  getAllRemoteOnlyCommits(localTimeline, remoteTimeline).collect(Collectors.toSet());
     Option<String> oldestCommonParent = findOldestCommonParent(localTimeline, remoteTimeline);
     if (oldestCommonParent.isPresent()) {
-      LOG.info("Oldest common parent for table {} : {}", localMetaClient.getTableName(), oldestCommonParent.get());
+      LOG.info("Oldest common parent for table {} : {}", localMetaClient.getTableConfig().getTableName(), oldestCommonParent.get());
       return divergedRemoteCommits.stream().filter(ts -> ts.compareTo(oldestCommonParent.get()) < 0).sorted();
     }
     if (!localTimeline.getInstants().isEmpty()) {
-      LOG.info("Oldest common parent didn't find for table {}, using the earliest commit in localTimeline for comparison", localMetaClient.getTableName());
+      LOG.info("Oldest common parent didn't find for table {}, using the earliest commit in localTimeline for comparison", localMetaClient.getTableConfig().getTableName());
       String oldestCommitInLocalTimeline = localTimeline.getInstants().get(0).requestedTime();
       return divergedRemoteCommits.stream().filter(ts -> ts.compareTo(oldestCommitInLocalTimeline) < 0).sorted();
     }

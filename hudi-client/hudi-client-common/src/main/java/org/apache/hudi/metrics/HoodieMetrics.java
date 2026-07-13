@@ -448,6 +448,20 @@ public class HoodieMetrics {
     }
   }
 
+  public void updateReplicationMetrics(String laggingReplicationKey, long metricValue) {
+    if (config.isMetricsOn()) {
+      log.info(String.format("Lagging.%s=%d", laggingReplicationKey, metricValue));
+      metrics.registerGauge(getMetricsName("lagging", laggingReplicationKey), metricValue);
+    }
+  }
+
+  public void updateReplicationMetrics(String prefix, String metricName) {
+    if (config.isMetricsOn()) {
+      log.info(String.format("replication.%s.%s=%d", prefix, metricName, 1L));
+      metrics.registerGauge(getMetricsName("replication", String.format("%s.%s", prefix, metricName)), 1L);
+    }
+  }
+
   public void updateSourceReadAndIndexMetrics(final String action, final long durationInMs) {
     if (config.isMetricsOn()) {
       log.debug("Sending {} metrics ({}.duration, {})", SOURCE_READ_AND_INDEX_ACTION, action, durationInMs);

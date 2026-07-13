@@ -35,7 +35,6 @@ import org.apache.http.impl.client.DefaultHttpRequestRetryHandler;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.protocol.HttpContext;
 import org.apache.hudi.common.util.HoodieTimer;
-import org.apache.hudi.exception.ExceptionUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -126,7 +125,9 @@ public abstract class HoodieHttpClient implements AutoCloseable {
 
       return response;
     } catch (Exception e) {
-      metricTags.withErrorMessage(ExceptionUtil.getRootCause(e).getMessage());
+      Throwable rootCause = e;
+      while (rootCause.getCause() != null) rootCause = rootCause.getCause();
+      metricTags.withErrorMessage(rootCause.getMessage());
       metrics.reportFailure(metricTags);
       throw e;
     }

@@ -43,7 +43,6 @@ import static org.apache.hudi.common.config.LockConfiguration.LOCK_ACQUIRE_NUM_R
 import static org.apache.hudi.common.config.LockConfiguration.LOCK_ACQUIRE_RETRY_WAIT_TIME_IN_MILLIS_PROP_KEY;
 import static org.apache.hudi.common.table.HoodieTableConfig.VERSION;
 import org.apache.hudi.common.util.StringUtils;
-import org.apache.hudi.replication.HoodieReplicationContext;
 
 import static org.apache.hudi.replication.util.ReplicationPropertiesManager.REPLICATION_PROPERTIES_FILE;
 import static org.apache.hudi.replication.util.ReplicationPropertiesManager.REPLICATION_PROPERTIES_FILE_BACKUP;
@@ -206,7 +205,6 @@ public class TestReplicationPropertiesManager {
     replicationPropsBackup.setProperty(REPLICATION_PROPERTIES_TEST_KEY2, "false");
     try (OutputStream out = metaClient.getStorage().create(replicationPropertiesFileBackup, false)) {
       replicationPropsBackup.store(out, "Adding test props in  replication.properties.backup");
-      HoodieTableConfig.storeProperties(replicationPropsBackup, out);
     }
     assertTrue(metaClient.getStorage().exists(replicationPropertiesFileBackup));
     // Step-2: setProperty should read from replication.properties.backup file and add the new property
@@ -388,7 +386,8 @@ public class TestReplicationPropertiesManager {
       }
     }
 
-    String result = HoodieReplicationContext.getReplicationProperty(metaClient, "lastTs");
+    Properties readResult = new ReplicationPropertiesManager(metaClient).readProperties();
+    String result = readResult.getProperty("lastTs", StringUtils.EMPTY_STRING);
     if (isActualFilePresent) {
       assertEquals("555", result);
     } else if (isBackupFilePresent) {

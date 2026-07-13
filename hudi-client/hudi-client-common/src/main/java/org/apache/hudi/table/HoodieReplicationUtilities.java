@@ -20,7 +20,7 @@ package org.apache.hudi.table;
 
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.replication.table.ReplicationDestination;
-import org.apache.hudi.replication.HoodieReplicationContext;
+import org.apache.hudi.replication.util.ReplicationStatusUtils;
 import org.apache.hudi.common.table.timeline.HoodieInstant;
 import org.apache.hudi.common.table.timeline.HoodieInstantTimeGenerator;
 import org.apache.hudi.common.util.Option;
@@ -89,9 +89,9 @@ public class HoodieReplicationUtilities {
   public static boolean markReplicationDisabled(HoodieTableMetaClient metaClient, ReplicationDestination regionId) {
     try {
       ReplicationPropertiesManager propertiesManager = new ReplicationPropertiesManager(metaClient);
-      String key = HoodieReplicationContext.getReplicationOperationalStatusConfigKey(regionId);
+      String key = ReplicationStatusUtils.getReplicationOperationalStatusConfigKey(regionId);
       // mark dataset as operationally disabled if it is not already
-      if (HoodieReplicationContext.getCrossRegionOperationStatus(metaClient, regionId)) {
+      if (ReplicationStatusUtils.getCrossRegionOperationStatus(metaClient, regionId)) {
         propertiesManager.setProperty(key, "false");
         return true;
       }
@@ -108,9 +108,9 @@ public class HoodieReplicationUtilities {
         .lastInstant().map(HoodieInstant::requestedTime);
     for (ReplicationDestination regionId : ReplicationDestination.values()) {
       // Replication lag is measured between last replicated commit and most recent commit (commit start times).
-      Option<String> lastReplicatedTimestamp = HoodieReplicationContext.getDatasetLastReplicatedTimestamp(tableMetaClient, regionId);
-      boolean replicationEnabled = HoodieReplicationContext.getCrossRegionReplicationEnabled(tableMetaClient, regionId,
-              writeConfig.isCrossRegionReplicationEnabled(regionId.label), writeConfig.shouldFetchReplicationFlagFromExternalSource()).get();
+      Option<String> lastReplicatedTimestamp = ReplicationStatusUtils.getDatasetLastReplicatedTimestamp(tableMetaClient, regionId);
+      boolean replicationEnabled = ReplicationStatusUtils.getCrossRegionReplicationEnabled(tableMetaClient, regionId,
+              writeConfig.isCrossRegionReplicationEnabled(regionId.label)).get();
       if (replicationEnabled && lastReplicatedTimestamp.isPresent() && !lastReplicatedTimestamp.get().equals(INIT_INSTANT_TS)) {
         Option<String> oldestNonReplicated = tableMetaClient.getActiveTimeline().getAllCommitsTimeline()
             .filterCompletedInstants().findInstantsModifiedAfterByCompletionTime(lastReplicatedTimestamp.get())

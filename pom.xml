@@ -36,6 +36,7 @@
 
   <modules>
     <module>hudi-common</module>
+    <module>hudi-replication</module>
     <module>hudi-cli</module>
     <module>hudi-client</module>
     <module>hudi-aws</module>
@@ -50,6 +51,7 @@
     <module>packaging/hudi-hadoop-mr-bundle</module>
     <module>packaging/hudi-datahub-sync-bundle</module>
     <module>packaging/hudi-hive-sync-bundle</module>
+    <module>packaging/hudi-replication-bundle</module>
     <module>packaging/hudi-aws-bundle</module>
     <module>packaging/hudi-gcp-bundle</module>
     <module>packaging/hudi-spark-bundle</module>

@@ -36,7 +36,7 @@ import org.apache.hudi.common.model.HoodieTableType;
 import org.apache.hudi.common.model.WriteOperationType;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.replication.table.ReplicationDestination;
-import org.apache.hudi.replication.HoodieReplicationContext;
+import org.apache.hudi.replication.util.ReplicationStatusUtils;
 import org.apache.hudi.common.table.timeline.HoodieInstant;
 import org.apache.hudi.common.table.timeline.HoodieTimeline;
 import org.apache.hudi.common.table.timeline.InstantComparison;
@@ -669,10 +669,10 @@ public class CleanPlanner<T, I, K, O> implements Serializable {
     HoodieTableMetaClient metaClient = hoodieTable.getMetaClient();
 
     for (ReplicationDestination destination : ReplicationDestination.values()) {
-      boolean replicationEnabled = HoodieReplicationContext.getCrossRegionReplicationEnabled(metaClient, destination,
+      boolean replicationEnabled = ReplicationStatusUtils.getCrossRegionReplicationEnabled(metaClient, destination,
           config.isCrossRegionReplicationEnabled(destination.label)).get();
       if (replicationEnabled) {
-        Option<String> lastReplicated = HoodieReplicationContext.getDatasetLastReplicatedTimestamp(metaClient, destination);
+        Option<String> lastReplicated = ReplicationStatusUtils.getDatasetLastReplicatedTimestamp(metaClient, destination);
         if (lastReplicated.isPresent() && !lastReplicated.get().equals(HoodieTimeline.INIT_INSTANT_TS)) {
           earliestCommitToRetain = getEarliestHoodieInstantFromRegions(earliestCommitToRetain, lastReplicated);
           log.info("Limiting clean to commits before {} as replication to {} region is lagging at {}",

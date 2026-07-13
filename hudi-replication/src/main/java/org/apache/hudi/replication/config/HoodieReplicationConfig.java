@@ -43,7 +43,7 @@ import java.util.Properties;
  * {@code HoodieTableConfig} and persisted in {@code hoodie.properties} as the single source of truth.
  */
 @ConfigClassProperty(name = "Replication Configs",
-    groupName = ConfigGroups.Names.REPLICATION,
+    groupName = ConfigGroups.Names.WRITE_CLIENT,
     description = "Configurations that control the Replication table service in hudi, which replicates the dataset "
         + "to multiple remote locations for Redundancy and Disaster Recovery.")
 public class HoodieReplicationConfig extends HoodieConfig {

@@ -32,7 +32,7 @@ import org.apache.hudi.common.model.HoodieRecord;
 import org.apache.hudi.common.model.HoodieTableType;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.replication.table.ReplicationDestination;
-import org.apache.hudi.replication.HoodieReplicationContext;
+import org.apache.hudi.replication.util.ReplicationStatusUtils;
 import org.apache.hudi.common.table.log.HoodieLogFormat;
 import org.apache.hudi.common.table.log.HoodieLogFormat.Writer;
 import org.apache.hudi.common.table.log.block.HoodieAvroDataBlock;
@@ -518,10 +518,10 @@ public class TimelineArchiverV1<T extends HoodieAvroPayload, I, K, O> implements
    */
   private Stream<HoodieInstant> filterForReplication(Stream<HoodieInstant> instants) {
     for (ReplicationDestination destination : ReplicationDestination.values()) {
-      boolean replicationEnabled = HoodieReplicationContext.getCrossRegionReplicationEnabled(metaClient, destination,
+      boolean replicationEnabled = ReplicationStatusUtils.getCrossRegionReplicationEnabled(metaClient, destination,
           config.isCrossRegionReplicationEnabled(destination.label)).get();
       if (replicationEnabled) {
-        Option<String> lastReplicatedTimestamp = HoodieReplicationContext.getDatasetLastReplicatedTimestamp(metaClient, destination);
+        Option<String> lastReplicatedTimestamp = ReplicationStatusUtils.getDatasetLastReplicatedTimestamp(metaClient, destination);
         if (lastReplicatedTimestamp.isPresent() && !lastReplicatedTimestamp.get().equals(HoodieTimeline.INIT_INSTANT_TS)) {
           log.info("Limiting archiving of instants to ones with completion time before last {} cross region replicated instant at {}",
               destination, lastReplicatedTimestamp.get());
