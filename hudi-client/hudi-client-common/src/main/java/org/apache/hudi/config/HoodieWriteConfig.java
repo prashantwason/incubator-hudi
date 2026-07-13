@@ -33,6 +33,7 @@ import org.apache.hudi.common.config.HoodieMemoryConfig;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
 import org.apache.hudi.common.config.HoodieMetaserverConfig;
 import org.apache.hudi.common.config.HoodieReaderConfig;
+import org.apache.hudi.replication.config.HoodieReplicationConfig;
 import org.apache.hudi.common.config.HoodieStorageConfig;
 import org.apache.hudi.common.config.HoodieTableServiceManagerConfig;
 import org.apache.hudi.common.config.HoodieTimeGeneratorConfig;
@@ -54,6 +55,7 @@ import org.apache.hudi.common.table.HoodieTableConfig;
 import org.apache.hudi.common.table.HoodieTableVersion;
 import org.apache.hudi.common.table.log.block.HoodieLogBlock;
 import org.apache.hudi.common.table.marker.MarkerType;
+import org.apache.hudi.replication.client.tas.utils.TASPrimaryRegionApiType;
 import org.apache.hudi.common.table.timeline.versioning.TimelineLayoutVersion;
 import org.apache.hudi.common.table.view.FileSystemViewStorageConfig;
 import org.apache.hudi.common.table.view.FileSystemViewStorageType;
@@ -1740,6 +1742,60 @@ public class HoodieWriteConfig extends HoodieConfig {
     return getBoolean(FAIL_ON_INLINE_TABLE_SERVICE_EXCEPTION);
   }
 
+  public boolean isCrossRegionReplicationEnabled() {
+    return getBooleanOrDefault(HoodieReplicationConfig.CROSS_REGION_REPLICATION_ENABLED);
+  }
+
+  public boolean isTertiaryCrossRegionReplicationEnabled() {
+    return getBooleanOrDefault(HoodieReplicationConfig.CROSS_REGION_REPLICATION_TERTIARY_ENABLED);
+  }
+
+  public boolean isQuaternaryCrossRegionReplicationEnabled() {
+    return getBooleanOrDefault(HoodieReplicationConfig.CROSS_REGION_REPLICATION_QUATERNARY_ENABLED);
+  }
+
+  public Integer getReplicationMaxLagInHours() {
+    return getInt(HoodieReplicationConfig.CROSS_REGION_REPLICATION_MAX_LAG_HOURS);
+  }
+
+  public Integer getReplicationMaxLagInHoursBeforeAlert() {
+    return getInt(HoodieReplicationConfig.CROSS_REGION_REPLICATION_MAX_LAG_HOURS_BEFORE_ALERT);
+  }
+
+  public Boolean shouldFetchReplicationFlagFromExternalSource() {
+    return getBoolean(HoodieReplicationConfig.CROSS_REGION_REPLICATION_FETCH_REPLICATION_FLAG_FROM_EXTERNAL_SOURCE);
+  }
+
+  public boolean shouldCheckWritesOnTargets() {
+    return getBoolean(HoodieReplicationConfig.CROSS_REGION_REPLICATION_CHECK_WRITES_ON_TARGETS);
+  }
+
+  public boolean shouldFailWritesOnTargets() {
+    return getBoolean(HoodieReplicationConfig.CROSS_REGION_REPLICATION_FAIL_WRITES_ON_TARGETS);
+  }
+
+  public TASPrimaryRegionApiType getTasPrimaryRegionApiType() {
+    HoodieReplicationConfig replicationConfig = HoodieReplicationConfig.from(getProps());
+    return replicationConfig.getTASPrimaryRegionApiType();
+  }
+
+  /**
+   * @param destinationLabel the destination label (secondary, tertiary, quaternary)
+   * @return true if cross region replication is enabled for the destination label.
+   */
+  public boolean isCrossRegionReplicationEnabled(String destinationLabel) {
+    switch (destinationLabel) {
+      case "secondary":
+        return isCrossRegionReplicationEnabled();
+      case "tertiary":
+        return isTertiaryCrossRegionReplicationEnabled();
+      case "quaternary":
+        return isQuaternaryCrossRegionReplicationEnabled();
+      default:
+        return false;
+    }
+  }
+
   public int getMaxConsistencyChecks() {
     return getInt(MAX_CONSISTENCY_CHECKS);
   }
@@ -3115,6 +3171,7 @@ public class HoodieWriteConfig extends HoodieConfig {
     private boolean isMetricsGraphiteConfigSet = false;
     private boolean isMetricsM3ConfigSet = false;
     private boolean isLayoutConfigSet = false;
+    private boolean isReplicationConfigSet = false;
 
     public Builder withEngineType(EngineType engineType) {
       this.engineType = engineType;
@@ -3366,6 +3423,12 @@ public class HoodieWriteConfig extends HoodieConfig {
     public Builder withClusteringConfig(HoodieClusteringConfig clusteringConfig) {
       writeConfig.getProps().putAll(clusteringConfig.getProps());
       isClusteringConfigSet = true;
+      return this;
+    }
+
+    public Builder withReplicationConfig(HoodieReplicationConfig replicationConfig) {
+      writeConfig.getProps().putAll(replicationConfig.getProps());
+      isReplicationConfigSet = true;
       return this;
     }
 
@@ -3743,6 +3806,8 @@ public class HoodieWriteConfig extends HoodieConfig {
           HoodiePreCommitValidatorConfig.newBuilder().fromProperties(writeConfig.getProps()).build());
       writeConfig.setDefaultOnCondition(!isLayoutConfigSet,
           HoodieLayoutConfig.newBuilder().fromProperties(writeConfig.getProps()).build());
+      writeConfig.setDefaultOnCondition(!isReplicationConfigSet,
+          HoodieReplicationConfig.newBuilder().fromProperties(writeConfig.getProps()).build());
       writeConfig.setDefaultValue(TIMELINE_LAYOUT_VERSION_NUM, String.valueOf(TimelineLayoutVersion.CURR_VERSION));
 
       // isLockProviderPropertySet must be fetched before setting defaults of HoodieLockConfig

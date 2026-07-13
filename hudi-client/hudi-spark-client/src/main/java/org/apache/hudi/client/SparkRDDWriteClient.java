@@ -22,6 +22,7 @@ import org.apache.hudi.callback.common.WriteStatusValidator;
 import org.apache.hudi.client.common.HoodieSparkEngineContext;
 import org.apache.hudi.client.embedded.EmbeddedTimelineService;
 import org.apache.hudi.client.utils.SparkReleaseResources;
+import org.apache.hudi.replication.config.HoodieReplicationConfig;
 import org.apache.hudi.common.data.HoodieData;
 import org.apache.hudi.common.engine.HoodieEngineContext;
 import org.apache.hudi.common.model.HoodieCommitMetadata;
@@ -31,10 +32,12 @@ import org.apache.hudi.common.model.HoodieWriteStat;
 import org.apache.hudi.common.model.WriteOperationType;
 import org.apache.hudi.common.table.HoodieTableConfig;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.replication.client.HoodieReplicationMetadataUtils;
 import org.apache.hudi.common.table.timeline.HoodieTimeline;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.data.HoodieJavaRDD;
+import org.apache.hudi.exception.HoodieBlockWritesException;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.index.HoodieIndex;
 import org.apache.hudi.index.HoodieSparkIndexClient;
@@ -82,11 +85,30 @@ public class SparkRDDWriteClient<T> extends
     this.tableServiceClient = new SparkRDDTableServiceClient<T>(context, writeConfig, getTimelineServer());
     log.info("Final hudi write config: {}", this.config.getProps());
     checkSpeculativeExecution();
+    blockWritesOnRegionIfRequired();
   }
 
   @Override
   protected HoodieIndex createIndex(HoodieWriteConfig writeConfig) {
     return SparkHoodieIndexFactory.createIndex(config);
+  }
+
+  private void blockWritesOnRegionIfRequired() {
+    if (config.shouldCheckWritesOnTargets()) {
+      try {
+        HoodieReplicationConfig replicationConfig = HoodieReplicationConfig.from(config.getProps());
+        String datacenter = System.getenv("UBER_DATACENTER");
+        HoodieReplicationMetadataUtils.verifyThatJobIsRunningInPrimaryRegion(
+            config.getTableName(), datacenter, replicationConfig.getTASPrimaryRegionApiType());
+      } catch (HoodieBlockWritesException e) {
+        log.warn(String.format("Writes should be blocked on this dataset %s. Error: %s",
+            config.getTableName(), e.getMessage()));
+        metrics.updateReplicationMetrics("block.writes", e.getMetricName());
+        if (config.shouldFailWritesOnTargets()) {
+          throw new HoodieException(e);
+        }
+      }
+    }
   }
 
   public boolean commit(String instantTime, JavaRDD<WriteStatus> writeStatuses, Option<Map<String, String>> extraMetadata,

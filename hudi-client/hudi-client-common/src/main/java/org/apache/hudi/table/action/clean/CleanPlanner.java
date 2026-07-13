@@ -34,6 +34,9 @@ import org.apache.hudi.common.model.HoodieLogFile;
 import org.apache.hudi.common.model.HoodieReplaceCommitMetadata;
 import org.apache.hudi.common.model.HoodieTableType;
 import org.apache.hudi.common.model.WriteOperationType;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.replication.table.ReplicationDestination;
+import org.apache.hudi.replication.HoodieReplicationContext;
 import org.apache.hudi.common.table.timeline.HoodieInstant;
 import org.apache.hudi.common.table.timeline.HoodieTimeline;
 import org.apache.hudi.common.table.timeline.InstantComparison;
@@ -645,6 +648,52 @@ public class CleanPlanner<T, I, K, O> implements Serializable {
           hoodieTable.getMetaClient().getTableConfig().getTimelineTimezone(),
           previousEarliestCommitToRetain,
           config.getMaxCommitsToClean());
+
+      log.info("EarliestCommitToRetain is {} after CleanerUtils.getEarliestCommitToRetain",
+          earliestCommitToRetain.isPresent() ? earliestCommitToRetain.get().requestedTime() : "null");
+
+      earliestCommitToRetain = getEarliestCommitToRetainForReplication(earliestCommitToRetain);
+
+      log.info("EarliestCommitToRetain is {} after getEarliestCommitToRetainForReplication",
+          earliestCommitToRetain.isPresent() ? earliestCommitToRetain.get().requestedTime() : "null");
+    }
+    return earliestCommitToRetain;
+  }
+
+  /**
+   * For each {@link ReplicationDestination}, if cross-region replication is enabled and the destination
+   * has a recorded last-replicated timestamp, adjusts the earliest-commit-to-retain so that unreplicated
+   * commits are not cleaned.
+   */
+  private Option<HoodieInstant> getEarliestCommitToRetainForReplication(Option<HoodieInstant> earliestCommitToRetain) {
+    HoodieTableMetaClient metaClient = hoodieTable.getMetaClient();
+
+    for (ReplicationDestination destination : ReplicationDestination.values()) {
+      boolean replicationEnabled = HoodieReplicationContext.getCrossRegionReplicationEnabled(metaClient, destination,
+          config.isCrossRegionReplicationEnabled(destination.label)).get();
+      if (replicationEnabled) {
+        Option<String> lastReplicated = HoodieReplicationContext.getDatasetLastReplicatedTimestamp(metaClient, destination);
+        if (lastReplicated.isPresent() && !lastReplicated.get().equals(HoodieTimeline.INIT_INSTANT_TS)) {
+          earliestCommitToRetain = getEarliestHoodieInstantFromRegions(earliestCommitToRetain, lastReplicated);
+          log.info("Limiting clean to commits before {} as replication to {} region is lagging at {}",
+              earliestCommitToRetain, destination.name(), lastReplicated);
+        } else {
+          log.info("Ignoring checkpoint for limiting clean as there is no {} cross region replicated instant yet",
+              destination);
+        }
+      }
+    }
+    return earliestCommitToRetain;
+  }
+
+  private Option<HoodieInstant> getEarliestHoodieInstantFromRegions(Option<HoodieInstant> earliestCommitToRetain, Option<String> lastReplicated) {
+    if (earliestCommitToRetain.isPresent() && lastReplicated.isPresent()
+        && lastReplicated.get().compareTo(earliestCommitToRetain.get().requestedTime()) < 0) {
+      earliestCommitToRetain = Option.fromJavaOptional(
+          getCommitTimeline().filterCompletedInstants().getInstantsAsStream()
+              .filter(i -> i.getCompletionTime() != null
+                  && i.getCompletionTime().compareTo(lastReplicated.get()) >= 0)
+              .findFirst());
     }
     return earliestCommitToRetain;
   }

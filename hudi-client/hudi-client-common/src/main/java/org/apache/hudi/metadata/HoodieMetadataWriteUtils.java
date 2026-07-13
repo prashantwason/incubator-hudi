@@ -24,6 +24,7 @@ import org.apache.hudi.client.transaction.lock.InProcessLockProvider;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
 import org.apache.hudi.common.config.HoodieTableServiceManagerConfig;
 import org.apache.hudi.common.config.HoodieReaderConfig;
+import org.apache.hudi.replication.config.HoodieReplicationConfig;
 import org.apache.hudi.common.config.HoodieStorageConfig;
 import org.apache.hudi.common.config.RecordMergeMode;
 import org.apache.hudi.common.data.HoodieData;
@@ -271,6 +272,15 @@ public class HoodieMetadataWriteUtils {
         .withFinalizeWriteParallelism(MDT_DEFAULT_PARALLELISM)
         .withKeyGenerator(HoodieTableMetadataKeyGenerator.class.getCanonicalName())
         .withPopulateMetaFields(DEFAULT_METADATA_POPULATE_META_FIELDS)
+        .withReplicationConfig(HoodieReplicationConfig.newBuilder()
+            .withCrossRegionReplicationEnabled(writeConfig.isCrossRegionReplicationEnabled())
+            .withTertiaryCrossRegionReplicationEnabled(writeConfig.isTertiaryCrossRegionReplicationEnabled())
+            .withQuaternaryCrossRegionReplicationEnabled(writeConfig.isQuaternaryCrossRegionReplicationEnabled())
+            .withFetchReplicationFlagFromExternalSource(writeConfig.shouldFetchReplicationFlagFromExternalSource())
+            .withCheckWritesOnTargets(writeConfig.shouldCheckWritesOnTargets())
+            .withFailWritesOnTargets(writeConfig.shouldFailWritesOnTargets())
+            .withTasApiType(writeConfig.getTasPrimaryRegionApiType())
+            .build())
         .withWriteStatusClass(FailOnFirstErrorWriteStatus.class)
         .withReleaseResourceEnabled(writeConfig.areReleaseResourceEnabled())
         .withRecordMergeMode(RecordMergeMode.CUSTOM)

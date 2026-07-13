@@ -27,6 +27,8 @@ import org.apache.hudi.common.engine.HoodieEngineContext;
 import org.apache.hudi.common.model.HoodieAvroPayload;
 import org.apache.hudi.common.model.HoodieTableType;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.replication.table.ReplicationDestination;
+import org.apache.hudi.replication.HoodieReplicationContext;
 import org.apache.hudi.common.table.timeline.ActiveAction;
 import org.apache.hudi.common.table.timeline.HoodieActiveTimeline;
 import org.apache.hudi.common.table.timeline.HoodieInstant;
@@ -280,6 +282,28 @@ public class TimelineArchiverV2<T extends HoodieAvroPayload, I, K, O> implements
       // the active timeline of metadata table to be extremely long, leading to performance issues
       // for loading the timeline.
       earliestInstantToRetainCandidates.add(qualifiedEarliestInstant);
+    }
+
+    // 6. If cross-region replication is enabled, do not archive commits that are yet to be replicated.
+    for (ReplicationDestination destination : ReplicationDestination.values()) {
+      boolean replicationEnabled = HoodieReplicationContext.getCrossRegionReplicationEnabled(metaClient, destination,
+          config.isCrossRegionReplicationEnabled(destination.label)).get();
+      if (replicationEnabled) {
+        Option<String> lastReplicatedTimestamp = HoodieReplicationContext.getDatasetLastReplicatedTimestamp(metaClient, destination);
+        if (lastReplicatedTimestamp.isPresent() && !lastReplicatedTimestamp.get().equals(HoodieTimeline.INIT_INSTANT_TS)) {
+          log.info("Limiting archiving of instants to ones with completion time before last {} cross region replicated instant at {}",
+              destination, lastReplicatedTimestamp.get());
+          Option<HoodieInstant> earliestUnreplicated = Option.fromJavaOptional(
+              completedCommitsTimeline.filterCompletedInstants().getInstantsAsStream()
+                  .filter(i -> i.getCompletionTime() != null
+                      && i.getCompletionTime().compareTo(lastReplicatedTimestamp.get()) >= 0)
+                  .findFirst());
+          earliestInstantToRetainCandidates.add(earliestUnreplicated);
+        } else {
+          log.info("Ignoring checkpoint for limiting archiving as there is no {} cross region replicated instant yet",
+              destination);
+        }
+      }
     }
 
     // Choose the instant in earliestInstantToRetainCandidates with the smallest
