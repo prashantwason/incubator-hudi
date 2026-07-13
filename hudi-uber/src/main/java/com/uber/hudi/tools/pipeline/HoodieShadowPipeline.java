@@ -522,7 +522,7 @@ public class HoodieShadowPipeline {
     SQLContext sqlContext = SQLContext.getOrCreate(jsc.sc());
     HoodieActiveTimeline timeline = destMetaClient.getActiveTimeline();
     CommitMetadataSerDe commitMetadataSerDe = destMetaClient.getCommitMetadataSerDe();
-    for (HoodieInstant commitInstant : timeline.getCommitTimeline().filterCompletedInstants().getReverseOrderedInstants().collect(Collectors.toList())) {
+    for (HoodieInstant commitInstant : timeline.getCommitAndReplaceTimeline().filterCompletedInstants().getReverseOrderedInstants().collect(Collectors.toList())) {
       try {
         byte[] details = timeline.getInstantDetails(commitInstant).get();
         HoodieCommitMetadata commitMetadata = commitMetadataSerDe.deserialize(commitInstant,
@@ -622,7 +622,7 @@ public class HoodieShadowPipeline {
       try {
         destMetaClient = HoodieTableMetaClient.builder().setConf(HadoopFSUtils.getStorageConf(hadoopConf)).setBasePath(cfg.destPath).build();
         // At least one completed commit must be present if the dataset was created successfully
-        if (destMetaClient.getActiveTimeline().getCommitTimeline().filterCompletedInstants().countInstants() == 0) {
+        if (destMetaClient.getActiveTimeline().getCommitAndReplaceTimeline().filterCompletedInstants().countInstants() == 0) {
           throw new TableNotFoundException("");
         }
       } catch (TableNotFoundException e) {
@@ -689,15 +689,15 @@ public class HoodieShadowPipeline {
 
       // Perform the sync
       LOG.info("Starting shadow pipeline sync");
-      String lastSyncedInstantTime = destMetaClient.getActiveTimeline().getCommitTimeline().filterCompletedInstants().lastInstant().get().requestedTime();
+      String lastSyncedInstantTime = destMetaClient.getActiveTimeline().getCommitAndReplaceTimeline().filterCompletedInstants().lastInstant().get().requestedTime();
       while (true) {
         new HoodieDeltaStreamer(deltaConfig, jssc, Option.of(props)).sync();
         LOG.info("Completed deltastreamer sync call.");
 
         // Number of commits synced
-        int numCommitsSynced = destMetaClient.reloadActiveTimeline().getCommitTimeline().filterCompletedInstants().findInstantsAfter(lastSyncedInstantTime, Integer.MAX_VALUE).countInstants();
+        int numCommitsSynced = destMetaClient.reloadActiveTimeline().getCommitAndReplaceTimeline().filterCompletedInstants().findInstantsAfter(lastSyncedInstantTime, Integer.MAX_VALUE).countInstants();
         cfg.maxCommitsToSync -= numCommitsSynced;
-        lastSyncedInstantTime = destMetaClient.getActiveTimeline().getCommitTimeline().filterCompletedInstants().lastInstant().get().requestedTime();
+        lastSyncedInstantTime = destMetaClient.getActiveTimeline().getCommitAndReplaceTimeline().filterCompletedInstants().lastInstant().get().requestedTime();
 
         if (!cfg.continuousMode || cfg.maxCommitsToSync <= 0) {
           break;
