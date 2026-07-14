@@ -9,6 +9,3 @@ docker:
   shell: true
 
 timeout_in_minutes: 10
-
-usso_services:
-  - drogon.uberinternal.com:DROGON_USSO_TOKEN
