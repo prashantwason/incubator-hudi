@@ -1,0 +1,14 @@
+version: 1.0
+
+uown: 4b269850-cc6c-42b2-8ec9-6e5867f54005
+
+command: ".buildkite/udj/publish-test-config-1.2.sh"
+
+docker:
+  base-image: 127.0.0.1:5055/uber-usi/hudi:bkt1-produ-1713985556-12d2c
+  shell: true
+
+timeout_in_minutes: 10
+
+usso_services:
+  - drogon.uberinternal.com:DROGON_USSO_TOKEN
