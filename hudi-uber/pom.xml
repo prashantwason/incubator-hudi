@@ -91,6 +91,11 @@
       <artifactId>hudi-utilities_${scala.binary.version}</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <dependency>
+      <groupId>org.apache.hudi</groupId>
+      <artifactId>hudi-replication</artifactId>
+      <version>${project.version}</version>
+    </dependency>
     <!-- Hudi Tests -->
     <dependency>
       <groupId>org.apache.hudi</groupId>

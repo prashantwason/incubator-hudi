@@ -185,7 +185,7 @@ public class HoodieSnapshotMetadataClient {
    * Returns the latest commit instant time on hoodie table.
    */
   public Option<String> getLatestInstant() {
-    return this.metaClient.getActiveTimeline().getCommitTimeline().filterCompletedInstants().lastInstant().map(HoodieInstant::requestedTime);
+    return this.metaClient.getActiveTimeline().getCommitAndReplaceTimeline().filterCompletedInstants().lastInstant().map(HoodieInstant::requestedTime);
   }
 
   /**

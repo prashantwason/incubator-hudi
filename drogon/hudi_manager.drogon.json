@@ -1,0 +1,72 @@
+{
+  "project_name": "hudi_manager",
+  "project_hdfs_dir": "/user/hudi/hudi_manager/${UBER_LDAP_UID}/",
+  "deployment": {
+    "artifacts": {
+      "file": "packaging/hudi-utilities-bundle/target/hudi-utilities-bundle_${scala_version}-${HUDI_VERSION}.jar",
+      "files": []
+    },
+    "flatten_directories": true
+  },
+  "launch": {
+    "className": "com.uber.hudi.tools.manager.HoodieManager",
+    "jars": [
+      "http://artifactory.uber.internal:4587/artifactory/repo/org/apache/avro/avro/${avro_version}/avro-${avro_version}.jar",
+      "http://artifactory.uber.internal:4587/artifactory/libs-release-local/org/apache/spark/spark-avro_${scala_version}/${spark_avro_version}/spark-avro_${scala_version}-${spark_avro_version}.jar",
+      "http://artifactory.uber.internal:4587/artifactory/libs-release-local/org/apache/hudi/hudi-auth-bundle/${HUDI_VERSION}/hudi-auth-bundle-${HUDI_VERSION}.jar"
+    ],
+    "args": [
+      "--command", "${COMMAND}",
+      "--args", "${ARGS}"
+    ],
+    "conf": {
+      "spark.serializer": "org.apache.spark.serializer.KryoSerializer",
+      "spark.yarn.jars.exclusionRegex": "(.*hudi.*|avro-1\\.8.*)",
+      "spark.driver._extraJavaOptions": "-verbose:class",
+      "spark.shuffle.service.enabled": "true",
+      "spark.shuffle.compress": "true",
+      "spark.shuffle.spill.compress": "true",
+      "spark.yarn.maxAppAttempts": "1",
+      "spark.sql.hive.convertMetastoreHoodie": "true",
+      "spark.dynamicAllocation.enabled": "false",
+      "spark.scheduler.minRegisteredResourcesRatio": "1.0",
+      "spark.scheduler.maxRegisteredResourcesWaitingTime": "600000",
+      "spark.uber.executor.logging.verbose": "true",
+      "spark.executor.instances": "${NUM_EXECUTORS}",
+      "spark.executor.memoryOverhead": "${EXECUTOR_MEMORY_OVERHEAD}",
+      "spark.driver.cores": "${DRIVER_CORES}",
+      "spark.driver.memory": "${DRIVER_MEMORY}",
+      "spark.executor.memory": "${EXECUTOR_MEMORY}",
+      "spark.driver.maxResultSize": "4g",
+      "spark.rpc.message.maxSize": "2047",
+      "spark.yarn.access.hadoopFileSystems": "hdfs://ns-krypton-prod-dca1,hdfs://ns-platinum-prod-phx,hdfs://ns-router-prod-phx,hdfs://ns-router-dca1,hdfs://ns-neon-prod-dca1,cfs://ns-cloudlake",
+      "spark.hadoop.dfs.checksum.combine.mode" : "COMPOSITE_CRC",
+      "spark.hadoop.fs.gs.checksum.type": "CRC32C",
+      "spark.driver.userClassPathFirst": "true",
+      "spark.executor.userClassPathFirst": "true"
+    },
+    "queue": "${QUEUE}",
+    "sparkEnv": "SPARK_33",
+    "proxyUser": "${PROXY_USER}"
+  },
+  "build": {
+    "shell_command": "python3 ./scripts/check_and_build.py packaging/hudi-utilities-bundle ${HUDI_VERSION} ${scala_version}",
+    "cd_enabled": true
+  },
+  "variables": {
+    "ARGS": "",
+    "COMMAND": "",
+    "DRIVER_CORES": "2",
+    "DRIVER_MEMORY": "2g",
+    "EXECUTOR_MEMORY": "4g",
+    "EXECUTOR_MEMORY_OVERHEAD": "1g",
+    "HUDI_VERSION": "0.16.17",
+    "avro_version": "1.11.4",
+    "spark_avro_version": "3.3.2-uber-13",
+    "scala_version": "2.12",
+    "NUM_EXECUTORS": "50",
+    "PROXY_USER": "hoover",
+    "QUEUE": "",
+    "UBER_LDAP_UID": "hudi"
+  }
+}
