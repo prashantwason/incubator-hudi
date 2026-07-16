@@ -37,6 +37,7 @@ import org.apache.hudi.common.util.collection.Pair;
 import org.apache.hudi.config.HoodieCompactionConfig;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.exception.HoodieCompactionException;
+import org.apache.hudi.metadata.HoodieTableMetadata;
 import org.apache.hudi.table.HoodieTable;
 import org.apache.hudi.table.action.BaseTableServicePlanActionExecutor;
 import org.apache.hudi.table.action.compact.plan.generators.BaseHoodieCompactionPlanGenerator;
@@ -256,6 +257,12 @@ public class ScheduleCompactionActionExecutor<T, I, K, O> extends BaseTableServi
   }
 
   private Long parsedToSeconds(String time) {
+    // Handle the special case of the MDT SOLO_COMMIT_TIMESTAMP (and its partition-init/table-service suffixed
+    // variants, e.g. "00000000000000010"), used when the metadata table is bootstrapped against a data table
+    // with no completed commits yet. These are not real instant times and cannot be parsed as such.
+    if (time.startsWith(HoodieTableMetadata.SOLO_COMMIT_TIMESTAMP)) {
+      return 0L;
+    }
     return TimelineUtils.parseDateFromInstantTimeSafely(time).orElseThrow(() -> new HoodieCompactionException("Failed to parse timestamp " + time))
             .getTime() / 1000;
   }

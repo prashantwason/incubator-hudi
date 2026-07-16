@@ -117,6 +117,7 @@ import org.apache.hudi.storage.StoragePathInfo;
 import org.apache.hudi.table.HoodieSparkTable;
 import org.apache.hudi.table.HoodieTable;
 import org.apache.hudi.table.action.HoodieWriteMetadata;
+import org.apache.hudi.table.action.compact.CompactionTriggerStrategy;
 import org.apache.hudi.table.upgrade.SparkUpgradeDowngradeHelper;
 import org.apache.hudi.table.upgrade.UpgradeDowngrade;
 import org.apache.hudi.testutils.HoodieClientTestUtils;
@@ -276,6 +277,34 @@ public class TestHoodieBackedMetadata extends TestHoodieMetadataBase {
     doWriteOperation(testTable, "0000009");
     doCleanAndValidate(testTable, "0000010", Arrays.asList("0000009"));
     validateMetadata(testTable, true);
+  }
+
+  /**
+   * When the metadata table is bootstrapped against a data table with no completed commits yet, MDT partition
+   * initialization instants are stamped using the all-zero {@link HoodieTableMetadata#SOLO_COMMIT_TIMESTAMP}
+   * (plus a per-partition suffix). None of the inline compaction trigger strategies should fail while parsing
+   * this timestamp (see {@code ScheduleCompactionActionExecutor#parsedToSeconds}).
+   */
+  @ParameterizedTest
+  @EnumSource(CompactionTriggerStrategy.class)
+  public void testMDTInlineCompactionStrategyOnEmptyTable(CompactionTriggerStrategy inlineCompactionStrategy) throws Exception {
+    init(HoodieTableType.COPY_ON_WRITE);
+
+    Properties metadataProps = new Properties();
+    metadataProps.setProperty(HoodieMetadataConfig.COMPACT_TRIGGER_STRATEGY.key(), inlineCompactionStrategy.name());
+    HoodieWriteConfig writeConfig = getWriteConfigBuilder(true, true, false)
+        .withMetadataConfig(HoodieMetadataConfig.newBuilder().fromProperties(metadataProps).build())
+        .build();
+
+    try (SparkRDDWriteClient client = getHoodieWriteClient(writeConfig)) {
+      // Trigger an empty operation to ensure MDT table services are scheduled/executed.
+      // Since an empty MDT uses an all-zero deltacommit timestamp, parsing this timestamp for the various
+      // time-based compaction strategies should not lead to a timestamp parse error.
+      final String instantTime = WriteClientTestUtils.createNewInstantTime();
+      WriteClientTestUtils.startCommitWithTime(client, instantTime);
+      List<WriteStatus> writeStatuses = client.delete(jsc.emptyRDD(), instantTime).collect();
+      client.commit(instantTime, jsc.parallelize(writeStatuses));
+    }
   }
 
   @Test
