@@ -119,6 +119,7 @@
                   <include>com.github.ben-manes.caffeine:caffeine</include>
                   <include>org.apache.parquet:parquet-avro</include>
                   <include>com.twitter:chill-protobuf</include>
+                  <include>com.google.protobuf:protobuf-java</include>
 
                   <include>io.dropwizard.metrics:metrics-core</include>
                   <include>io.dropwizard.metrics:metrics-graphite</include>
@@ -208,6 +209,10 @@
                 <relocation>
                   <pattern>com.codahale.metrics.</pattern>
                   <shadedPattern>org.apache.hudi.com.codahale.metrics.</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>com.google.protobuf.</pattern>
+                  <shadedPattern>org.apache.hudi.com.google.protobuf.</shadedPattern>
                 </relocation>
                 <relocation>
                   <pattern>org.apache.commons.codec.</pattern>
