@@ -20,7 +20,6 @@ package org.apache.spark.sql.hudi.runner
 import org.apache.hudi.{DataSourceWriteOptions, QuickstartUtils}
 import org.apache.hudi.DataSourceWriteOptions.{PARTITIONPATH_FIELD, PRECOMBINE_FIELD, RECORDKEY_FIELD}
 import org.apache.hudi.common.table.{HoodieTableConfig, HoodieTableMetaClient}
-import org.apache.hudi.hadoop.fs.HadoopFSUtils
 import org.apache.hudi.hive.{HiveStylePartitionValueExtractor, HiveSyncConfigHolder}
 import org.apache.hudi.hive.ddl.HiveSyncMode
 import org.apache.hudi.keygen.constant.KeyGeneratorOptions
@@ -67,10 +66,7 @@ class RunLegacyTableCompatTests extends RunOperationsBase {
 
   /** Build a metaClient for the table at basePath (used to inspect or modify on-disk hoodie.properties). */
   private def buildMetaClient(basePath: String): HoodieTableMetaClient = {
-    HoodieTableMetaClient.builder()
-      .setBasePath(basePath)
-      .setConf(HadoopFSUtils.getStorageConfWithCopy(spark.sparkContext.hadoopConfiguration))
-      .build()
+    VersionCompat.buildMetaClient(basePath, spark.sparkContext.hadoopConfiguration)
   }
 
   /**
@@ -149,33 +145,36 @@ class RunLegacyTableCompatTests extends RunOperationsBase {
    * must succeed (Fix 1 carve-out in HoodieWriterUtils.shouldIgnoreConfig + the normalized
    * comparison in HoodieSparkSqlWriter.handleSaveModes).
    */
-  def testAppendWithQualifiedTableNameSucceeds(): Unit = {
+  def testAppendWithQualifiedTableNameSucceeds(): Seq[Step] = {
     val tableName = "legacy_qualified_name_compat"
-    val basePath = getBasePath(tableName)
-    cleanup(tableName, basePath)
+    Seq(
 
-    try {
-      createHudiTableViaSql(tableName, basePath, includePrimaryKey = true)
+      Step("create legacy table via SparkSQL") { spark =>              // 0.14
+        val basePath = getBasePath(tableName)
+        cleanup(tableName, basePath)
+        createHudiTableViaSql(tableName, basePath, includePrimaryKey = true)
 
-      val initialTableConfig = buildMetaClient(basePath).getTableConfig
-      val onDiskRawName = initialTableConfig.getString(HoodieTableConfig.NAME)
-      val onDiskRawDb = initialTableConfig.getString(HoodieTableConfig.DATABASE_NAME)
-      log.info(s"On-disk after CREATE TABLE — hoodie.table.name=$onDiskRawName, hoodie.DEFAULT_DATABASE.name=$onDiskRawDb")
-      assert(onDiskRawName == tableName,
-        s"on-disk hoodie.table.name should be the bare table name '$tableName' (HoodieCatalogTable shape), was: $onDiskRawName")
-      assert(onDiskRawDb == DEFAULT_DATABASE,
-        s"on-disk hoodie.DEFAULT_DATABASE.name should be '$DEFAULT_DATABASE' (HoodieCatalogTable shape), was: $onDiskRawDb")
+        val initialTableConfig = buildMetaClient(basePath).getTableConfig
+        val onDiskRawName = initialTableConfig.getString(HoodieTableConfig.NAME)
+        val onDiskRawDb = initialTableConfig.getString(HoodieTableConfig.DATABASE_NAME)
+        log.info(s"On-disk after CREATE TABLE — hoodie.table.name=$onDiskRawName, hoodie.DEFAULT_DATABASE.name=$onDiskRawDb")
+        assert(onDiskRawName == tableName,
+          s"on-disk hoodie.table.name should be the bare table name '$tableName' (HoodieCatalogTable shape), was: $onDiskRawName")
+        assert(onDiskRawDb == DEFAULT_DATABASE,
+          s"on-disk hoodie.DEFAULT_DATABASE.name should be '$DEFAULT_DATABASE' (HoodieCatalogTable shape), was: $onDiskRawDb")
+      },
 
-      // Append with qualified "<db>.<table>" form — pre-fix this would throw either
-      // `Config conflict: hoodie.table.name: db.t  t` (validateTableConfig) or
-      // `hoodie table with name t ... can not append data ... with another name db.t`
-      // (handleSaveModes), depending on which validator fired first.
-      appendViaDataSource(tableName, basePath, recordKeyField = "uuid")
-      runDataFrameReaderWithAsserts(DEFAULT_DATABASE, tableName, expectedVal = 20)
-      log.info("PASSED: qualified hoodie.table.name accepted on Append against bare on-disk shape")
-    } finally {
-      cleanup(tableName, basePath)
-    }
+      Step("append via DataSource and verify") { spark =>              // 1.2
+        val basePath = getBasePath(tableName)
+        // Append with qualified "<db>.<table>" form — pre-fix this would throw either
+        // `Config conflict: hoodie.table.name: db.t  t` (validateTableConfig) or
+        // `hoodie table with name t ... can not append data ... with another name db.t`
+        // (handleSaveModes), depending on which validator fired first.
+        appendViaDataSource(tableName, basePath, recordKeyField = "uuid")
+        runDataFrameReaderWithAsserts(DEFAULT_DATABASE, tableName, expectedVal = 20)
+        log.info("PASSED: qualified hoodie.table.name accepted on Append against bare on-disk shape")
+      }
+    )
   }
 
   /**
@@ -184,36 +183,39 @@ class RunLegacyTableCompatTests extends RunOperationsBase {
    * that supplies a recordkey at write time must succeed (Fix 2a WARN) AND backfill the
    * recordkey to on-disk hoodie.properties via HoodieTableConfig.update (Fix 2b).
    */
-  def testAppendWithMissingOnDiskRecordKeyBackfills(): Unit = {
+  def testAppendWithMissingOnDiskRecordKeyBackfills(): Seq[Step] = {
     val tableName = "legacy_missing_recordkey_compat"
-    val basePath = getBasePath(tableName)
-    cleanup(tableName, basePath)
+    Seq(
 
-    try {
-      createHudiTableViaSql(tableName, basePath, includePrimaryKey = false)
+      Step("create legacy table via SparkSQL") { spark =>              // 0.14
+        val basePath = getBasePath(tableName)
+        cleanup(tableName, basePath)
+        createHudiTableViaSql(tableName, basePath, includePrimaryKey = false)
 
-      val seedTableConfig = buildMetaClient(basePath).getTableConfig
-      assert(seedTableConfig.getString(HoodieTableConfig.RECORDKEY_FIELDS) == null,
-        "test precondition: hoodie.table.recordkey.fields must be unset on disk after a CREATE TABLE without 'primaryKey'")
-      assert(seedTableConfig.getInt(HoodieTableConfig.VERSION) > 1,
-        "test precondition: table version must be > 1 for the recordkey check to fire")
-      log.info(s"On-disk after CREATE TABLE — hoodie.table.recordkey.fields=${seedTableConfig.getString(HoodieTableConfig.RECORDKEY_FIELDS)}, " +
-        s"hoodie.table.version=${seedTableConfig.getInt(HoodieTableConfig.VERSION)}")
+        val seedTableConfig = buildMetaClient(basePath).getTableConfig
+        assert(seedTableConfig.getString(HoodieTableConfig.RECORDKEY_FIELDS) == null,
+          "test precondition: hoodie.table.recordkey.fields must be unset on disk after a CREATE TABLE without 'primaryKey'")
+        assert(seedTableConfig.getInt(HoodieTableConfig.VERSION) > 1,
+          "test precondition: table version must be > 1 for the recordkey check to fire")
+        log.info(s"On-disk after CREATE TABLE — hoodie.table.recordkey.fields=${seedTableConfig.getString(HoodieTableConfig.RECORDKEY_FIELDS)}, " +
+          s"hoodie.table.version=${seedTableConfig.getInt(HoodieTableConfig.VERSION)}")
+      },
 
-      // Pre-fix this throws `Config conflict: RecordKey: uuid  null` from validateTableConfig.
-      // With Fix 2a + 2b, the writer succeeds and the recordkey is persisted to disk.
-      appendViaDataSource(tableName, basePath, recordKeyField = "uuid")
+      Step("append via DataSource and verify") { spark =>              // 1.2
+        val basePath = getBasePath(tableName)
+        // Pre-fix this throws `Config conflict: RecordKey: uuid  null` from validateTableConfig.
+        // With Fix 2a + 2b, the writer succeeds and the recordkey is persisted to disk.
+        appendViaDataSource(tableName, basePath, recordKeyField = "uuid")
 
-      val backfilledTableConfig = buildMetaClient(basePath).getTableConfig
-      val persistedRecordKey = backfilledTableConfig.getString(HoodieTableConfig.RECORDKEY_FIELDS)
-      assert(persistedRecordKey == "uuid",
-        s"hoodie.table.recordkey.fields should have been backfilled to 'uuid' on disk, was: $persistedRecordKey")
-      log.info(s"PASSED: backfilled hoodie.table.recordkey.fields=$persistedRecordKey on disk")
+        val backfilledTableConfig = buildMetaClient(basePath).getTableConfig
+        val persistedRecordKey = backfilledTableConfig.getString(HoodieTableConfig.RECORDKEY_FIELDS)
+        assert(persistedRecordKey == "uuid",
+          s"hoodie.table.recordkey.fields should have been backfilled to 'uuid' on disk, was: $persistedRecordKey")
+        log.info(s"PASSED: backfilled hoodie.table.recordkey.fields=$persistedRecordKey on disk")
 
-      runDataFrameReaderWithAsserts(DEFAULT_DATABASE, tableName, expectedVal = 20)
-    } finally {
-      cleanup(tableName, basePath)
-    }
+        runDataFrameReaderWithAsserts(DEFAULT_DATABASE, tableName, expectedVal = 20)
+      }
+    )
   }
 
   /**
@@ -223,25 +225,29 @@ class RunLegacyTableCompatTests extends RunOperationsBase {
    * `hoodie.table.name` AND a recordkey that is unset on disk. All three fix points must
    * cooperate (Fix 1 + handleSaveModes + Fix 2a + Fix 2b).
    */
-  def testAppendWithQualifiedNameAndMissingRecordKeyBothApply(): Unit = {
+  def testAppendWithQualifiedNameAndMissingRecordKeyBothApply(): Seq[Step] = {
     val tableName = "legacy_combined_compat"
-    val basePath = getBasePath(tableName)
-    cleanup(tableName, basePath)
+    Seq(
 
-    try {
-      createHudiTableViaSql(tableName, basePath, includePrimaryKey = false)
-      appendViaDataSource(tableName, basePath, recordKeyField = "uuid")
+      Step("create legacy table via SparkSQL") { spark =>              // 0.14
+        val basePath = getBasePath(tableName)
+        cleanup(tableName, basePath)
+        createHudiTableViaSql(tableName, basePath, includePrimaryKey = false)
+      },
 
-      val finalTableConfig = buildMetaClient(basePath).getTableConfig
-      assert(finalTableConfig.getString(HoodieTableConfig.NAME) == tableName,
-        s"on-disk hoodie.table.name should remain bare '$tableName', was: ${finalTableConfig.getString(HoodieTableConfig.NAME)}")
-      assert(finalTableConfig.getString(HoodieTableConfig.RECORDKEY_FIELDS) == "uuid",
-        s"hoodie.table.recordkey.fields should have been backfilled to 'uuid', was: ${finalTableConfig.getString(HoodieTableConfig.RECORDKEY_FIELDS)}")
-      runDataFrameReaderWithAsserts(DEFAULT_DATABASE, tableName, expectedVal = 20)
-      log.info("PASSED: combined qualified-name + missing-recordkey legacy compat")
-    } finally {
-      cleanup(tableName, basePath)
-    }
+      Step("append via DataSource and verify") { spark =>              // 1.2
+        val basePath = getBasePath(tableName)
+        appendViaDataSource(tableName, basePath, recordKeyField = "uuid")
+
+        val finalTableConfig = buildMetaClient(basePath).getTableConfig
+        assert(finalTableConfig.getString(HoodieTableConfig.NAME) == tableName,
+          s"on-disk hoodie.table.name should remain bare '$tableName', was: ${finalTableConfig.getString(HoodieTableConfig.NAME)}")
+        assert(finalTableConfig.getString(HoodieTableConfig.RECORDKEY_FIELDS) == "uuid",
+          s"hoodie.table.recordkey.fields should have been backfilled to 'uuid', was: ${finalTableConfig.getString(HoodieTableConfig.RECORDKEY_FIELDS)}")
+        runDataFrameReaderWithAsserts(DEFAULT_DATABASE, tableName, expectedVal = 20)
+        log.info("PASSED: combined qualified-name + missing-recordkey legacy compat")
+      }
+    )
   }
 
   /**

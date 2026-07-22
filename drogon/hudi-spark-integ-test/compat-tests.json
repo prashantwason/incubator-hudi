@@ -40,6 +40,33 @@
         {"name": "add columns",            "version": "0.14"},
         {"name": "verify evolved state",           "version": "0.14"}
       ]
+    },
+    {
+      "name": "legacy-qualified-name-compat",
+      "test_category": "hudi-legacy-table-compat",
+      "test_case": "testAppendWithQualifiedTableNameSucceeds",
+      "steps": [
+        {"name": "create legacy table via SparkSQL", "version": "0.14"},
+        {"name": "append via DataSource and verify",  "version": "1.2"}
+      ]
+    },
+    {
+      "name": "legacy-missing-recordkey-compat",
+      "test_category": "hudi-legacy-table-compat",
+      "test_case": "testAppendWithMissingOnDiskRecordKeyBackfills",
+      "steps": [
+        {"name": "create legacy table via SparkSQL", "version": "0.14"},
+        {"name": "append via DataSource and verify",  "version": "1.2"}
+      ]
+    },
+    {
+      "name": "legacy-combined-compat",
+      "test_category": "hudi-legacy-table-compat",
+      "test_case": "testAppendWithQualifiedNameAndMissingRecordKeyBothApply",
+      "steps": [
+        {"name": "create legacy table via SparkSQL", "version": "0.14"},
+        {"name": "append via DataSource and verify",  "version": "1.2"}
+      ]
     }
   ]
 }
