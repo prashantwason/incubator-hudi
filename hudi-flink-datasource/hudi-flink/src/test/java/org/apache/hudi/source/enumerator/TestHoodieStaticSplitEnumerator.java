@@ -21,6 +21,7 @@ package org.apache.hudi.source.enumerator;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.source.split.assign.HoodieSplitNumberAssigner;
 import org.apache.hudi.source.split.DefaultHoodieSplitProvider;
+import org.apache.hudi.source.split.GlobalHoodieSplitProvider;
 import org.apache.hudi.source.split.HoodieSourceSplit;
 import org.apache.hudi.source.split.SplitRequestEvent;
 
@@ -250,6 +251,52 @@ public class TestHoodieStaticSplitEnumerator {
     assertThrows(IllegalArgumentException.class,
         () -> enumerator.handleSourceEvent(0, unknownEvent),
         "Should throw IllegalArgumentException for unknown source event type");
+  }
+
+  @Test
+  public void testGlobalProviderWorkStealingAcrossSubtasks() {
+    // With the global work-stealing pool a single reader can drain every split — the enumerator no
+    // longer pins splits to a subtask. (DefaultHoodieSplitProvider with a number/hash assigner would
+    // hand most of these to other subtasks and starve reader 0.)
+    GlobalHoodieSplitProvider globalProvider = new GlobalHoodieSplitProvider();
+    HoodieStaticSplitEnumerator globalEnumerator =
+        new HoodieStaticSplitEnumerator("test-table", context, globalProvider);
+    globalProvider.onDiscoveredSplits(Arrays.asList(split1, split2, split3));
+    globalEnumerator.start();
+
+    context.registerReader(new ReaderInfo(0, "localhost"));
+    context.registerReader(new ReaderInfo(1, "localhost"));
+
+    // Reader 0 keeps finishing and asking for more; it takes all three splits by itself.
+    globalEnumerator.handleSplitRequest(0, "localhost");
+    globalEnumerator.handleSplitRequest(0, "localhost");
+    globalEnumerator.handleSplitRequest(0, "localhost");
+
+    assertEquals(3, context.getAssignedSplits().get(0).size(),
+        "A single reader should be able to steal the entire pool");
+    assertFalse(context.getNoMoreSplitsSignaled().contains(0),
+        "No-more-splits must not fire while the pool still had splits");
+  }
+
+  @Test
+  public void testGlobalProviderSignalsNoMoreSplitsOnlyWhenPoolEmpty() {
+    GlobalHoodieSplitProvider globalProvider = new GlobalHoodieSplitProvider();
+    HoodieStaticSplitEnumerator globalEnumerator =
+        new HoodieStaticSplitEnumerator("test-table", context, globalProvider);
+    globalProvider.onDiscoveredSplits(Arrays.asList(split1)); // only one split for two readers
+    globalEnumerator.start();
+
+    context.registerReader(new ReaderInfo(0, "localhost"));
+    context.registerReader(new ReaderInfo(1, "localhost"));
+
+    globalEnumerator.handleSplitRequest(0, "localhost"); // reader 0 takes the only split
+    globalEnumerator.handleSplitRequest(1, "localhost"); // reader 1 finds the shared pool empty
+
+    assertTrue(context.getAssignedSplits().containsKey(0), "Reader 0 should receive the split");
+    assertFalse(context.getNoMoreSplitsSignaled().contains(0),
+        "Reader 0 got a split, so it should not be told no-more-splits");
+    assertTrue(context.getNoMoreSplitsSignaled().contains(1),
+        "Reader 1 should be told no-more-splits once the shared pool is drained");
   }
 
   private HoodieSourceSplit createTestSplit(int splitNum, String fileId) {
