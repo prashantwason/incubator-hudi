@@ -58,12 +58,14 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.spark.SparkConf;
 import org.apache.spark.SparkContext;
 import org.apache.spark.api.java.JavaRDD;
 
 import java.io.Serializable;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
@@ -80,12 +82,48 @@ public class SparkRDDWriteClient<T> extends
 
   public SparkRDDWriteClient(HoodieEngineContext context, HoodieWriteConfig writeConfig,
                              Option<EmbeddedTimelineService> timelineService) {
-    super(context, writeConfig, timelineService, SparkUpgradeDowngradeHelper.getInstance());
-    DistributedRegistryUtil.createWrapperFileSystemRegistries(context, writeConfig);
-    this.tableServiceClient = new SparkRDDTableServiceClient<T>(context, writeConfig, getTimelineServer());
+    this(context, withSparkHoodieConfigs(context, writeConfig), timelineService, true);
+  }
+
+  private SparkRDDWriteClient(HoodieEngineContext context, HoodieWriteConfig enrichedConfig,
+                              Option<EmbeddedTimelineService> timelineService, boolean ignored) {
+    super(context, enrichedConfig, timelineService, SparkUpgradeDowngradeHelper.getInstance());
+    DistributedRegistryUtil.createWrapperFileSystemRegistries(context, enrichedConfig);
+    this.tableServiceClient = new SparkRDDTableServiceClient<T>(context, enrichedConfig, getTimelineServer());
     log.info("Final hudi write config: {}", this.config.getProps());
     checkSpeculativeExecution();
     blockWritesOnRegionIfRequired();
+  }
+
+  /**
+   * Translates spark.hoodie.* configs from SparkConf into hoodie.* configs,
+   * applying them as defaults (explicit hoodie.* configs in writeConfig take priority).
+   */
+  private static HoodieWriteConfig withSparkHoodieConfigs(HoodieEngineContext context, HoodieWriteConfig config) {
+    if (!(context instanceof HoodieSparkEngineContext)) {
+      return config;
+    }
+    SparkConf sparkConf = ((HoodieSparkEngineContext) context).getConf();
+    if (sparkConf == null) {
+      return config;
+    }
+    Properties props = new Properties();
+    props.putAll(config.getProps());
+    boolean added = false;
+    for (scala.Tuple2<String, String> entry : sparkConf.getAll()) {
+      String key = entry._1();
+      if (key.startsWith("spark.hoodie.")) {
+        String hoodieKey = key.substring("spark.".length());
+        if (!props.containsKey(hoodieKey)) {
+          props.setProperty(hoodieKey, entry._2());
+          added = true;
+        }
+      }
+    }
+    if (!added) {
+      return config;
+    }
+    return HoodieWriteConfig.newBuilder().withProperties(props).build();
   }
 
   @Override

@@ -43,6 +43,7 @@ import com.codahale.metrics.Counter;
 import com.codahale.metrics.Gauge;
 import com.codahale.metrics.MetricRegistry;
 import org.apache.avro.generic.GenericRecord;
+import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaRDD;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -441,5 +442,72 @@ class TestSparkRDDWriteClient extends SparkClientFunctionalTestHarness {
 
     clientWithoutIgnore.close();
     metrics2.shutdown();
+  }
+
+  @Test
+  public void testSparkHoodieConfigsAppliedToWriteClient() throws IOException {
+    // Use custom config keys that are NOT set by getConfigBuilder defaults
+    SparkConf sparkConf = jsc().sc().conf();
+    sparkConf.set("spark.hoodie.custom.test.config.one", "value1");
+    sparkConf.set("spark.hoodie.custom.test.config.two", "value2");
+
+    try {
+      HoodieTableMetaClient metaClient = getHoodieMetaClient(storageConf(), URI.create(basePath()).getPath(), new Properties());
+      HoodieWriteConfig writeConfig = getConfigBuilder(true)
+          .withPath(metaClient.getBasePath())
+          .build();
+
+      try (SparkRDDWriteClient<?> client = new SparkRDDWriteClient<>(context(), writeConfig)) {
+        Properties resultProps = client.getConfig().getProps();
+        assertEquals("value1", resultProps.getProperty("hoodie.custom.test.config.one"));
+        assertEquals("value2", resultProps.getProperty("hoodie.custom.test.config.two"));
+      }
+    } finally {
+      sparkConf.remove("spark.hoodie.custom.test.config.one");
+      sparkConf.remove("spark.hoodie.custom.test.config.two");
+    }
+  }
+
+  @Test
+  public void testExplicitHoodieConfigTakesPriorityOverSparkHoodieConfig() throws IOException {
+    SparkConf sparkConf = jsc().sc().conf();
+    // Set a spark.hoodie.* config that conflicts with an explicit config in getConfigBuilder
+    // getConfigBuilder sets hoodie.insert.shuffle.parallelism=2
+    sparkConf.set("spark.hoodie.insert.shuffle.parallelism", "500");
+
+    try {
+      HoodieTableMetaClient metaClient = getHoodieMetaClient(storageConf(), URI.create(basePath()).getPath(), new Properties());
+      HoodieWriteConfig writeConfig = getConfigBuilder(true)
+          .withPath(metaClient.getBasePath())
+          .build();
+
+      try (SparkRDDWriteClient<?> client = new SparkRDDWriteClient<>(context(), writeConfig)) {
+        // The explicit value (2) should win over the spark.hoodie.* value (500)
+        assertEquals("2", client.getConfig().getProps().getProperty("hoodie.insert.shuffle.parallelism"));
+      }
+    } finally {
+      sparkConf.remove("spark.hoodie.insert.shuffle.parallelism");
+    }
+  }
+
+  @Test
+  public void testSparkHoodieConfigsAppliedToTableServiceClient() throws IOException {
+    SparkConf sparkConf = jsc().sc().conf();
+    sparkConf.set("spark.hoodie.custom.test.tableservice.config", "ts-value");
+
+    try {
+      HoodieTableMetaClient metaClient = getHoodieMetaClient(storageConf(), URI.create(basePath()).getPath(), new Properties());
+      HoodieWriteConfig writeConfig = getConfigBuilder(true)
+          .withPath(metaClient.getBasePath())
+          .build();
+
+      try (SparkRDDWriteClient<?> client = new SparkRDDWriteClient<>(context(), writeConfig)) {
+        assertEquals("ts-value",
+            client.getTableServiceClient().getConfig().getProps()
+                .getProperty("hoodie.custom.test.tableservice.config"));
+      }
+    } finally {
+      sparkConf.remove("spark.hoodie.custom.test.tableservice.config");
+    }
   }
 }
