@@ -27,9 +27,7 @@ import org.apache.hudi.common.table.HoodieTableVersion
 import org.apache.hudi.common.table.timeline.versioning.TimelineLayoutVersion
 import org.apache.hudi.common.util.HoodieTimer
 import org.apache.hudi.exception.HoodieException
-import org.apache.hudi.hadoop.fs.HadoopFSUtils
 import org.apache.hudi.hive.{HiveStylePartitionValueExtractor, HiveSyncConfigHolder}
-import org.apache.hudi.hive.ddl.HiveSyncMode
 import org.apache.hudi.keygen.constant.KeyGeneratorOptions
 import org.apache.hudi.sync.common.HoodieSyncConfig
 
@@ -165,10 +163,7 @@ trait RunOperationsBase {
    * path so every Hudi table created via writeToHudiTable is validated.
    */
   def assertHoodieTableConfig(database: String, tableName: String, basePath: String): Unit = {
-    val metaClient = HoodieTableMetaClient.builder()
-      .setBasePath(basePath)
-      .setConf(HadoopFSUtils.getStorageConfWithCopy(spark.sparkContext.hadoopConfiguration))
-      .build()
+    val metaClient = VersionCompat.buildMetaClient(basePath, spark.sparkContext.hadoopConfiguration)
     val tableConfig = metaClient.getTableConfig
 
     assert(tableConfig.getTableName == tableName,
@@ -240,9 +235,12 @@ trait RunOperationsBase {
   }
 
   private def hiveSyncOptionsMap(enableSync: Boolean, database: String, tableName: String): Map[String, String] = {
+    // Version-dependent: 1.x supports HMS; the 0.14 bundle only supports HIVEQL/JDBC.
+    // Driven by the HIVE_SYNC_MODE Drogon var -> spark conf, defaulting to HMS.
+    val syncMode = spark.sparkContext.getConf.get("spark.hudi.integtest.hive.sync.mode", "HMS")
     Map[String, String](
       HiveSyncConfigHolder.HIVE_SYNC_ENABLED.key() -> String.valueOf(enableSync),
-      HiveSyncConfigHolder.HIVE_SYNC_MODE.key() -> HiveSyncMode.HMS.name(),
+      HiveSyncConfigHolder.HIVE_SYNC_MODE.key() -> syncMode,
       HoodieSyncConfig.META_SYNC_DATABASE_NAME.key() -> database,
       HoodieSyncConfig.META_SYNC_TABLE_NAME.key() -> tableName,
       HoodieSyncConfig.META_SYNC_PARTITION_FIELDS.key -> "partitionpath",

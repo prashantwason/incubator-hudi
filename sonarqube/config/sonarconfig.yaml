@@ -33,7 +33,7 @@ sonarqube:
     - "hudi-sync/hudi-adb-sync/**/*"
     - "hudi-sync/hudi-datahub-sync/**/*"
     - "hudi-spark-datasource/hudi-spark/src/main/resources/**"
-    - "hudi-spark-datasource/hudi-spark/src/main/scala/org/apache/spark/sql/hudi/runner/**"
+    - "hudi-spark-datasource/hudi-spark-integ-test/**/*"
     - "hudi-spark-datasource/hudi-spark2/**/*"
     - "hudi-spark-datasource/hudi-spark2-common/**/*"
     - "hudi-spark-datasource/hudi-spark3.0.x/**/*"

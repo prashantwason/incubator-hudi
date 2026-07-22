@@ -33,6 +33,7 @@
   <modules>
     <module>hudi-spark-common</module>
     <module>hudi-spark</module>
+    <module>hudi-spark-integ-test</module>
   </modules>
 
 </project>
