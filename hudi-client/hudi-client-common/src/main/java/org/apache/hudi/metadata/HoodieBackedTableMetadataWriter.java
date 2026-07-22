@@ -1051,7 +1051,7 @@ public abstract class HoodieBackedTableMetadataWriter<I, O> implements HoodieTab
   private HoodieTableMetaClient initializeMetaClient() throws IOException {
     HoodieTableMetaClient.newTableBuilder()
         .setTableType(HoodieTableType.MERGE_ON_READ)
-        .setTableName(dataWriteConfig.getTableName() + METADATA_TABLE_NAME_SUFFIX)
+        .setTableName(dataMetaClient.getTableConfig().getRawTableName() + METADATA_TABLE_NAME_SUFFIX)
         // MT version should match DT, such that same readers can read both.
         .setTableVersion(dataWriteConfig.getWriteVersion())
         .setArchiveLogFolder(getTimelineHistoryPath())

@@ -1290,6 +1290,15 @@ public class HoodieTableConfig extends HoodieConfig {
   }
 
   /**
+   * Returns the raw {@code hoodie.table.name} property value exactly as stored on disk,
+   * without stripping the database prefix. Use this when the verbatim on-disk value is
+   * needed (e.g. for deriving the metadata table name).
+   */
+  public String getRawTableName() {
+    return getString(NAME);
+  }
+
+  /**
    * Read the table name.
    *
    * Workaround: if the database property is unset and the stored table-name property is the
