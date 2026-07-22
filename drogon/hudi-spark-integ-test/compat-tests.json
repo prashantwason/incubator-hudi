@@ -1,0 +1,45 @@
+{
+  "_comment": [
+    "Cross-version Hudi compatibility scenarios, one entry per (test case, version pairing).",
+    "test_category + test_case address a step-based test-case method (returning Seq[Step]);",
+    "each step lists the Hudi version it runs on. Same version on every step = single-version run."
+  ],
+  "scenarios": [
+    {
+      "name": "add-columns-backward-compat",
+      "test_category": "hudi-schema-evolution",
+      "test_case": "testAddColumns",
+      "steps": [
+        {"name": "initial load",                   "version": "1.2"},
+        {"name": "verify initial state",           "version": "0.14"},
+        {"name": "reject missing-column write", "version": "1.2"},
+        {"name": "add columns",            "version": "1.2"},
+        {"name": "verify evolved state",           "version": "0.14"}
+      ]
+    },
+    {
+      "name": "add-columns-forward-compat",
+      "test_category": "hudi-schema-evolution",
+      "test_case": "testAddColumns",
+      "steps": [
+        {"name": "initial load",                   "version": "0.14"},
+        {"name": "verify initial state",           "version": "1.2"},
+        {"name": "reject missing-column write", "version": "0.14"},
+        {"name": "add columns",            "version": "0.14"},
+        {"name": "verify evolved state",           "version": "1.2"}
+      ]
+    },
+    {
+      "name": "add-columns-single-version",
+      "test_category": "hudi-schema-evolution",
+      "test_case": "testAddColumns",
+      "steps": [
+        {"name": "initial load",                   "version": "0.14"},
+        {"name": "verify initial state",           "version": "0.14"},
+        {"name": "reject missing-column write", "version": "0.14"},
+        {"name": "add columns",            "version": "0.14"},
+        {"name": "verify evolved state",           "version": "0.14"}
+      ]
+    }
+  ]
+}

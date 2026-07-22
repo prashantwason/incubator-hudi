@@ -21,8 +21,6 @@ package org.apache.spark.sql.hudi.runner
 import org.apache.hudi.DataSourceWriteOptions
 import org.apache.hudi.avro.AvroSchemaUtils
 import org.apache.hudi.common.config.HoodieCommonConfig
-import org.apache.hudi.common.table.{HoodieTableMetaClient, TableSchemaResolver}
-import org.apache.hudi.hadoop.fs.HadoopFSUtils
 import org.apache.hudi.hive.HiveSyncConfigHolder
 import org.apache.hudi.sync.common.HoodieSyncConfig
 
@@ -33,273 +31,293 @@ import org.slf4j.LoggerFactory
 
 import scala.collection.mutable
 
+/**
+ * Schema-evolution integration tests. Each test case returns an ordered `Seq[Step]`, so the
+ * runner can run one step at a time (each in its own Spark app against a chosen Hudi runtime)
+ * or the whole method in one app. State passes between steps only via the Hudi table on HDFS +
+ * HMS. Version-divergent APIs go through [[VersionCompat]] so one jar runs on both 0.14 and 1.x.
+ */
 class RunSchemaEvolutionTest extends RunOperationsBase {
   private val log = LoggerFactory.getLogger(getClass)
 
-  def testAddColumns(): Unit = {
-    val inputDf: DataFrame = generateSampleDf()
-    val database = getDatabase()
+  // --------------------------------------------------------------------------
+  // testAddColumns
+  // --------------------------------------------------------------------------
+  def testAddColumns(): Seq[Step] = {
     val tableName = "hudi_trips_add_cloumns_test"
-    val basePath = getBasePath(tableName)
-    cleanup(tableName, basePath)
+    Seq(
 
-    val optionsMap: mutable.Map[String, String] = getWriteConfigsAsMap()
-    writeToHudiTable(inputDf, database, tableName, SaveMode.Append, basePath, optionsMap)
-    runSqlQueryWithAsserts(database, tableName, true, 2)
-    val metaClient = HoodieTableMetaClient.builder()
-      .setBasePath(basePath)
-      .setConf(HadoopFSUtils.getStorageConfWithCopy(spark.sparkContext.hadoopConfiguration))
-      .build()
-    var schema: Schema = new TableSchemaResolver(metaClient).getTableSchema.getAvroSchema
-    log.info("Schema after writing the table: " + schema.toString(true))
-    assert(11 == schema.getFields.size())
+      Step("initial load") { spark =>                                  // writer
+        val basePath = getBasePath(tableName)
+        cleanup(tableName, basePath)
+        writeToHudiTable(generateSampleDf(), getDatabase(), tableName,
+          SaveMode.Append, basePath, writeConfigs())
+      },
 
-    // Add a new column by setting new column nullable to false this should fail.
-    val updateDf = inputDf.withColumn(
-      "phone",
-      when(col("name") === "Surya", "111-111-1111").
-        when(col("name") === "Prasanna", "222-222-2222").
-        otherwise("000-000-0000")
-    ).withColumn("address",
-      struct(
-        col("address.house_number"),
-        col("address.city"),
-        col("address.state"),
-        col("address.zipcode"),
-        when(col("address.state") === "CA", "USA")
-          .otherwise("Unknown")
-          .as("country")
-      )
+      Step("verify initial state") { spark =>                         // operate
+        runSqlQueryWithAsserts(getDatabase(), tableName, fullScan = true, expectedVal = 2)
+        val schema = tableAvroSchema(getBasePath(tableName))
+        log.info("Schema after initial load: " + schema.toString(true))
+        assert(schema.getFields.size() == 11,
+          s"expected 11 schema fields after initial load, got ${schema.getFields.size()}")
+      },
+
+      Step("reject missing-column write") { spark =>                  // writer
+        val opts = writeConfigs()
+        opts += HoodieCommonConfig.SET_NULL_FOR_MISSING_COLUMNS.key() -> "false"
+        // AssertionError (Error, not Exception) signals "should have failed" so
+        // it is NOT swallowed by the catch below.
+        try {
+          writeToHudiTable(withPhoneAndCountry(generateSampleDf()), getDatabase(), tableName,
+            SaveMode.Append, getBasePath(tableName), opts)
+          throw new AssertionError("Adding new column with set-null=false should have failed")
+        } catch {
+          case _: Exception => log.info("Adding new column with set-null=false failed as expected")
+        }
+      },
+
+      Step("add columns") { spark =>                                  // writer
+        val opts = writeConfigs()
+        opts += HoodieCommonConfig.SET_NULL_FOR_MISSING_COLUMNS.key() -> "true"
+        writeToHudiTable(withPhoneAndCountry(generateSampleDf()), getDatabase(), tableName,
+          SaveMode.Append, getBasePath(tableName), opts)
+      },
+
+      Step("verify evolved state") { spark =>                         // operate
+        runSqlQueryWithAsserts(getDatabase(), tableName, fullScan = true, expectedVal = 2)
+        val schema = tableAvroSchema(getBasePath(tableName))
+        log.info("Schema after evolution: " + schema.toString(true))
+        assert(schema.getFields.size() == 12,
+          s"expected 12 schema fields after adding column, got ${schema.getFields.size()}")
+      }
     )
-    optionsMap += HoodieCommonConfig.SET_NULL_FOR_MISSING_COLUMNS.key() -> "false"
-    try {
-      writeToHudiTable(updateDf, database, tableName, SaveMode.Append, basePath, optionsMap)
-      throw new AssertionError("Adding new column with non-nullable should have failed")
-    } catch {
-      case _: Exception =>
-        log.info("Adding new column with non-nullable failed as expected")
-    }
-    optionsMap += HoodieCommonConfig.SET_NULL_FOR_MISSING_COLUMNS.key() -> "true"
-    writeToHudiTable(updateDf, database, tableName, SaveMode.Append, basePath, optionsMap)
-    runSqlQueryWithAsserts(database, tableName, true, 2)
-    metaClient.reloadActiveTimeline()
-    schema = new TableSchemaResolver(metaClient).getTableSchema.getAvroSchema
-    log.info("Schema after writing the table: " + schema.toString(true))
-    assert(12 == schema.getFields.size())
   }
 
-  def testChangingRequiredColumnAsNullable(): Unit = {
-    val inputDf: DataFrame = generateSampleDf()
-    val database = getDatabase()
+  // --------------------------------------------------------------------------
+  // testChangingRequiredColumnAsNullable
+  // --------------------------------------------------------------------------
+  def testChangingRequiredColumnAsNullable(): Seq[Step] = {
     val tableName = "hudi_trips_columns_nullability_test"
-    val basePath = getBasePath(tableName)
-    cleanup(tableName, basePath)
+    Seq(
 
-    // Write data with datatype schema as non-nullable
-    val optionsMap: mutable.Map[String, String] = getWriteConfigsAsMap()
-    optionsMap += HoodieCommonConfig.SET_NULL_FOR_MISSING_COLUMNS.key() -> "false"
-    writeToHudiTable(inputDf, database, tableName, SaveMode.Append, basePath, optionsMap)
-    runSqlQueryWithAsserts(database, tableName, true, 2)
-    val metaClient = HoodieTableMetaClient.builder()
-      .setBasePath(basePath)
-      .setConf(HadoopFSUtils.getStorageConfWithCopy(spark.sparkContext.hadoopConfiguration))
-      .build()
-    var schema: Schema = new TableSchemaResolver(metaClient).getTableSchema.getAvroSchema
-    log.info("Schema after writing the table: " + schema.toString(true))
-    assert(11 == schema.getFields.size())
-    assert(schema.getFields.stream.filter(field => {
-      val fieldSchema = field.schema()
-      !AvroSchemaUtils.isNullable(fieldSchema)
-    }).count() > 0, "Atleast one column should be non-nullable")
+      Step("write non-nullable schema") { spark =>                    // writer
+        val basePath = getBasePath(tableName)
+        cleanup(tableName, basePath)
+        val opts = writeConfigs()
+        opts += HoodieCommonConfig.SET_NULL_FOR_MISSING_COLUMNS.key() -> "false"
+        writeToHudiTable(generateSampleDf(), getDatabase(), tableName, SaveMode.Append, basePath, opts)
+      },
 
-    // Write data with datatype schema as nullable and verify if the schema evolved.
-    val nullableDf: DataFrame = createNullableDataframe(inputDf)
-    writeToHudiTable(nullableDf, database, tableName, SaveMode.Append, basePath, optionsMap)
-    runSqlQueryWithAsserts(database, tableName, true, 2)
-    metaClient.reloadActiveTimeline()
-    schema = new TableSchemaResolver(metaClient).getTableSchema.getAvroSchema
-    log.info("Schema after writing the table: " + schema.toString(true))
-    assert(11 == schema.getFields.size())
-    // Check if all the columns are nullable or not
-    assert(schema.getFields.stream.filter(field => {
-      val fieldSchema = field.schema()
-      !AvroSchemaUtils.isNullable(fieldSchema)
-    }).count() == 0, "Atleast one column should be non-nullable")
+      Step("verify has non-nullable fields") { spark =>               // operate
+        runSqlQueryWithAsserts(getDatabase(), tableName, fullScan = true, expectedVal = 2)
+        val schema = tableAvroSchema(getBasePath(tableName))
+        assert(schema.getFields.size() == 11,
+          s"expected 11 schema fields, got ${schema.getFields.size()}")
+        assert(nonNullableFieldCount(schema) > 0, "at least one column should be non-nullable")
+      },
+
+      Step("write nullable schema") { spark =>                        // writer
+        val opts = writeConfigs()
+        opts += HoodieCommonConfig.SET_NULL_FOR_MISSING_COLUMNS.key() -> "false"
+        writeToHudiTable(createNullableDataframe(generateSampleDf()), getDatabase(), tableName,
+          SaveMode.Append, getBasePath(tableName), opts)
+      },
+
+      Step("verify all nullable") { spark =>                          // operate
+        runSqlQueryWithAsserts(getDatabase(), tableName, fullScan = true, expectedVal = 2)
+        val schema = tableAvroSchema(getBasePath(tableName))
+        assert(schema.getFields.size() == 11,
+          s"expected 11 schema fields, got ${schema.getFields.size()}")
+        assert(nonNullableFieldCount(schema) == 0, "all columns should be nullable")
+      }
+    )
   }
 
-  /**
-   * Tests all 4 combinations of SET_NULL_FOR_MISSING_COLUMNS and RECONCILE_SCHEMA when
-   * a column is dropped from the incoming batch.
-   *
-   * Expected behavior (post HUDI-7826, https://github.com/apache/hudi/pull/11381):
-   *
-   *   SET_NULL_FOR_MISSING_COLUMNS | RECONCILE_SCHEMA | Result
-   *   false                        | false            | FAIL  - missing column blocks write
-   *   true                         | false            | PASS  - missing column filled with null
-   *   false                        | true             | PASS  - reconciliation keeps all columns
-   *   true                         | true             | PASS  - both mechanisms allow it
-   *
-   * Prior to HUDI-7826 (v0.14), SET_NULL_FOR_MISSING_COLUMNS=true did NOT fill missing columns
-   * back into the reconciled schema, so only RECONCILE_SCHEMA=true allowed column drops.
-   */
-  def testBlockingColumnDeletionUsingReconcile(): Unit = {
-    var inputDf: DataFrame = generateSampleDf()
-    val database = getDatabase()
+  // --------------------------------------------------------------------------
+  // testBlockingColumnDeletionUsingReconcile
+  //
+  // Matrix of SET_NULL_FOR_MISSING_COLUMNS x RECONCILE_SCHEMA when a column is
+  // dropped from the incoming batch (post HUDI-7826):
+  //   set_null | reconcile | result
+  //   false    | false     | FAIL  (missing column blocks write)
+  //   true     | false     | PASS  (missing column filled with null)
+  //   false    | true      | PASS  (reconciliation keeps all columns)
+  //   true     | true      | PASS
+  // --------------------------------------------------------------------------
+  def testBlockingColumnDeletionUsingReconcile(): Seq[Step] = {
     val tableName = "hudi_trips_block_column_deletion_test"
-    val basePath = getBasePath(tableName)
-    cleanup(tableName, basePath)
-    val optionsMap: mutable.Map[String, String] = getWriteConfigsAsMap()
-    inputDf = createNullableDataframe(inputDf)
-    writeToHudiTable(inputDf, database, tableName, SaveMode.Append, basePath, optionsMap)
-    runSqlQueryWithAsserts(database, tableName, true, 2)
-    val metaClient = HoodieTableMetaClient.builder()
-      .setBasePath(basePath)
-      .setConf(HadoopFSUtils.getStorageConfWithCopy(spark.sparkContext.hadoopConfiguration))
-      .build()
-    var schema: Schema = new TableSchemaResolver(metaClient).getTableSchema.getAvroSchema
-    log.info("Schema after writing the table: " + schema.toString(true))
-    val sqlStr = s"select * from $database.$tableName where dt is null"
-    var rowCount = spark.sql(sqlStr).count()
-    assert(rowCount == 0, "Row count should be 0 as dt is not null")
-
-    val updateDf = inputDf.drop("dt")
-
-    // Case 1: SET_NULL=false, RECONCILE=false -> FAIL (column drop blocked)
-    log.info("Case 1: SET_NULL=false, RECONCILE=false -> expect FAIL")
-    optionsMap += HoodieCommonConfig.SET_NULL_FOR_MISSING_COLUMNS.key() -> "false"
-    optionsMap += HoodieCommonConfig.RECONCILE_SCHEMA.key() -> "false"
-    var case1Failed = false
-    try {
-      writeToHudiTable(updateDf, database, tableName, SaveMode.Append, basePath, optionsMap)
-    } catch {
-      case _: Exception =>
-        case1Failed = true
-        log.info("Case 1 PASSED: Column deletion correctly blocked")
+    def dtNullCount(): Long =
+      spark.sql(s"select * from ${getDatabase()}.$tableName where dt is null").count()
+    def writeDroppingDt(setNull: String, reconcile: String): Unit = {
+      val opts = writeConfigs()
+      opts += HoodieCommonConfig.SET_NULL_FOR_MISSING_COLUMNS.key() -> setNull
+      opts += HoodieCommonConfig.RECONCILE_SCHEMA.key() -> reconcile
+      writeToHudiTable(createNullableDataframe(generateSampleDf()).drop("dt"), getDatabase(), tableName,
+        SaveMode.Append, getBasePath(tableName), opts)
     }
-    assert(case1Failed, "Case 1: Deleting a column should have failed with SET_NULL=false, RECONCILE=false")
+    Seq(
 
-    // Case 2: SET_NULL=true, RECONCILE=false -> PASS (HUDI-7826: missing column filled with null)
-    log.info("Case 2: SET_NULL=true, RECONCILE=false -> expect PASS")
-    optionsMap += HoodieCommonConfig.SET_NULL_FOR_MISSING_COLUMNS.key() -> "true"
-    optionsMap += HoodieCommonConfig.RECONCILE_SCHEMA.key() -> "false"
-    writeToHudiTable(updateDf, database, tableName, SaveMode.Append, basePath, optionsMap)
-    runSqlQueryWithAsserts(database, tableName, true, 2)
-    metaClient.reloadActiveTimeline()
-    schema = new TableSchemaResolver(metaClient).getTableSchema.getAvroSchema
-    log.info("Case 2 PASSED: Schema after write: " + schema.toString(true))
-    rowCount = spark.sql(sqlStr).count()
-    assert(rowCount == 2, "Case 2: Row count should be 2 as dt is filled with null")
+      Step("write with dt column") { spark =>                         // writer
+        val basePath = getBasePath(tableName)
+        cleanup(tableName, basePath)
+        writeToHudiTable(createNullableDataframe(generateSampleDf()), getDatabase(), tableName,
+          SaveMode.Append, basePath, writeConfigs())
+      },
 
-    // Reset table for cases 3 and 4
-    cleanup(tableName, basePath)
-    writeToHudiTable(inputDf, database, tableName, SaveMode.Append, basePath, optionsMap)
-    runSqlQueryWithAsserts(database, tableName, true, 2)
+      Step("verify dt not null") { spark =>                           // operate
+        runSqlQueryWithAsserts(getDatabase(), tableName, fullScan = true, expectedVal = 2)
+        assert(dtNullCount() == 0, "row count should be 0 as dt is not null")
+      },
 
-    // Case 3: SET_NULL=false, RECONCILE=true -> PASS (reconciliation keeps all columns)
-    log.info("Case 3: SET_NULL=false, RECONCILE=true -> expect PASS")
-    optionsMap += HoodieCommonConfig.SET_NULL_FOR_MISSING_COLUMNS.key() -> "false"
-    optionsMap += HoodieCommonConfig.RECONCILE_SCHEMA.key() -> "true"
-    writeToHudiTable(updateDf, database, tableName, SaveMode.Append, basePath, optionsMap)
-    runSqlQueryWithAsserts(database, tableName, true, 2)
-    metaClient.reloadActiveTimeline()
-    schema = new TableSchemaResolver(metaClient).getTableSchema.getAvroSchema
-    log.info("Case 3 PASSED: Schema after write: " + schema.toString(true))
+      Step("case1 reject drop (set_null=false, reconcile=false)") { spark =>   // writer
+        try {
+          writeDroppingDt(setNull = "false", reconcile = "false")
+          throw new AssertionError("Case 1: column drop should have failed")
+        } catch {
+          case _: Exception => log.info("Case 1 PASSED: column deletion correctly blocked")
+        }
+      },
 
-    // Case 4: SET_NULL=true, RECONCILE=true -> PASS (both mechanisms allow it)
-    log.info("Case 4: SET_NULL=true, RECONCILE=true -> expect PASS")
-    optionsMap += HoodieCommonConfig.SET_NULL_FOR_MISSING_COLUMNS.key() -> "true"
-    optionsMap += HoodieCommonConfig.RECONCILE_SCHEMA.key() -> "true"
-    writeToHudiTable(updateDf, database, tableName, SaveMode.Append, basePath, optionsMap)
-    runSqlQueryWithAsserts(database, tableName, true, 2)
-    metaClient.reloadActiveTimeline()
-    schema = new TableSchemaResolver(metaClient).getTableSchema.getAvroSchema
-    log.info("Case 4 PASSED: Schema after write: " + schema.toString(true))
-    rowCount = spark.sql(sqlStr).count()
-    assert(rowCount == 2, "Case 4: Row count should be 2 as dt is filled with null")
+      Step("case2 fill null (set_null=true, reconcile=false)") { spark =>      // writer
+        writeDroppingDt(setNull = "true", reconcile = "false")
+      },
+
+      Step("verify case2 dt filled null") { spark =>                  // operate
+        runSqlQueryWithAsserts(getDatabase(), tableName, fullScan = true, expectedVal = 2)
+        assert(dtNullCount() == 2, "Case 2: row count should be 2 as dt is filled with null")
+      },
+
+      Step("reset table") { spark =>                                  // writer
+        val basePath = getBasePath(tableName)
+        cleanup(tableName, basePath)
+        writeToHudiTable(createNullableDataframe(generateSampleDf()), getDatabase(), tableName,
+          SaveMode.Append, basePath, writeConfigs())
+      },
+
+      Step("case3 reconcile (set_null=false, reconcile=true)") { spark =>      // writer
+        writeDroppingDt(setNull = "false", reconcile = "true")
+      },
+
+      Step("case4 both (set_null=true, reconcile=true)") { spark =>            // writer
+        writeDroppingDt(setNull = "true", reconcile = "true")
+      },
+
+      Step("verify case4 dt filled null") { spark =>                  // operate
+        runSqlQueryWithAsserts(getDatabase(), tableName, fullScan = true, expectedVal = 2)
+        assert(dtNullCount() == 2, "Case 4: row count should be 2 as dt is filled with null")
+      }
+    )
   }
 
-  def testSparkSqlProviderConfigInHMS(): Unit = {
-    val inputDf: DataFrame = generateSampleDf()
-    val database = getDatabase()
+  // --------------------------------------------------------------------------
+  // testSparkSqlProviderConfigInHMS
+  // --------------------------------------------------------------------------
+  def testSparkSqlProviderConfigInHMS(): Seq[Step] = {
     val tableName = "hudi_trips_spark_sql_provider_test"
-    val basePath = getBasePath(tableName)
-    cleanup(tableName, basePath)
+    def phonePresent(): Boolean =
+      spark.sql(s"select * from ${getDatabase()}.$tableName").schema.fieldNames.contains("phone")
+    Seq(
 
-    // Write data with datatype schema as non-nullable
-    val optionsMap: mutable.Map[String, String] = getWriteConfigsAsMap()
-    optionsMap += HiveSyncConfigHolder.HIVE_SYNC_AS_DATA_SOURCE_TABLE.key() -> "true"
-    writeToHudiTable(inputDf, database, tableName, SaveMode.Append, basePath, optionsMap)
-    runSqlQueryWithAsserts(database, tableName, true, 2)
+      Step("write as data source table") { spark =>                   // writer
+        val basePath = getBasePath(tableName)
+        cleanup(tableName, basePath)
+        val opts = writeConfigs()
+        opts += HiveSyncConfigHolder.HIVE_SYNC_AS_DATA_SOURCE_TABLE.key() -> "true"
+        writeToHudiTable(generateSampleDf(), getDatabase(), tableName, SaveMode.Append, basePath, opts)
+      },
 
-    optionsMap += HiveSyncConfigHolder.HIVE_SYNC_AS_DATA_SOURCE_TABLE.key() -> "false"
-    var updateDf = inputDf.withColumn(
-      "phone",
-      when(col("name") === "Surya", "111-111-1111").
-        when(col("name") === "Prasanna", "222-222-2222").
-        otherwise("000-000-0000")
+      Step("verify initial state") { spark =>                         // operate
+        runSqlQueryWithAsserts(getDatabase(), tableName, fullScan = true, expectedVal = 2)
+      },
+
+      Step("write non-datasource table with phone") { spark =>        // writer
+        val opts = writeConfigs()
+        opts += HiveSyncConfigHolder.HIVE_SYNC_AS_DATA_SOURCE_TABLE.key() -> "false"
+        val updateDf = addNullablePhone(generateSampleDf(), "111-111-1111", "222-222-2222", "000-000-0000")
+        writeToHudiTable(updateDf, getDatabase(), tableName, SaveMode.Append, getBasePath(tableName), opts)
+      },
+
+      Step("verify phone visibility (informational)") { spark =>      // operate
+        runSqlQueryWithAsserts(getDatabase(), tableName, fullScan = true, expectedVal = 2)
+        // HMS schema is always synced regardless of HIVE_SYNC_AS_DATA_SOURCE_TABLE,
+        // so this is informational, not asserted.
+        log.info("phone present after non-datasource write? " + phonePresent())
+      },
+
+      Step("write data source table with phone") { spark =>           // writer
+        val opts = writeConfigs()
+        opts += HiveSyncConfigHolder.HIVE_SYNC_AS_DATA_SOURCE_TABLE.key() -> "true"
+        val updateDf = addNullablePhone(generateSampleDf(), "111-111-1112", "222-222-2223", "000-000-0001")
+        writeToHudiTable(updateDf, getDatabase(), tableName, SaveMode.Append, getBasePath(tableName), opts)
+      },
+
+      Step("verify phone synced as data source table") { spark =>     // operate
+        runSqlQueryWithAsserts(getDatabase(), tableName, fullScan = true, expectedVal = 2)
+        assert(phonePresent(),
+          "'phone' should be part of the schema via spark.sql.sources.schema.part.* config")
+      }
     )
-    updateDf = spark.createDataFrame(updateDf.rdd, updateDf.schema.asNullable)
-    writeToHudiTable(updateDf, database, tableName, SaveMode.Append, basePath, optionsMap)
-    runSqlQueryWithAsserts(database, tableName, true, 2)
-    val sqlStr = s"select * from $database.$tableName"
-    // Note: In current Hudi versions, HMS schema is always updated regardless of HIVE_SYNC_AS_DATA_SOURCE_TABLE
-    // The setting only controls whether Spark DataSource properties are synced, not the schema itself
-    // So the "phone" column will be visible even when syncing as a regular Hive table
-    spark.sql(sqlStr).schema.fieldNames.contains("phone") match {
-      case true => log.info("Schema is updated in HMS (HMS schema is always synced regardless of HIVE_SYNC_AS_DATA_SOURCE_TABLE)")
-      case false => log.info("Schema is not yet visible in query")
-    }
-
-    // Sync table as data source table.
-    optionsMap += HiveSyncConfigHolder.HIVE_SYNC_AS_DATA_SOURCE_TABLE.key() -> "true"
-    updateDf = inputDf.withColumn(
-      "phone",
-      when(col("name") === "Surya", "111-111-1112").
-        when(col("name") === "Prasanna", "222-222-2223").
-        otherwise("000-000-0001")
-    )
-    updateDf = spark.createDataFrame(updateDf.rdd, updateDf.schema.asNullable)
-    writeToHudiTable(updateDf, database, tableName, SaveMode.Append, basePath, optionsMap)
-    runSqlQueryWithAsserts(database, tableName, true, 2)
-    spark.sql(sqlStr).schema.fieldNames.contains("phone") match {
-      case true => log.info("Schema is updated as part of spark.sql.sources.schema.part.* config "
-        + "so 'phone' field should be part of the schema")
-      case false => throw new AssertionError("Schema is not updated as part "
-        + "spark.sql.sources.schema.part.* config, so failing the assertion")
-    }
   }
 
-  private def createNullableDataframe(updateDf: DataFrame) = {
-    val nullableSchema = updateDf.schema.asNullable
-    val nullableDf = spark.createDataFrame(updateDf.rdd, nullableSchema)
-    nullableDf
+  // --------------------------------------------------------------------------
+  // Helpers (Spark-dependent — only called inside step bodies)
+  // --------------------------------------------------------------------------
+
+  private def tableAvroSchema(basePath: String): Schema = {
+    val metaClient = VersionCompat.buildMetaClient(basePath, spark.sparkContext.hadoopConfiguration)
+    VersionCompat.tableAvroSchema(metaClient)
   }
 
-  private def generateSampleDf(): DataFrame = {
-    val inputDf = spark.sql(
-      """
-      SELECT 1 AS id, 'Surya' AS name,
-       struct(
-       123 as house_number,
-       'Mountain View' as city,
-       'CA' as state,
-       '94043' as zipcode
-       ) as address,
-       10 AS price, 100 AS dt, '2025-05-06' AS datestr
-      UNION ALL
-      SELECT 2 AS id, 'Prasanna' AS name,
-      struct(
-        456 as house_number,
-        'Los Angeles' as city,
-        'CA' as state,
-        '90038' as zipcode
-      ) as address,
-      15 AS price, 200 AS dt, '2025-05-06' AS datestr
-      """)
-    inputDf
+  private def nonNullableFieldCount(schema: Schema): Long =
+    schema.getFields.stream().filter(f => !AvroSchemaUtils.isNullable(f.schema())).count()
+
+  /** Adds a top-level `phone` column and a nested `address.country` field. */
+  private def withPhoneAndCountry(df: DataFrame): DataFrame =
+    df.withColumn("phone",
+      when(col("name") === "Surya", "111-111-1111")
+        .when(col("name") === "Prasanna", "222-222-2222")
+        .otherwise("000-000-0000"))
+      .withColumn("address",
+        struct(
+          col("address.house_number"),
+          col("address.city"),
+          col("address.state"),
+          col("address.zipcode"),
+          when(col("address.state") === "CA", "USA").otherwise("Unknown").as("country")))
+
+  private def addNullablePhone(df: DataFrame, surya: String, prasanna: String, other: String): DataFrame = {
+    val withPhone = df.withColumn("phone",
+      when(col("name") === "Surya", surya)
+        .when(col("name") === "Prasanna", prasanna)
+        .otherwise(other))
+    spark.createDataFrame(withPhone.rdd, withPhone.schema.asNullable)
   }
 
-  private def getWriteConfigsAsMap(): mutable.Map[String, String] = {
+  private def createNullableDataframe(df: DataFrame): DataFrame =
+    spark.createDataFrame(df.rdd, df.schema.asNullable)
+
+  private def generateSampleDf(): DataFrame = spark.sql(
+    """
+    SELECT 1 AS id, 'Surya' AS name,
+     struct(
+     123 as house_number,
+     'Mountain View' as city,
+     'CA' as state,
+     '94043' as zipcode
+     ) as address,
+     10 AS price, 100 AS dt, '2025-05-06' AS datestr
+    UNION ALL
+    SELECT 2 AS id, 'Prasanna' AS name,
+    struct(
+      456 as house_number,
+      'Los Angeles' as city,
+      'CA' as state,
+      '90038' as zipcode
+    ) as address,
+    15 AS price, 200 AS dt, '2025-05-06' AS datestr
+    """)
+
+  private def writeConfigs(): mutable.Map[String, String] = {
     val optionsMap = mutable.Map[String, String]()
     optionsMap += DataSourceWriteOptions.RECORDKEY_FIELD.key() -> "id"
     optionsMap += DataSourceWriteOptions.PARTITIONPATH_FIELD.key() -> "datestr"
@@ -307,7 +325,6 @@ class RunSchemaEvolutionTest extends RunOperationsBase {
     optionsMap += HoodieCommonConfig.SET_NULL_FOR_MISSING_COLUMNS.key() -> "true"
     optionsMap += DataSourceWriteOptions.OPERATION.key -> DataSourceWriteOptions.UPSERT_OPERATION_OPT_VAL
     optionsMap += HoodieSyncConfig.META_SYNC_PARTITION_FIELDS.key -> "datestr"
-    log.info("Options map: " + optionsMap)
     optionsMap
   }
 }
