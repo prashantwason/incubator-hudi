@@ -30,6 +30,7 @@
     <checkstyle.skip>true</checkstyle.skip>
     <main.basedir>${project.parent.basedir}</main.basedir>
     <skipTests>true</skipTests>
+    <authfx.version>0.2.1-192930-d4cd9553fc43-java-monorepo</authfx.version>
   </properties>
 
   <build>
@@ -155,6 +156,10 @@
                   <include>io.prometheus:simpleclient_common</include>
                   <include>com.uber.m3:tally-m3</include>
                   <include>com.uber.m3:tally-core</include>
+                  <!-- Auth dependency and its key transitive dependencies -->
+                  <include>com.uber.engsec:*</include>
+                  <!-- Explicitly include proto artifact to override any exclusions -->
+                  <include>com.uber.engsec.auth:*</include>
                   <include>org.apache.spark:spark-streaming-kafka-0-10_${scala.binary.version}</include>
                   <include>org.apache.spark:spark-token-provider-kafka-0-10_${scala.binary.version}</include>
                   <include>org.apache.kafka:kafka_${scala.binary.version}</include>
@@ -247,6 +252,11 @@
                   <pattern>com.uber.m3.</pattern>
                   <shadedPattern>org.apache.hudi.com.uber.m3.</shadedPattern>
                 </relocation>
+                <!-- Auth dependency relocations -->
+                <relocation>
+                  <pattern>com.uber.engsec.</pattern>
+                  <shadedPattern>org.apache.hudi.com.uber.engsec.</shadedPattern>
+                </relocation>
               </relocations>
               <filters>
                 <filter>
@@ -305,6 +315,20 @@
       <groupId>org.apache.hudi</groupId>
       <artifactId>hudi-uber</artifactId>
       <version>${project.version}</version>
+    </dependency>
+
+    <!-- Auth dependency (used by hudi-replication's HoodieHttpClient for UToken auth) -->
+    <dependency>
+      <groupId>com.uber.engsec</groupId>
+      <artifactId>auth</artifactId>
+      <version>${authfx.version}</version>
+      <scope>compile</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>ch.qos.logback</groupId>
+          <artifactId>logback-classic</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
 
     <!-- Parquet -->
