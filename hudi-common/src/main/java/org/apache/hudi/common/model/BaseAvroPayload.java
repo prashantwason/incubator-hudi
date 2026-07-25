@@ -42,7 +42,7 @@ public abstract class BaseAvroPayload implements Serializable, KryoSerializable 
   /**
    * Avro data extracted from the source converted to bytes.
    */
-  private byte[] recordBytes;
+  protected byte[] recordBytes;
 
   /**
    * For purposes of preCombining.
