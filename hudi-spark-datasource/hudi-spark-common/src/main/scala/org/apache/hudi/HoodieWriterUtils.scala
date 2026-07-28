@@ -353,10 +353,10 @@ object HoodieWriterUtils {
         // in hoodie.properties stores "col,ts".
         // The "params" here may only contain the write config of partition path field,
         // so we need to pass in the validated key generator class name.
-        val validatedKeyGenClassName = if (tableConfigKeyGen != null) {
-          Option(tableConfigKeyGen)
-        } else if (datasourceKeyGen != null) {
+        val validatedKeyGenClassName = if (datasourceKeyGen != null) {
           Option(datasourceKeyGen)
+        } else if (tableConfigKeyGen != null) {
+          Option(tableConfigKeyGen)
         } else {
           None
         }
