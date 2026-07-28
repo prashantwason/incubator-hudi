@@ -6,7 +6,7 @@
 """
 Orchestrate a cross-version Hudi compatibility scenario.
 
-Reads drogon/hudi-spark-integ-test/compat-tests.json, and for the named
+Reads drogon/hudi-spark-integ-test/compat-tests-from-0.14-to-1.2.json, and for the named
 scenario submits ONE Drogon job per step, selecting each step's Hudi runtime by
 the bundle on --jars. State survives between steps only via the Hudi table on
 HDFS + HMS (each step is a fresh Spark app / JVM).
@@ -39,7 +39,7 @@ VERSION_MAP = {
 }
 DEFAULT_CONFIG = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "drogon", "hudi-spark-integ-test", "compat-tests.json")
+    "drogon", "hudi-spark-integ-test", "compat-tests-from-0.14-to-1.2.json")
 
 
 def load_scenario(config_path, name):
@@ -81,7 +81,7 @@ def step_env(version, test_category, test_case, idx, db):
 
 def main():
     ap = argparse.ArgumentParser(description="Run a cross-version Hudi compat scenario.")
-    ap.add_argument("scenario", help="scenario name from compat-tests.json")
+    ap.add_argument("scenario", help="scenario name from compat-tests-from-0.14-to-1.2.json")
     ap.add_argument("--config", default=DEFAULT_CONFIG)
     ap.add_argument("--db-prefix", default="huditmp",
                     help="HMS database used as-is for every step (no suffix); both "

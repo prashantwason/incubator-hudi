@@ -17,9 +17,6 @@
 
 package org.apache.spark.sql.hudi.runner
 
-import org.apache.hudi.common.table.HoodieTableMetaClient
-import org.apache.hudi.hadoop.fs.HadoopFSUtils
-
 import org.apache.spark.sql.SaveMode
 import org.slf4j.LoggerFactory
 
@@ -33,6 +30,12 @@ import scala.collection.JavaConverters._
  *   - SHOW INDEXES
  *   - REFRESH INDEX (currently a no-op; test guards the dispatch path)
  *
+ * Index DDL is 1.x-only (there is no 0.14 SQL counterpart), so the happy-path cases return an
+ * ordered `Seq[Step]`: 0.14 natively writes the base dataset, 1.2 builds/verifies the index, and
+ * 0.14 reads back afterward. The cross-version value is confirming 1.2 can index a 0.14-produced
+ * table and that 0.14 still reads it once an MDT/index partition exists. The negative cases stay
+ * plain `Unit` methods — they assert version-insensitive analyzer/error messages.
+ *
  * Each test creates its own table to keep methods order-independent.
  */
 class RunHudiIndexDDL extends RunOperationsBase {
@@ -42,70 +45,121 @@ class RunHudiIndexDDL extends RunOperationsBase {
   // -------- happy-path tests --------
 
   /** CREATE INDEX with empty index-type and columns equal to record-key resolves to record_index. */
-  def testCreateAndDropRecordIndex(): Unit = {
+  def testCreateAndDropRecordIndex(): Seq[Step] = {
     val tableName = "hudi_index_ddl_record_index"
-    val basePath = getBasePath(tableName)
-    cleanup(tableName, basePath)
-    createBaseTable(tableName)
+    Seq(
 
-    spark.sql(s"CREATE INDEX record_index ON $DEFAULT_DATABASE.$tableName (uuid)")
-    assertIndexExists(DEFAULT_DATABASE, tableName, "record_index")
-    assertMetadataPartition(basePath, "record_index")
+      Step("create base table") { spark =>
+        val basePath = getBasePath(tableName)
+        cleanup(tableName, basePath)
+        createBaseTable(tableName)
+      },
 
-    spark.sql(s"DROP INDEX record_index ON $DEFAULT_DATABASE.$tableName")
-    assertIndexAbsent(DEFAULT_DATABASE, tableName, "record_index")
-    log.info("testCreateAndDropRecordIndex passed")
+      Step("create record_index and verify") { spark =>
+        val basePath = getBasePath(tableName)
+        spark.sql(s"CREATE INDEX record_index ON $DEFAULT_DATABASE.$tableName (uuid)")
+        assertIndexExists(DEFAULT_DATABASE, tableName, "record_index")
+        assertMetadataPartition(basePath, "record_index")
+      },
+
+      Step("verify base rows readable") { spark =>
+        runDataFrameReaderWithAsserts(DEFAULT_DATABASE, tableName, expectedVal = 20)
+      },
+
+      Step("drop record_index and verify") { spark =>
+        spark.sql(s"DROP INDEX record_index ON $DEFAULT_DATABASE.$tableName")
+        assertIndexAbsent(DEFAULT_DATABASE, tableName, "record_index")
+        log.info("testCreateAndDropRecordIndex passed")
+      }
+    )
   }
 
   /**
    * CREATE INDEX with empty index-type on a non-record-key column resolves to secondary_index.
    * Requires record_index to exist first.
    */
-  def testCreateAndDropSecondaryIndex(): Unit = {
+  def testCreateAndDropSecondaryIndex(): Seq[Step] = {
     val tableName = "hudi_index_ddl_secondary_index"
-    val basePath = getBasePath(tableName)
     val partitionName = "secondary_index_idx_rider"
-    cleanup(tableName, basePath)
-    createBaseTable(tableName)
+    Seq(
 
-    spark.sql(s"CREATE INDEX record_index ON $DEFAULT_DATABASE.$tableName (uuid)")
-    spark.sql(s"CREATE INDEX idx_rider ON $DEFAULT_DATABASE.$tableName (rider)")
-    assertIndexExists(DEFAULT_DATABASE, tableName, partitionName)
+      Step("create base table") { spark =>
+        val basePath = getBasePath(tableName)
+        cleanup(tableName, basePath)
+        createBaseTable(tableName)
+      },
 
-    spark.sql(s"DROP INDEX idx_rider ON $DEFAULT_DATABASE.$tableName")
-    assertIndexAbsent(DEFAULT_DATABASE, tableName, partitionName)
-    log.info("testCreateAndDropSecondaryIndex passed")
+      Step("create secondary index and verify") { spark =>
+        spark.sql(s"CREATE INDEX record_index ON $DEFAULT_DATABASE.$tableName (uuid)")
+        spark.sql(s"CREATE INDEX idx_rider ON $DEFAULT_DATABASE.$tableName (rider)")
+        assertIndexExists(DEFAULT_DATABASE, tableName, partitionName)
+      },
+
+      Step("verify base rows readable") { spark =>
+        runDataFrameReaderWithAsserts(DEFAULT_DATABASE, tableName, expectedVal = 20)
+      },
+
+      Step("drop secondary index and verify") { spark =>
+        spark.sql(s"DROP INDEX idx_rider ON $DEFAULT_DATABASE.$tableName")
+        assertIndexAbsent(DEFAULT_DATABASE, tableName, partitionName)
+        log.info("testCreateAndDropSecondaryIndex passed")
+      }
+    )
   }
 
   /** CREATE INDEX USING column_stats with expr=lower exercises the expression-index branch. */
-  def testCreateAndDropColumnStatsExpressionIndex(): Unit = {
+  def testCreateAndDropColumnStatsExpressionIndex(): Seq[Step] = {
     val tableName = "hudi_index_ddl_expr_index"
-    val basePath = getBasePath(tableName)
     val partitionName = "expr_index_idx_lower_rider"
-    cleanup(tableName, basePath)
-    createBaseTable(tableName)
+    Seq(
 
-    spark.sql(
-      s"""CREATE INDEX idx_lower_rider ON $DEFAULT_DATABASE.$tableName
-         |USING column_stats(rider) OPTIONS(expr='lower')""".stripMargin)
-    assertIndexExists(DEFAULT_DATABASE, tableName, partitionName)
+      Step("create base table") { spark =>
+        val basePath = getBasePath(tableName)
+        cleanup(tableName, basePath)
+        createBaseTable(tableName)
+      },
 
-    spark.sql(s"DROP INDEX idx_lower_rider ON $DEFAULT_DATABASE.$tableName")
-    assertIndexAbsent(DEFAULT_DATABASE, tableName, partitionName)
-    log.info("testCreateAndDropColumnStatsExpressionIndex passed")
+      Step("create expression index and verify") { spark =>
+        spark.sql(
+          s"""CREATE INDEX idx_lower_rider ON $DEFAULT_DATABASE.$tableName
+             |USING column_stats(rider) OPTIONS(expr='lower')""".stripMargin)
+        assertIndexExists(DEFAULT_DATABASE, tableName, partitionName)
+      },
+
+      Step("verify base rows readable") { spark =>
+        runDataFrameReaderWithAsserts(DEFAULT_DATABASE, tableName, expectedVal = 20)
+      },
+
+      Step("drop expression index and verify") { spark =>
+        spark.sql(s"DROP INDEX idx_lower_rider ON $DEFAULT_DATABASE.$tableName")
+        assertIndexAbsent(DEFAULT_DATABASE, tableName, partitionName)
+        log.info("testCreateAndDropColumnStatsExpressionIndex passed")
+      }
+    )
   }
 
   /** REFRESH INDEX dispatches to RefreshIndexCommand (currently a no-op). Guards the parse + dispatch path. */
-  def testRefreshIndex(): Unit = {
+  def testRefreshIndex(): Seq[Step] = {
     val tableName = "hudi_index_ddl_refresh_index"
-    val basePath = getBasePath(tableName)
-    cleanup(tableName, basePath)
-    createBaseTable(tableName)
+    Seq(
 
-    spark.sql(s"CREATE INDEX record_index ON $DEFAULT_DATABASE.$tableName (uuid)")
-    // Should return without throwing; current implementation is Seq.empty.
-    spark.sql(s"REFRESH INDEX record_index ON $DEFAULT_DATABASE.$tableName").collect()
-    log.info("testRefreshIndex passed")
+      Step("create base table") { spark =>
+        val basePath = getBasePath(tableName)
+        cleanup(tableName, basePath)
+        createBaseTable(tableName)
+      },
+
+      Step("create record_index and refresh") { spark =>
+        spark.sql(s"CREATE INDEX record_index ON $DEFAULT_DATABASE.$tableName (uuid)")
+        // Should return without throwing; current implementation is Seq.empty.
+        spark.sql(s"REFRESH INDEX record_index ON $DEFAULT_DATABASE.$tableName").collect()
+      },
+
+      Step("verify base rows readable") { spark =>
+        runDataFrameReaderWithAsserts(DEFAULT_DATABASE, tableName, expectedVal = 20)
+        log.info("testRefreshIndex passed")
+      }
+    )
   }
 
   // -------- negative tests --------
@@ -185,10 +239,7 @@ class RunHudiIndexDDL extends RunOperationsBase {
   }
 
   private def assertMetadataPartition(basePath: String, partition: String): Unit = {
-    val metaClient = HoodieTableMetaClient.builder()
-      .setBasePath(basePath)
-      .setConf(HadoopFSUtils.getStorageConfWithCopy(spark.sparkContext.hadoopConfiguration))
-      .build()
+    val metaClient = VersionCompat.buildMetaClient(basePath, spark.sparkContext.hadoopConfiguration)
     val mdtPartitions = metaClient.getTableConfig.getMetadataPartitions.asScala
     assert(mdtPartitions.contains(partition),
       s"Metadata partition '$partition' not present in table config; have: $mdtPartitions")

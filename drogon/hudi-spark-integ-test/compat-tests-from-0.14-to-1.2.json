@@ -67,6 +67,49 @@
         {"name": "create legacy table via SparkSQL", "version": "0.14"},
         {"name": "append via DataSource and verify",  "version": "1.2"}
       ]
+    },
+    {
+      "name": "index-ddl-record-index",
+      "test_category": "hudi-index-ddl",
+      "test_case": "testCreateAndDropRecordIndex",
+      "steps": [
+        {"name": "create base table",              "version": "0.14"},
+        {"name": "create record_index and verify", "version": "1.2"},
+        {"name": "verify base rows readable",      "version": "0.14"},
+        {"name": "drop record_index and verify",   "version": "1.2"}
+      ]
+    },
+    {
+      "name": "index-ddl-secondary-index",
+      "test_category": "hudi-index-ddl",
+      "test_case": "testCreateAndDropSecondaryIndex",
+      "steps": [
+        {"name": "create base table",                 "version": "0.14"},
+        {"name": "create secondary index and verify", "version": "1.2"},
+        {"name": "verify base rows readable",         "version": "0.14"},
+        {"name": "drop secondary index and verify",   "version": "1.2"}
+      ]
+    },
+    {
+      "name": "index-ddl-expr-index",
+      "test_category": "hudi-index-ddl",
+      "test_case": "testCreateAndDropColumnStatsExpressionIndex",
+      "steps": [
+        {"name": "create base table",                  "version": "0.14"},
+        {"name": "create expression index and verify", "version": "1.2"},
+        {"name": "verify base rows readable",          "version": "0.14"},
+        {"name": "drop expression index and verify",   "version": "1.2"}
+      ]
+    },
+    {
+      "name": "index-ddl-refresh-index",
+      "test_category": "hudi-index-ddl",
+      "test_case": "testRefreshIndex",
+      "steps": [
+        {"name": "create base table",             "version": "0.14"},
+        {"name": "create record_index and refresh", "version": "1.2"},
+        {"name": "verify base rows readable",     "version": "0.14"}
+      ]
     }
   ]
 }
