@@ -94,6 +94,7 @@ import org.apache.hudi.metadata.MetadataPartitionType;
 import org.apache.hudi.metrics.HoodieMetrics;
 import org.apache.hudi.storage.StoragePath;
 import org.apache.hudi.table.BulkInsertPartitioner;
+import org.apache.hudi.table.HoodieReplicationUtilities;
 import org.apache.hudi.table.HoodieTable;
 import org.apache.hudi.table.action.HoodieWriteMetadata;
 import org.apache.hudi.table.action.restore.RestoreUtils;
@@ -673,6 +674,14 @@ public abstract class BaseHoodieWriteClient<T, I, K, O> extends BaseHoodieClient
       WriteMarkersFactory.get(config.getMarkersType(), table, instantTime)
           .quietDeleteMarkerDir(context, config.getMarkersDeleteParallelism());
       metrics.updateTableServiceInstantMetrics(table.getActiveTimeline());
+      try {
+        HoodieReplicationUtilities.invalidateLaggingReplicationsIfRequired(table.getMetaClient(), config)
+            .forEach((key, val) -> metrics.updateReplicationMetrics(key, val));
+      } catch (Exception e) {
+        // SLA invalidation is advisory: a failure here must not fail the commit or prevent the
+        // inline clean/archival that runs after postCommit.
+        LOG.error("Failed to evaluate replication SLA lag for " + config.getTableName(), e);
+      }
     } finally {
       this.heartbeatClient.stop(instantTime);
     }

@@ -291,6 +291,22 @@
         <groupId>org.apache.rat</groupId>
         <artifactId>apache-rat-plugin</artifactId>
       </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <!-- hudi-spark-client cannot declare a dependency on the spark adapter modules
+               (they depend back on this module), so SparkAdapterSupport's reflective load of
+               Spark3_xAdapter fails in tests unless their classes are put on the classpath here.
+               Nonexistent paths (e.g. under the spark2 profile) are ignored by surefire. -->
+          <additionalClasspathElements>
+            <additionalClasspathElement>${basedir}/../../hudi-spark-datasource/hudi-spark-common/target/classes</additionalClasspathElement>
+            <additionalClasspathElement>${basedir}/../../hudi-spark-datasource/${hudi.spark.common.module}/target/classes</additionalClasspathElement>
+            <additionalClasspathElement>${basedir}/../../hudi-spark-datasource/hudi-spark3.2plus-common/target/classes</additionalClasspathElement>
+            <additionalClasspathElement>${basedir}/../../hudi-spark-datasource/${hudi.spark.module}/target/classes</additionalClasspathElement>
+          </additionalClasspathElements>
+        </configuration>
+      </plugin>
     </plugins>
 
     <resources>

@@ -19,12 +19,25 @@
 package org.apache.hudi.common.table.timeline.versioning.v1;
 
 import org.apache.hudi.avro.HoodieAvroUtils;
+import org.apache.hudi.avro.model.HoodieArchivedMetaEntry;
+import org.apache.hudi.avro.model.HoodieMergeArchiveFilePlan;
+import org.apache.hudi.common.model.HoodieLogFile;
+import org.apache.hudi.common.model.HoodieRecord;
+import org.apache.hudi.common.schema.HoodieSchema;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.table.log.HoodieLogFormat;
+import org.apache.hudi.common.table.log.block.HoodieAvroDataBlock;
+import org.apache.hudi.common.table.log.block.HoodieLogBlock;
 import org.apache.hudi.common.table.timeline.HoodieArchivedTimeline;
 import org.apache.hudi.common.table.timeline.HoodieInstant;
 import org.apache.hudi.common.table.timeline.HoodieInstantReader;
 import org.apache.hudi.common.table.timeline.HoodieTimeline;
+import org.apache.hudi.common.table.timeline.TimelineMetadataUtils;
 import org.apache.hudi.common.util.Option;
+import org.apache.hudi.common.util.StringUtils;
+import org.apache.hudi.common.util.collection.ClosableIterator;
+import org.apache.hudi.exception.HoodieIOException;
+import org.apache.hudi.io.util.FileIOUtils;
 import org.apache.hudi.storage.StoragePath;
 import org.apache.hudi.storage.StoragePathInfo;
 
@@ -43,6 +56,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -55,13 +69,16 @@ import static org.apache.hudi.common.table.timeline.TimelineUtils.getInputStream
 
 public class ArchivedTimelineV1 extends BaseTimelineV1 implements HoodieArchivedTimeline, HoodieInstantReader {
   private static final String HOODIE_COMMIT_ARCHIVE_LOG_FILE_PREFIX = "commits";
+  private static final String MERGE_ARCHIVE_PLAN_NAME = "mergeArchivePlan";
   private static final String ACTION_TYPE_KEY = "actionType";
   private static final String ACTION_STATE = "actionState";
   private static final String STATE_TRANSITION_TIME = "stateTransitionTime";
   private HoodieTableMetaClient metaClient;
   // The first key is the timestamp -> multiple action types -> hoodie instant state and contents
-  private final Map<String, Map<String, Map<HoodieInstant.State, byte[]>>> 
+  private final Map<String, Map<String, Map<HoodieInstant.State, byte[]>>>
       readCommits = new HashMap<>();
+  // Archive files read by loadInstantsArchivedAfter (empty for other load paths).
+  private final List<StoragePath> filesLoaded = new ArrayList<>();
   private final ArchivedTimelineLoaderV1 timelineLoader = new ArchivedTimelineLoaderV1();
 
   private static final Logger LOG = LoggerFactory.getLogger(org.apache.hudi.common.table.timeline.HoodieArchivedTimeline.class);
@@ -125,6 +142,31 @@ public class ArchivedTimelineV1 extends BaseTimelineV1 implements HoodieArchived
    */
   public ArchivedTimelineV1(HoodieTableMetaClient metaClient, String startTs) {
     this(metaClient, new StartTsFilter(startTs));
+  }
+
+  /**
+   * Loads instants of all states (requested/inflight/completed) in the range [startTs, endTs].
+   * For callers that further restrict the instants they act on to an explicit commit list and
+   * need the first commit of that list included.
+   */
+  public static ArchivedTimelineV1 loadAllStatesInClosedRange(HoodieTableMetaClient metaClient, String startTs, String endTs) {
+    return new ArchivedTimelineV1(metaClient, new ClosedClosedTimeRangeFilter(startTs, endTs), Option.empty());
+  }
+
+  /**
+   * Loads instants of all states that were appended to the archive log files AFTER the completed
+   * record of {@code archivedAfterTs}, in archive append order (0.x fork semantics). Unlike a
+   * requested-time range load, this picks up instants that were archived late with older requested
+   * times (e.g. rollback instants that outlive the commits archived around them) and excludes the
+   * {@code archivedAfterTs} checkpoint instant itself. If {@code archivedAfterTs} is never found
+   * in the archive (e.g. the INIT checkpoint), the whole archive is loaded, capped at the
+   * {@code maxInstantsToLoad} newest instants. The archive files that were read are available via
+   * {@link #getFilesLoaded()}.
+   */
+  public static ArchivedTimelineV1 loadInstantsArchivedAfter(HoodieTableMetaClient metaClient, String archivedAfterTs, int maxInstantsToLoad) {
+    ArchivedTimelineV1 timeline = new ArchivedTimelineV1(metaClient, false);
+    timeline.setInstants(timeline.scanInstantsArchivedAfter(archivedAfterTs, maxInstantsToLoad));
+    return timeline;
   }
 
   /**
@@ -275,6 +317,92 @@ public Option<byte[]> getInstantDetails(HoodieInstant instant) {
 
   private List<HoodieInstant> loadInstants(boolean loadInstantDetails) {
     return loadInstants(null, loadInstantDetails);
+  }
+
+  /**
+   * Archive files read by {@link #loadInstantsArchivedAfter}. Empty for timelines built through
+   * the other constructors/loaders.
+   */
+  public List<StoragePath> getFilesLoaded() {
+    return filesLoaded;
+  }
+
+  private List<HoodieInstant> scanInstantsArchivedAfter(String archivedAfterTs, int maxInstantsToLoad) {
+    Set<HoodieInstant> collected = new LinkedHashSet<>();
+    try {
+      List<StoragePathInfo> entryList = metaClient.getStorage().globEntries(
+          new StoragePath(metaClient.getArchivePath(), ".commits_.archive*"));
+      // Reverse version order == reverse chronological archive order (newest file first).
+      entryList.sort(new ArchivedTimelineLoaderV1.ArchiveFileVersionComparator());
+
+      for (StoragePathInfo fs : entryList) {
+        List<HoodieInstant> instantsInFile = new ArrayList<>();
+        int markerIndex = -1;
+        try (HoodieLogFormat.Reader reader = HoodieLogFormat.newReader(metaClient.getStorage(),
+            new HoodieLogFile(fs.getPath()), HoodieSchema.fromAvroSchema(HoodieArchivedMetaEntry.getClassSchema()))) {
+          while (reader.hasNext()) {
+            HoodieLogBlock block = reader.next();
+            if (!(block instanceof HoodieAvroDataBlock)) {
+              continue;
+            }
+            try (ClosableIterator<HoodieRecord<IndexedRecord>> itr =
+                     ((HoodieAvroDataBlock) block).getRecordIterator(HoodieRecord.HoodieRecordType.AVRO)) {
+              while (itr.hasNext()) {
+                GenericRecord r = (GenericRecord) itr.next().getData();
+                String instantTime = r.get(HoodieTableMetaClient.COMMIT_TIME_KEY).toString();
+                Option<HoodieInstant> instant = readCommit(instantTime, r, false, null);
+                if (instant.isPresent()) {
+                  instantsInFile.add(instant.get());
+                  if (instant.get().isCompleted() && instantTime.equals(archivedAfterTs)) {
+                    markerIndex = instantsInFile.size() - 1;
+                  }
+                }
+              }
+            }
+          }
+        } catch (Exception originalException) {
+          // An in-progress small-archive-file merge may leave an incomplete archive file behind;
+          // skip it gracefully, mirroring ArchivedTimelineLoaderV1.
+          try {
+            StoragePath planPath = new StoragePath(metaClient.getArchivePath(), MERGE_ARCHIVE_PLAN_NAME);
+            if (metaClient.getStorage().exists(planPath)) {
+              HoodieMergeArchiveFilePlan plan = TimelineMetadataUtils.deserializeAvroMetadataLegacy(
+                  FileIOUtils.readDataFromPath(metaClient.getStorage(), planPath).get(), HoodieMergeArchiveFilePlan.class);
+              String mergedArchiveFileName = plan.getMergedArchiveFileName();
+              if (!StringUtils.isNullOrEmpty(mergedArchiveFileName)
+                  && fs.getPath().getName().equalsIgnoreCase(mergedArchiveFileName)) {
+                LOG.warn("Skipping incomplete merging archive file {}", mergedArchiveFileName);
+                continue;
+              }
+            }
+            throw originalException;
+          } catch (Exception e) {
+            throw originalException instanceof RuntimeException
+                ? (RuntimeException) originalException : new HoodieIOException(originalException.getMessage(), new IOException(originalException));
+          }
+        }
+        filesLoaded.add(fs.getPath());
+        if (markerIndex >= 0) {
+          // Checkpoint instant found in this file: everything appended after it in this file is
+          // new; every newer file (already processed) was archived after it wholesale. Older
+          // files predate the checkpoint — stop.
+          collected.addAll(instantsInFile.subList(markerIndex + 1, instantsInFile.size()));
+          break;
+        }
+        collected.addAll(instantsInFile);
+        if (maxInstantsToLoad > 0 && collected.size() >= maxInstantsToLoad) {
+          break;
+        }
+      }
+    } catch (IOException e) {
+      throw new HoodieIOException(
+          "Could not load archived commit timeline from path " + metaClient.getArchivePath(), e);
+    }
+    List<HoodieInstant> result = collected.stream().sorted().collect(Collectors.toList());
+    if (maxInstantsToLoad > 0 && result.size() > maxInstantsToLoad) {
+      result = result.subList(result.size() - maxInstantsToLoad, result.size());
+    }
+    return result;
   }
 
   private List<HoodieInstant> loadInstants(String startTs, String endTs) {

@@ -28,6 +28,7 @@ import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.timeline.HoodieActiveTimeline;
 import org.apache.hudi.common.table.timeline.HoodieInstant;
 import org.apache.hudi.common.table.timeline.HoodieTimeline;
+import org.apache.hudi.common.table.timeline.versioning.TimelineLayoutVersion;
 import org.apache.hudi.common.table.timeline.versioning.compaction.CompactionPlanMigrator;
 import org.apache.hudi.common.table.timeline.versioning.compaction.CompactionV1MigrationHandler;
 import org.apache.hudi.common.table.timeline.versioning.compaction.CompactionV2MigrationHandler;
@@ -323,6 +324,13 @@ public class CompactionUtils {
     final HoodieInstant latestInstant;
     if (lastCompaction.isPresent()) {
       latestInstant = lastCompaction.get();
+      if (activeTimeline.getTimelineLayoutVersion().getVersion() < TimelineLayoutVersion.VERSION_2) {
+        // 0.x-compatible timeline (layout version <= 1): completion times are synthesized from file
+        // modification times and compaction instants may carry 0.x suffixes (e.g. <ts>001), so a
+        // completion-time comparison re-counts the delta commit already covered by the latest
+        // compaction and drifts the trigger cadence. Preserve the 0.x requested-time semantics.
+        return Option.of(Pair.of(deltaCommits.findInstantsAfter(latestInstant.requestedTime()), latestInstant));
+      }
       // timeline containing the delta commits after the latest completed compaction commit,
       // and the completed compaction commit instant
       return Option.of(Pair.of(deltaCommits.findInstantsModifiedAfterByCompletionTime(latestInstant.requestedTime()), latestInstant));

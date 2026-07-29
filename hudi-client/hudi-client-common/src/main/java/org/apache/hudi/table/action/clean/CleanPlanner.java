@@ -691,8 +691,7 @@ public class CleanPlanner<T, I, K, O> implements Serializable {
         && lastReplicated.get().compareTo(earliestCommitToRetain.get().requestedTime()) < 0) {
       earliestCommitToRetain = Option.fromJavaOptional(
           getCommitTimeline().filterCompletedInstants().getInstantsAsStream()
-              .filter(i -> i.getCompletionTime() != null
-                  && i.getCompletionTime().compareTo(lastReplicated.get()) >= 0)
+              .filter(i -> i.requestedTime().compareTo(lastReplicated.get()) >= 0)
               .findFirst());
     }
     return earliestCommitToRetain;
