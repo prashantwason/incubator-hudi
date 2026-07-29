@@ -69,6 +69,200 @@
       ]
     },
     {
+      "name": "show-partitions-drop-recreate-backward-compat",
+      "test_category": "hudi-table-ddl",
+      "test_case": "testShowPartitionsAfterDropAndRecreate",
+      "steps": [
+        {"name": "create table and insert initial partitions", "version": "1.2"},
+        {"name": "drop partition",                             "version": "0.14"},
+        {"name": "re-insert into dropped partition",           "version": "1.2"}
+      ]
+    },
+    {
+      "name": "show-partitions-drop-recreate-forward-compat",
+      "test_category": "hudi-table-ddl",
+      "test_case": "testShowPartitionsAfterDropAndRecreate",
+      "steps": [
+        {"name": "create table and insert initial partitions", "version": "0.14"},
+        {"name": "drop partition",                             "version": "1.2"},
+        {"name": "re-insert into dropped partition",           "version": "0.14"}
+      ]
+    },
+    {
+      "name": "show-partitions-insert-overwrite-backward-compat",
+      "test_category": "hudi-table-ddl",
+      "test_case": "testShowPartitionsAfterInsertOverwrite",
+      "steps": [
+        {"name": "create table and insert initial partitions",    "version": "1.2"},
+        {"name": "insert overwrite and verify remaining partitions", "version": "0.14"}
+      ]
+    },
+    {
+      "name": "show-partitions-insert-overwrite-forward-compat",
+      "test_category": "hudi-table-ddl",
+      "test_case": "testShowPartitionsAfterInsertOverwrite",
+      "steps": [
+        {"name": "create table and insert initial partitions",    "version": "0.14"},
+        {"name": "insert overwrite and verify remaining partitions", "version": "1.2"}
+      ]
+    },
+    {
+      "name": "add-columns-cow-backward-compat",
+      "test_category": "hudi-table-ddl",
+      "test_case": "testAddColumnsCow",
+      "steps": [
+        {"name": "create table and insert initial row",              "version": "1.2"},
+        {"name": "add columns",                                      "version": "0.14"},
+        {"name": "verify catalog and meta-client schema",            "version": "1.2"},
+        {"name": "insert post-add row and verify old/new values",    "version": "0.14"}
+      ]
+    },
+    {
+      "name": "add-columns-cow-forward-compat",
+      "test_category": "hudi-table-ddl",
+      "test_case": "testAddColumnsCow",
+      "steps": [
+        {"name": "create table and insert initial row",              "version": "0.14"},
+        {"name": "add columns",                                      "version": "1.2"},
+        {"name": "verify catalog and meta-client schema",            "version": "0.14"},
+        {"name": "insert post-add row and verify old/new values",    "version": "1.2"}
+      ]
+    },
+    {
+      "name": "add-columns-mor-backward-compat",
+      "test_category": "hudi-table-ddl",
+      "test_case": "testAddColumnsMor",
+      "steps": [
+        {"name": "create table and insert initial row",              "version": "1.2"},
+        {"name": "add columns",                                      "version": "0.14"},
+        {"name": "verify catalog and meta-client schema",            "version": "1.2"},
+        {"name": "insert post-add row and verify old/new values",    "version": "0.14"}
+      ]
+    },
+    {
+      "name": "add-columns-mor-forward-compat",
+      "test_category": "hudi-table-ddl",
+      "test_case": "testAddColumnsMor",
+      "steps": [
+        {"name": "create table and insert initial row",              "version": "0.14"},
+        {"name": "add columns",                                      "version": "1.2"},
+        {"name": "verify catalog and meta-client schema",            "version": "0.14"},
+        {"name": "insert post-add row and verify old/new values",    "version": "1.2"}
+      ]
+    },
+    {
+      "name": "add-columns-partitioned-cow-backward-compat",
+      "test_category": "hudi-table-ddl",
+      "test_case": "testAddColumnsOnPartitionedTableCow",
+      "steps": [
+        {"name": "create partitioned table and insert initial row",       "version": "1.2"},
+        {"name": "add column",                                            "version": "0.14"},
+        {"name": "verify old partition NULL and partition col order",     "version": "1.2"}
+      ]
+    },
+    {
+      "name": "add-columns-partitioned-cow-forward-compat",
+      "test_category": "hudi-table-ddl",
+      "test_case": "testAddColumnsOnPartitionedTableCow",
+      "steps": [
+        {"name": "create partitioned table and insert initial row",       "version": "0.14"},
+        {"name": "add column",                                            "version": "1.2"},
+        {"name": "verify old partition NULL and partition col order",     "version": "0.14"}
+      ]
+    },
+    {
+      "name": "add-columns-partitioned-mor-backward-compat",
+      "test_category": "hudi-table-ddl",
+      "test_case": "testAddColumnsOnPartitionedTableMor",
+      "steps": [
+        {"name": "create partitioned table and insert initial row",       "version": "1.2"},
+        {"name": "add column",                                            "version": "0.14"},
+        {"name": "verify old partition NULL and partition col order",     "version": "1.2"}
+      ]
+    },
+    {
+      "name": "add-columns-partitioned-mor-forward-compat",
+      "test_category": "hudi-table-ddl",
+      "test_case": "testAddColumnsOnPartitionedTableMor",
+      "steps": [
+        {"name": "create partitioned table and insert initial row",       "version": "0.14"},
+        {"name": "add column",                                            "version": "1.2"},
+        {"name": "verify old partition NULL and partition col order",     "version": "0.14"}
+      ]
+    },
+    {
+      "name": "rename-column-cow-backward-compat",
+      "test_category": "hudi-table-ddl",
+      "test_case": "testRenameColumnCow",
+      "steps": [
+        {"name": "create table and insert initial row", "version": "1.2"},
+        {"name": "rename column and verify",            "version": "0.14"}
+      ]
+    },
+    {
+      "name": "rename-column-cow-forward-compat",
+      "test_category": "hudi-table-ddl",
+      "test_case": "testRenameColumnCow",
+      "steps": [
+        {"name": "create table and insert initial row", "version": "0.14"},
+        {"name": "rename column and verify",            "version": "1.2"}
+      ]
+    },
+    {
+      "name": "rename-column-mor-backward-compat",
+      "test_category": "hudi-table-ddl",
+      "test_case": "testRenameColumnMor",
+      "steps": [
+        {"name": "create table and insert initial row", "version": "1.2"},
+        {"name": "rename column and verify",            "version": "0.14"}
+      ]
+    },
+    {
+      "name": "rename-column-mor-forward-compat",
+      "test_category": "hudi-table-ddl",
+      "test_case": "testRenameColumnMor",
+      "steps": [
+        {"name": "create table and insert initial row", "version": "0.14"},
+        {"name": "rename column and verify",            "version": "1.2"}
+      ]
+    },
+    {
+      "name": "rename-table-cow-backward-compat",
+      "test_category": "hudi-table-ddl",
+      "test_case": "testRenameTableCow",
+      "steps": [
+        {"name": "create table and insert initial row",                    "version": "1.2"},
+        {"name": "rename table and verify HMS, meta-client, and data",     "version": "0.14"}
+      ]
+    },
+    {
+      "name": "rename-table-cow-forward-compat",
+      "test_category": "hudi-table-ddl",
+      "test_case": "testRenameTableCow",
+      "steps": [
+        {"name": "create table and insert initial row",                    "version": "0.14"},
+        {"name": "rename table and verify HMS, meta-client, and data",     "version": "1.2"}
+      ]
+    },
+    {
+      "name": "rename-table-mor-backward-compat",
+      "test_category": "hudi-table-ddl",
+      "test_case": "testRenameTableMor",
+      "steps": [
+        {"name": "create table and insert initial row",                    "version": "1.2"},
+        {"name": "rename table and verify HMS, meta-client, and data",     "version": "0.14"}
+      ]
+    },
+    {
+      "name": "rename-table-mor-forward-compat",
+      "test_category": "hudi-table-ddl",
+      "test_case": "testRenameTableMor",
+      "steps": [
+        {"name": "create table and insert initial row",                    "version": "0.14"},
+        {"name": "rename table and verify HMS, meta-client, and data",     "version": "1.2"}
+      ]
+    },
+    {
       "name": "index-ddl-record-index",
       "test_category": "hudi-index-ddl",
       "test_case": "testCreateAndDropRecordIndex",

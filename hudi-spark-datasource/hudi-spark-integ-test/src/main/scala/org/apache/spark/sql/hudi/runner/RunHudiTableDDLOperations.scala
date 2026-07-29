@@ -19,11 +19,10 @@ package org.apache.spark.sql.hudi.runner
 
 import org.apache.hudi.HoodieCLIUtils
 import org.apache.hudi.common.model.HoodieCommitMetadata
-import org.apache.hudi.common.schema.HoodieSchema
-import org.apache.hudi.common.table.{HoodieTableMetaClient, TableSchemaResolver}
+import org.apache.hudi.common.table.HoodieTableMetaClient
 import org.apache.hudi.common.util.{Option => HOption}
-import org.apache.hudi.hadoop.fs.HadoopFSUtils
 
+import org.apache.avro.Schema
 import org.apache.hadoop.fs.Path
 import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.catalyst.TableIdentifier
@@ -272,130 +271,153 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
 
   // After ALTER TABLE DROP PARTITION the partition disappears from the
   // listing; re-inserting into it brings it back.
-  def testShowPartitionsAfterDropAndRecreate(): Unit = {
+  def testShowPartitionsAfterDropAndRecreate(): Seq[Step] = {
     val tableName = "hudi_table_ddl_show_partitions_drop_recreate"
-    val basePath = getBasePath(tableName)
-    cleanup(tableName, basePath)
+    Seq(
 
-    spark.sql(
-      s"""
-         |CREATE TABLE $DEFAULT_DATABASE.$tableName (
-         |  id INT,
-         |  name STRING,
-         |  price DOUBLE,
-         |  ts BIGINT,
-         |  datestr STRING
-         |) USING hudi
-         |PARTITIONED BY (datestr)
-         |TBLPROPERTIES (
-         |  type = 'cow',
-         |  primaryKey = 'id',
-         |  preCombineField = 'ts'
-         |)
-         |LOCATION '$basePath'
-         |""".stripMargin)
+      Step("create table and insert initial partitions") { spark =>
+        val basePath = getBasePath(tableName)
+        cleanup(tableName, basePath)
+        spark.sql(
+          s"""
+             |CREATE TABLE $DEFAULT_DATABASE.$tableName (
+             |  id INT,
+             |  name STRING,
+             |  price DOUBLE,
+             |  ts BIGINT,
+             |  datestr STRING
+             |) USING hudi
+             |PARTITIONED BY (datestr)
+             |TBLPROPERTIES (
+             |  type = 'cow',
+             |  primaryKey = 'id',
+             |  preCombineField = 'ts'
+             |)
+             |LOCATION '$basePath'
+             |""".stripMargin)
 
-    spark.sql(
-      s"""
-         |INSERT INTO $DEFAULT_DATABASE.$tableName VALUES
-         |  (1, 'a1', 10.0, 1000, '2025-06-01'),
-         |  (2, 'a2', 11.0, 1001, '2025-06-02')
-         |""".stripMargin)
-    assertShowPartitions(tableName, Seq("datestr=2025-06-01", "datestr=2025-06-02"))
+        spark.sql(
+          s"""
+             |INSERT INTO $DEFAULT_DATABASE.$tableName VALUES
+             |  (1, 'a1', 10.0, 1000, '2025-06-01'),
+             |  (2, 'a2', 11.0, 1001, '2025-06-02')
+             |""".stripMargin)
+        assertShowPartitions(tableName, Seq("datestr=2025-06-01", "datestr=2025-06-02"))
+      },
 
-    spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName DROP PARTITION (datestr='2025-06-01')")
-    assertShowPartitions(tableName, Seq("datestr=2025-06-02"))
+      Step("drop partition") { spark =>
+        spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName DROP PARTITION (datestr='2025-06-01')")
+        assertShowPartitions(tableName, Seq("datestr=2025-06-02"))
+      },
 
-    spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (3, 'a3', 12.0, 1002, '2025-06-01')")
-    assertShowPartitions(tableName, Seq("datestr=2025-06-01", "datestr=2025-06-02"))
+      Step("re-insert into dropped partition") { spark =>
+        spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (3, 'a3', 12.0, 1002, '2025-06-01')")
+        assertShowPartitions(tableName, Seq("datestr=2025-06-01", "datestr=2025-06-02"))
+      }
+    )
   }
 
   // INSERT OVERWRITE TABLE replaces all data; SHOW PARTITIONS afterwards
   // reflects only the partitions present in the overwrite.
-  def testShowPartitionsAfterInsertOverwrite(): Unit = {
+  def testShowPartitionsAfterInsertOverwrite(): Seq[Step] = {
     val tableName = "hudi_table_ddl_show_partitions_overwrite"
-    val basePath = getBasePath(tableName)
-    cleanup(tableName, basePath)
+    Seq(
 
-    spark.sql(
-      s"""
-         |CREATE TABLE $DEFAULT_DATABASE.$tableName (
-         |  id INT,
-         |  name STRING,
-         |  price DOUBLE,
-         |  ts BIGINT,
-         |  datestr STRING
-         |) USING hudi
-         |PARTITIONED BY (datestr)
-         |TBLPROPERTIES (
-         |  type = 'cow',
-         |  primaryKey = 'id',
-         |  preCombineField = 'ts'
-         |)
-         |LOCATION '$basePath'
-         |""".stripMargin)
+      Step("create table and insert initial partitions") { spark =>
+        val basePath = getBasePath(tableName)
+        cleanup(tableName, basePath)
+        spark.sql(
+          s"""
+             |CREATE TABLE $DEFAULT_DATABASE.$tableName (
+             |  id INT,
+             |  name STRING,
+             |  price DOUBLE,
+             |  ts BIGINT,
+             |  datestr STRING
+             |) USING hudi
+             |PARTITIONED BY (datestr)
+             |TBLPROPERTIES (
+             |  type = 'cow',
+             |  primaryKey = 'id',
+             |  preCombineField = 'ts'
+             |)
+             |LOCATION '$basePath'
+             |""".stripMargin)
 
-    spark.sql(
-      s"""
-         |INSERT INTO $DEFAULT_DATABASE.$tableName VALUES
-         |  (1, 'a1', 10.0, 1000, '2025-07-01'),
-         |  (2, 'a2', 11.0, 1001, '2025-07-02'),
-         |  (3, 'a3', 12.0, 1002, '2025-07-03')
-         |""".stripMargin)
-    assertShowPartitions(tableName, Seq(
-      "datestr=2025-07-01",
-      "datestr=2025-07-02",
-      "datestr=2025-07-03"
-    ))
+        spark.sql(
+          s"""
+             |INSERT INTO $DEFAULT_DATABASE.$tableName VALUES
+             |  (1, 'a1', 10.0, 1000, '2025-07-01'),
+             |  (2, 'a2', 11.0, 1001, '2025-07-02'),
+             |  (3, 'a3', 12.0, 1002, '2025-07-03')
+             |""".stripMargin)
+        assertShowPartitions(tableName, Seq(
+          "datestr=2025-07-01",
+          "datestr=2025-07-02",
+          "datestr=2025-07-03"
+        ))
+      },
 
-    spark.sql(
-      s"""
-         |INSERT OVERWRITE TABLE $DEFAULT_DATABASE.$tableName VALUES
-         |  (4, 'a4', 13.0, 1003, '2025-07-01'),
-         |  (5, 'a5', 14.0, 1004, '2025-07-02')
-         |""".stripMargin)
-    assertShowPartitions(tableName, Seq(
-      "datestr=2025-07-01",
-      "datestr=2025-07-02"
-    ))
+      Step("insert overwrite and verify remaining partitions") { spark =>
+        spark.sql(
+          s"""
+             |INSERT OVERWRITE TABLE $DEFAULT_DATABASE.$tableName VALUES
+             |  (4, 'a4', 13.0, 1003, '2025-07-01'),
+             |  (5, 'a5', 14.0, 1004, '2025-07-02')
+             |""".stripMargin)
+        assertShowPartitions(tableName, Seq(
+          "datestr=2025-07-01",
+          "datestr=2025-07-02"
+        ))
+      }
+    )
   }
 
   // ===========================================================================
   // ALTER TABLE ADD COLUMNS — AlterHoodieTableAddColumnsCommand
   // ===========================================================================
 
-  def testAddColumnsCow(): Unit = runAddColumnsHappyPath("cow")
-  def testAddColumnsMor(): Unit = runAddColumnsHappyPath("mor")
+  def testAddColumnsCow(): Seq[Step] = runAddColumnsHappyPath("cow")
+  def testAddColumnsMor(): Seq[Step] = runAddColumnsHappyPath("mor")
 
-  private def runAddColumnsHappyPath(tableType: String): Unit = {
+  private def runAddColumnsHappyPath(tableType: String): Seq[Step] = {
     val tableName = s"ddl_add_cols_$tableType"
-    val basePath = getBasePath(tableName)
-    cleanup(tableName, basePath)
-    try {
-      createBasicTable(tableName, tableType)
-      spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'a1', 10.0, 1000)")
+    Seq(
 
-      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName ADD COLUMNS (ext0 STRING, ext1 DOUBLE)")
+      Step("create table and insert initial row") { spark =>
+        val basePath = getBasePath(tableName)
+        cleanup(tableName, basePath)
+        createBasicTable(tableName, tableType)
+        spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'a1', 10.0, 1000)")
+      },
 
-      // Catalog reflects new columns
-      val catalogTable = getCatalogTable(tableName)
-      val userFields = HoodieSqlCommonUtils.removeMetaFields(catalogTable.schema).fields.map(_.name)
-      assertEqualsSeq(Seq("id", "name", "price", "ts", "ext0", "ext1"), userFields, "catalog schema")
+      Step("add columns") { spark =>
+        spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName ADD COLUMNS (ext0 STRING, ext1 DOUBLE)")
+      },
 
-      // Meta-client reflects new columns
-      val metaClient = openMetaClient(basePath)
-      val avroSchema = new TableSchemaResolver(metaClient).getTableSchema.getAvroSchema
-      val avroFieldNames = avroSchema.getFields.asScala.map(_.name).toSet
-      assert(avroFieldNames.contains("ext0"), s"meta-client schema missing ext0: $avroFieldNames")
-      assert(avroFieldNames.contains("ext1"), s"meta-client schema missing ext1: $avroFieldNames")
+      Step("verify catalog and meta-client schema") { spark =>
+        // Catalog reflects new columns
+        val catalogTable = getCatalogTable(tableName)
+        val userFields = HoodieSqlCommonUtils.removeMetaFields(catalogTable.schema).fields.map(_.name)
+        assertEqualsSeq(Seq("id", "name", "price", "ts", "ext0", "ext1"), userFields, "catalog schema")
 
-      // Old row reads back with NULLs for new cols, post-add insert preserves values
-      spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (2, 'a2', 12.0, 1001, 'x', 2.5)")
-      val rows = spark.sql(s"SELECT id, ext0, ext1 FROM $DEFAULT_DATABASE.$tableName ORDER BY id").collect()
-      assert(rows.length == 2, s"expected 2 rows, got ${rows.length}")
-      assert(rows(0).getString(1) == null, "row id=1 ext0 should be NULL")
-      assert(rows(1).getString(1) == "x", s"row id=2 ext0 should be 'x', got '${rows(1).getString(1)}'")
-    } finally cleanup(tableName, basePath)
+        // Meta-client reflects new columns
+        val metaClient = openMetaClient(getBasePath(tableName))
+        val avroSchema = VersionCompat.tableAvroSchema(metaClient)
+        val avroFieldNames = avroSchema.getFields.asScala.map(_.name).toSet
+        assert(avroFieldNames.contains("ext0"), s"meta-client schema missing ext0: $avroFieldNames")
+        assert(avroFieldNames.contains("ext1"), s"meta-client schema missing ext1: $avroFieldNames")
+      },
+
+      Step("insert post-add row and verify old/new values") { spark =>
+        // Old row reads back with NULLs for new cols, post-add insert preserves values
+        spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (2, 'a2', 12.0, 1001, 'x', 2.5)")
+        val rows = spark.sql(s"SELECT id, ext0, ext1 FROM $DEFAULT_DATABASE.$tableName ORDER BY id").collect()
+        assert(rows.length == 2, s"expected 2 rows, got ${rows.length}")
+        assert(rows(0).getString(1) == null, "row id=1 ext0 should be NULL")
+        assert(rows(1).getString(1) == "x", s"row id=2 ext0 should be 'x', got '${rows(1).getString(1)}'")
+      }
+    )
   }
 
   def testAddColumnsWithCommentCow(): Unit = runAddColumnsWithComment("cow")
@@ -466,31 +488,40 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
     }
   }
 
-  def testAddColumnsOnPartitionedTableCow(): Unit = runAddColumnsOnPartitioned("cow")
-  def testAddColumnsOnPartitionedTableMor(): Unit = runAddColumnsOnPartitioned("mor")
+  def testAddColumnsOnPartitionedTableCow(): Seq[Step] = runAddColumnsOnPartitioned("cow")
+  def testAddColumnsOnPartitionedTableMor(): Seq[Step] = runAddColumnsOnPartitioned("mor")
 
-  private def runAddColumnsOnPartitioned(tableType: String): Unit = {
+  private def runAddColumnsOnPartitioned(tableType: String): Seq[Step] = {
     val tableName = s"ddl_add_cols_part_$tableType"
-    val basePath = getBasePath(tableName)
-    cleanup(tableName, basePath)
-    try {
-      createTable(
-        tableName,
-        columns = "id INT, name STRING, price DOUBLE, ts BIGINT, dt STRING",
-        tableType = tableType,
-        partitionedBy = Some("dt"))
-      spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'a1', 10.0, 1000, '2025-01-01')")
-      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName ADD COLUMNS (ext0 DOUBLE)")
-      // Old partition still queryable, new column is NULL there
-      val rows = spark.sql(s"SELECT id, dt, ext0 FROM $DEFAULT_DATABASE.$tableName WHERE dt = '2025-01-01'").collect()
-      assert(rows.length == 1, s"expected 1 row, got ${rows.length}")
-      assert(rows(0).get(2) == null, s"ext0 should be NULL on pre-add row, got ${rows(0).get(2)}")
-      // Partition column is still last in catalog schema
-      val schema = getCatalogTable(tableName).schema
-      val userFields = HoodieSqlCommonUtils.removeMetaFields(schema).fields.map(_.name)
-      assert(userFields.last == "dt",
-        s"partition col should remain last; got order: ${userFields.mkString(",")}")
-    } finally cleanup(tableName, basePath)
+    Seq(
+
+      Step("create partitioned table and insert initial row") { spark =>
+        val basePath = getBasePath(tableName)
+        cleanup(tableName, basePath)
+        createTable(
+          tableName,
+          columns = "id INT, name STRING, price DOUBLE, ts BIGINT, dt STRING",
+          tableType = tableType,
+          partitionedBy = Some("dt"))
+        spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'a1', 10.0, 1000, '2025-01-01')")
+      },
+
+      Step("add column") { spark =>
+        spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName ADD COLUMNS (ext0 DOUBLE)")
+      },
+
+      Step("verify old partition NULL and partition col order") { spark =>
+        // Old partition still queryable, new column is NULL there
+        val rows = spark.sql(s"SELECT id, dt, ext0 FROM $DEFAULT_DATABASE.$tableName WHERE dt = '2025-01-01'").collect()
+        assert(rows.length == 1, s"expected 1 row, got ${rows.length}")
+        assert(rows(0).get(2) == null, s"ext0 should be NULL on pre-add row, got ${rows(0).get(2)}")
+        // Partition column is still last in catalog schema
+        val schema = getCatalogTable(tableName).schema
+        val userFields = HoodieSqlCommonUtils.removeMetaFields(schema).fields.map(_.name)
+        assert(userFields.last == "dt",
+          s"partition col should remain last; got order: ${userFields.mkString(",")}")
+      }
+    )
   }
 
   // ===========================================================================
@@ -514,7 +545,7 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
 
       // Schema does not leak hoodie meta fields
       val metaClient = openMetaClient(basePath)
-      val resolved = new TableSchemaResolver(metaClient).getTableSchema(false)
+      val resolved = VersionCompat.tableAvroSchema(metaClient)
       val fieldNames = resolved.getFields.asScala.map(_.name).toSet
       val leaked = fieldNames intersect Set("_hoodie_commit_time", "_hoodie_record_key")
       assert(leaked.isEmpty, s"hoodie meta fields should not appear in user schema, found: $leaked")
@@ -615,35 +646,44 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
   // ALTER TABLE RENAME COLUMN — AlterTableCommand (UPDATE / RenameColumn)
   // ===========================================================================
 
-  def testRenameColumnCow(): Unit = runRenameColumn("cow")
-  def testRenameColumnMor(): Unit = runRenameColumn("mor")
+  def testRenameColumnCow(): Seq[Step] = runRenameColumn("cow")
+  def testRenameColumnMor(): Seq[Step] = runRenameColumn("mor")
 
-  private def runRenameColumn(tableType: String): Unit = {
+  private def runRenameColumn(tableType: String): Seq[Step] = {
     val tableName = s"ddl_rename_col_$tableType"
-    val basePath = getBasePath(tableName)
-    cleanup(tableName, basePath)
-    try {
-      withConf(
-        "hoodie.schema.on.read.enable" -> "true",
-        "hoodie.datasource.write.schema.allow.auto.evolution.column.drop" -> "true"
-      ) {
-        createBasicTable(tableName, tableType, extraTblProps = Map("hoodie.schema.on.read.enable" -> "true"))
-        spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'a1', 10.0, 1000)")
-        spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName RENAME COLUMN name TO fullname")
+    def withSchemaOnRead[T](body: => T): T = withConf(
+      "hoodie.schema.on.read.enable" -> "true",
+      "hoodie.datasource.write.schema.allow.auto.evolution.column.drop" -> "true"
+    )(body)
+    Seq(
 
-        val catalogTable = getCatalogTable(tableName)
-        val fields = HoodieSqlCommonUtils.removeMetaFields(catalogTable.schema).fields.map(_.name).toSet
-        assert(fields.contains("fullname"),
-          s"catalog schema should contain renamed column 'fullname', got: $fields")
-        assert(!fields.contains("name"),
-          s"catalog schema should not contain old name 'name', got: $fields")
+      Step("create table and insert initial row") { spark =>
+        val basePath = getBasePath(tableName)
+        cleanup(tableName, basePath)
+        withSchemaOnRead {
+          createBasicTable(tableName, tableType, extraTblProps = Map("hoodie.schema.on.read.enable" -> "true"))
+          spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'a1', 10.0, 1000)")
+        }
+      },
 
-        val rows = spark.sql(s"SELECT id, fullname FROM $DEFAULT_DATABASE.$tableName WHERE id = 1").collect()
-        assert(rows.length == 1, s"expected 1 row, got ${rows.length}")
-        assert(rows(0).getString(1) == "a1",
-          s"renamed column should retain prior value 'a1', got '${rows(0).getString(1)}'")
+      Step("rename column and verify") { spark =>
+        withSchemaOnRead {
+          spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName RENAME COLUMN name TO fullname")
+
+          val catalogTable = getCatalogTable(tableName)
+          val fields = HoodieSqlCommonUtils.removeMetaFields(catalogTable.schema).fields.map(_.name).toSet
+          assert(fields.contains("fullname"),
+            s"catalog schema should contain renamed column 'fullname', got: $fields")
+          assert(!fields.contains("name"),
+            s"catalog schema should not contain old name 'name', got: $fields")
+
+          val rows = spark.sql(s"SELECT id, fullname FROM $DEFAULT_DATABASE.$tableName WHERE id = 1").collect()
+          assert(rows.length == 1, s"expected 1 row, got ${rows.length}")
+          assert(rows(0).getString(1) == "a1",
+            s"renamed column should retain prior value 'a1', got '${rows(0).getString(1)}'")
+        }
       }
-    } finally cleanup(tableName, basePath)
+    )
   }
 
   /**
@@ -669,36 +709,38 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
   // ALTER TABLE RENAME TO — AlterHoodieTableRenameCommand
   // ===========================================================================
 
-  def testRenameTableCow(): Unit = runRenameTableExternal("cow")
-  def testRenameTableMor(): Unit = runRenameTableExternal("mor")
+  def testRenameTableCow(): Seq[Step] = runRenameTableExternal("cow")
+  def testRenameTableMor(): Seq[Step] = runRenameTableExternal("mor")
 
-  private def runRenameTableExternal(tableType: String): Unit = {
+  private def runRenameTableExternal(tableType: String): Seq[Step] = {
     val tableName = s"ddl_rename_to_$tableType"
     val newName = s"${tableName}_renamed"
-    val basePath = getBasePath(tableName)
-    cleanup(tableName, basePath)
-    cleanup(newName, basePath)
-    try {
-      createBasicTable(tableName, tableType)
-      spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'a1', 10.0, 1000)")
+    Seq(
 
-      spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName RENAME TO $DEFAULT_DATABASE.$newName")
+      Step("create table and insert initial row") { spark =>
+        val basePath = getBasePath(tableName)
+        cleanupWithoutAssertions(tableName, basePath)
+        cleanupWithoutAssertions(newName, basePath)
+        createBasicTable(tableName, tableType)
+        spark.sql(s"INSERT INTO $DEFAULT_DATABASE.$tableName VALUES (1, 'a1', 10.0, 1000)")
+      },
 
-      assert(!spark.sessionState.catalog.tableExists(new TableIdentifier(tableName, Some(DEFAULT_DATABASE))),
-        s"old table $tableName should not exist in HMS")
-      assert(spark.sessionState.catalog.tableExists(new TableIdentifier(newName, Some(DEFAULT_DATABASE))),
-        s"new table $newName should exist in HMS")
+      Step("rename table and verify HMS, meta-client, and data") { spark =>
+        spark.sql(s"ALTER TABLE $DEFAULT_DATABASE.$tableName RENAME TO $DEFAULT_DATABASE.$newName")
 
-      val metaClient = openMetaClient(basePath)
-      assert(metaClient.getTableConfig.getTableName == newName,
-        s"meta-client tableName should be '$newName', got '${metaClient.getTableConfig.getTableName}'")
+        assert(!spark.sessionState.catalog.tableExists(new TableIdentifier(tableName, Some(DEFAULT_DATABASE))),
+          s"old table $tableName should not exist in HMS")
+        assert(spark.sessionState.catalog.tableExists(new TableIdentifier(newName, Some(DEFAULT_DATABASE))),
+          s"new table $newName should exist in HMS")
 
-      val rows = spark.sql(s"SELECT id, name FROM $DEFAULT_DATABASE.$newName").collect()
-      assert(rows.length == 1, s"renamed table should still have 1 row, got ${rows.length}")
-    } finally {
-      cleanup(newName, basePath)
-      cleanup(tableName, basePath)
-    }
+        val metaClient = openMetaClient(getBasePath(tableName))
+        assert(metaClient.getTableConfig.getTableName == newName,
+          s"meta-client tableName should be '$newName', got '${metaClient.getTableConfig.getTableName}'")
+
+        val rows = spark.sql(s"SELECT id, name FROM $DEFAULT_DATABASE.$newName").collect()
+        assert(rows.length == 1, s"renamed table should still have 1 row, got ${rows.length}")
+      }
+    )
   }
 
   def testRenameTableManagedNoLocationCow(): Unit = runRenameTableManaged("cow")
@@ -1122,8 +1164,8 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
       val commitMetadata = metaClient.getActiveTimeline.readCommitMetadata(lastInstant)
       val schemaStr = commitMetadata.getMetadata(HoodieCommitMetadata.SCHEMA_KEY)
       assert(schemaStr != null && schemaStr.nonEmpty, "drop-partition replace-commit must persist a schema")
-      val schema = HoodieSchema.parse(schemaStr)
-      val fields = schema.getFields.asScala.map(_.name()).toSet
+      val schema = new Schema.Parser().parse(schemaStr)
+      val fields = schema.getFields.asScala.map(_.name).toSet
       val expected = Set("id", "name", "price", "ts", "dt")
       assert(fields == expected,
         s"replace-commit schema should be exactly user fields $expected, got $fields")
@@ -1204,10 +1246,9 @@ class RunHudiTableDDLOperations extends RunOperationsBase {
   }
 
   private def openMetaClient(basePath: String): HoodieTableMetaClient = {
-    HoodieTableMetaClient.builder()
-      .setBasePath(basePath)
-      .setConf(HadoopFSUtils.getStorageConfWithCopy(spark.sparkContext.hadoopConfiguration))
-      .build()
+    // Reflection shim so steps assigned to the 0.14 runtime don't hit the 1.x-only
+    // HadoopFSUtils.getStorageConfWithCopy / StorageConfiguration setConf overload.
+    VersionCompat.buildMetaClient(basePath, spark.sparkContext.hadoopConfiguration)
   }
 
   private def assertEqualsSeq(expected: Seq[String], actual: Seq[String], context: String): Unit = {

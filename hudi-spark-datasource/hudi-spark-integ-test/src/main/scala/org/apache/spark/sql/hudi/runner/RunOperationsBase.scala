@@ -87,6 +87,21 @@ trait RunOperationsBase {
     cleanup(tableName, basePath, false)
   }
 
+  /**
+   * Like [[cleanup(tableName,basePath)]] but skips assertHoodieTableConfig. Use when the
+   * on-disk hoodie.table.name may legitimately differ from tableName - e.g. rerunning a
+   * rename test after a prior successful rename - where the name assertion would spuriously
+   * fail. Drops the HMS table and deletes the base path; both are idempotent so it is safe to
+   * call once per name that shares a base path.
+   */
+  def cleanupWithoutAssertions(tableName: String, basePath: String): Unit = {
+    val tablePathObj = new Path(basePath)
+    val fs = tablePathObj.getFileSystem(spark.sparkContext.hadoopConfiguration)
+    spark.sql(s"DROP TABLE IF EXISTS $database.$tableName")
+    fs.delete(tablePathObj, true)
+    log.info(s"Cleaned up (no assert) table: $database.$tableName at path $basePath")
+  }
+
   def cleanup(tableName: String, basePath: String, isMor: Boolean): Unit = {
     val tablePathObj = new Path(basePath)
     val fs = tablePathObj.getFileSystem(spark.sparkContext.hadoopConfiguration)
