@@ -795,5 +795,171 @@ class TestHoodieTableConfig extends HoodieCommonTestHarness {
     });
     assertEquals("Unsupported flow for table versions less than 9", ioException.getMessage().toString());
   }
+
+  // ---- Tests for qualified "db.table" name handling in getTableName() / getDatabaseName() ----
+
+  @Test
+  void testGetTableName_qualifiedName_databaseUnset() throws IOException {
+    Properties props = new Properties();
+    props.setProperty(HoodieTableConfig.NAME.key(), "rawdata.mytable");
+    initializeNewTableConfig(props);
+    HoodieTableConfig config = new HoodieTableConfig(storage, metaPath);
+    assertEquals("mytable", config.getTableName());
+    assertEquals("rawdata", config.getDatabaseName());
+  }
+
+  @Test
+  void testGetTableName_qualifiedName_databaseEmpty() throws IOException {
+    Properties props = new Properties();
+    props.setProperty(HoodieTableConfig.NAME.key(), "rawdata.mytable");
+    props.setProperty(HoodieTableConfig.DATABASE_NAME.key(), "");
+    initializeNewTableConfig(props);
+    HoodieTableConfig config = new HoodieTableConfig(storage, metaPath);
+    assertEquals("mytable", config.getTableName());
+    assertEquals("rawdata", config.getDatabaseName());
+  }
+
+  @Test
+  void testGetTableName_qualifiedName_databaseMatchesPrefix() throws IOException {
+    Properties props = new Properties();
+    props.setProperty(HoodieTableConfig.NAME.key(), "rawdata.mytable");
+    props.setProperty(HoodieTableConfig.DATABASE_NAME.key(), "rawdata");
+    initializeNewTableConfig(props);
+    HoodieTableConfig config = new HoodieTableConfig(storage, metaPath);
+    assertEquals("mytable", config.getTableName());
+    assertEquals("rawdata", config.getDatabaseName());
+  }
+
+  @Test
+  void testGetTableName_qualifiedName_databaseDiffersFromPrefix() throws IOException {
+    Properties props = new Properties();
+    props.setProperty(HoodieTableConfig.NAME.key(), "rawdata.mytable");
+    props.setProperty(HoodieTableConfig.DATABASE_NAME.key(), "otherdb");
+    initializeNewTableConfig(props);
+    HoodieTableConfig config = new HoodieTableConfig(storage, metaPath);
+    assertEquals("rawdata.mytable", config.getTableName());
+    assertEquals("otherdb", config.getDatabaseName());
+  }
+
+  @Test
+  void testGetTableName_bareName_databaseSet() throws IOException {
+    Properties props = new Properties();
+    props.setProperty(HoodieTableConfig.NAME.key(), "mytable");
+    props.setProperty(HoodieTableConfig.DATABASE_NAME.key(), "rawdata");
+    initializeNewTableConfig(props);
+    HoodieTableConfig config = new HoodieTableConfig(storage, metaPath);
+    assertEquals("mytable", config.getTableName());
+    assertEquals("rawdata", config.getDatabaseName());
+  }
+
+  @Test
+  void testGetTableName_bareName_databaseUnset() throws IOException {
+    Properties props = new Properties();
+    props.setProperty(HoodieTableConfig.NAME.key(), "mytable");
+    initializeNewTableConfig(props);
+    HoodieTableConfig config = new HoodieTableConfig(storage, metaPath);
+    assertEquals("mytable", config.getTableName());
+    assertNull(config.getDatabaseName());
+  }
+
+  @Test
+  void testGetTableName_multipleDots_databaseMatchesFirstSegment() throws IOException {
+    Properties props = new Properties();
+    props.setProperty(HoodieTableConfig.NAME.key(), "rawdata.kafka.some_topic");
+    props.setProperty(HoodieTableConfig.DATABASE_NAME.key(), "rawdata");
+    initializeNewTableConfig(props);
+    HoodieTableConfig config = new HoodieTableConfig(storage, metaPath);
+    // Only the first dot is used for splitting; remainder is the table name
+    assertEquals("kafka.some_topic", config.getTableName());
+    assertEquals("rawdata", config.getDatabaseName());
+  }
+
+  @Test
+  void testGetTableName_multipleDots_databaseUnset() throws IOException {
+    Properties props = new Properties();
+    props.setProperty(HoodieTableConfig.NAME.key(), "rawdata.kafka.some_topic");
+    initializeNewTableConfig(props);
+    HoodieTableConfig config = new HoodieTableConfig(storage, metaPath);
+    assertEquals("kafka.some_topic", config.getTableName());
+    assertEquals("rawdata", config.getDatabaseName());
+  }
+
+  @Test
+  void testGetTableName_dotAtStart_ignored() throws IOException {
+    Properties props = new Properties();
+    props.setProperty(HoodieTableConfig.NAME.key(), ".mytable");
+    initializeNewTableConfig(props);
+    HoodieTableConfig config = new HoodieTableConfig(storage, metaPath);
+    // idx == 0 is not > 0, so no splitting
+    assertEquals(".mytable", config.getTableName());
+    assertNull(config.getDatabaseName());
+  }
+
+  @Test
+  void testGetTableName_underscoreInDatabaseAndTable() throws IOException {
+    Properties props = new Properties();
+    props.setProperty(HoodieTableConfig.NAME.key(), "rawdata_user.kafka_hp_some_table");
+    props.setProperty(HoodieTableConfig.DATABASE_NAME.key(), "rawdata_user");
+    initializeNewTableConfig(props);
+    HoodieTableConfig config = new HoodieTableConfig(storage, metaPath);
+    assertEquals("kafka_hp_some_table", config.getTableName());
+    assertEquals("rawdata_user", config.getDatabaseName());
+  }
+
+  @Test
+  void testGetTableName_secureRawdata_databaseUnset() throws IOException {
+    Properties props = new Properties();
+    props.setProperty(HoodieTableConfig.NAME.key(), "secure_rawdata.sensitive_topic");
+    initializeNewTableConfig(props);
+    HoodieTableConfig config = new HoodieTableConfig(storage, metaPath);
+    assertEquals("sensitive_topic", config.getTableName());
+    assertEquals("secure_rawdata", config.getDatabaseName());
+  }
+
+  @Test
+  void testGetTableName_secureRawdata_databaseSet() throws IOException {
+    Properties props = new Properties();
+    props.setProperty(HoodieTableConfig.NAME.key(), "secure_rawdata.sensitive_topic");
+    props.setProperty(HoodieTableConfig.DATABASE_NAME.key(), "secure_rawdata");
+    initializeNewTableConfig(props);
+    HoodieTableConfig config = new HoodieTableConfig(storage, metaPath);
+    assertEquals("sensitive_topic", config.getTableName());
+    assertEquals("secure_rawdata", config.getDatabaseName());
+  }
+
+  @Test
+  void testGetTableName_databaseIsPrefixButNotExactMatch() throws IOException {
+    // database="raw" but prefix before dot is "rawdata" — should NOT strip
+    Properties props = new Properties();
+    props.setProperty(HoodieTableConfig.NAME.key(), "rawdata.mytable");
+    props.setProperty(HoodieTableConfig.DATABASE_NAME.key(), "raw");
+    initializeNewTableConfig(props);
+    HoodieTableConfig config = new HoodieTableConfig(storage, metaPath);
+    assertEquals("rawdata.mytable", config.getTableName());
+    assertEquals("raw", config.getDatabaseName());
+  }
+
+  @Test
+  void testGetTableName_databaseMatchesPrefixCaseSensitive() throws IOException {
+    // Case mismatch — should NOT strip (uses non-ingestion db to avoid applyIngestionTableHackFix)
+    Properties props = new Properties();
+    props.setProperty(HoodieTableConfig.NAME.key(), "MyDb.mytable");
+    props.setProperty(HoodieTableConfig.DATABASE_NAME.key(), "mydb");
+    initializeNewTableConfig(props);
+    HoodieTableConfig config = new HoodieTableConfig(storage, metaPath);
+    assertEquals("MyDb.mytable", config.getTableName());
+    assertEquals("mydb", config.getDatabaseName());
+  }
+
+  @Test
+  void testGetTableName_defaultDatabase() throws IOException {
+    Properties props = new Properties();
+    props.setProperty(HoodieTableConfig.NAME.key(), "default.mytable");
+    props.setProperty(HoodieTableConfig.DATABASE_NAME.key(), "default");
+    initializeNewTableConfig(props);
+    HoodieTableConfig config = new HoodieTableConfig(storage, metaPath);
+    assertEquals("mytable", config.getTableName());
+    assertEquals("default", config.getDatabaseName());
+  }
 }
 

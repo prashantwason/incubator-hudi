@@ -503,9 +503,10 @@ public class HoodieTableConfig extends HoodieConfig {
    * the persisted values for these tables are known to be wrong or missing, so
    * any value found in the file is discarded.
    *
-   * <p>Also splits {@code hoodie.table.name} on the first {@code .} to back-fill
-   * {@code hoodie.database.name}, which is otherwise empty for these tables and
-   * is needed by the table checksum and catalog lookups.
+   * <p>Does NOT mutate {@code hoodie.table.name} or {@code hoodie.database.name} —
+   * the qualified "db.table" form is handled at read time by
+   * {@link #getDatabaseName()} and {@link #getTableName()}, which avoids changing
+   * on-disk properties that would break rollback to 0.14.
    */
   private static final java.util.Set<String> INGESTION_DATABASES =
       new java.util.HashSet<>(java.util.Arrays.asList(
@@ -516,16 +517,6 @@ public class HoodieTableConfig extends HoodieConfig {
     String databaseName = getDatabaseName();
     if (databaseName == null || !INGESTION_DATABASES.contains(databaseName)) {
       return;
-    }
-
-    // Back-fill hoodie.database.name and trim hoodie.table.name: legacy ingestion writes stored the
-    // database in the table-name prop as "<db>.<table>" with hoodie.database.name unset; split on
-    // the first '.' so the persisted values match the canonical (database, table) shape.
-    String rawTableName = props.getProperty(NAME.key(), "");
-    int dot = rawTableName.indexOf('.');
-    if (dot > 0 && dot < rawTableName.length() - 1) {
-      props.setProperty(DATABASE_NAME.key(), rawTableName.substring(0, dot));
-      props.setProperty(NAME.key(), rawTableName.substring(dot + 1));
     }
 
     // Inject the partition-related table configs that the legacy writers omitted. These tables
@@ -544,8 +535,8 @@ public class HoodieTableConfig extends HoodieConfig {
     // Loud WARN so it's obvious in driver logs which tables tripped the inject path.
     String basePath = (metaPath == null || metaPath.getParent() == null)
         ? "" : metaPath.getParent().toString();
-    LOG.warn("Added configs to ingestion dataset {}.{} at {}: {}=datestr, {}=true, {}=org.apache.hudi.hive.SlashEncodedDayPartitionValueExtractor, {}=true",
-        props.getProperty(DATABASE_NAME.key(), ""), props.getProperty(NAME.key(), ""), basePath,
+    LOG.warn("Added partition configs to ingestion dataset {}.{} at {}: {}=datestr, {}=true, {}=org.apache.hudi.hive.SlashEncodedDayPartitionValueExtractor, {}=true",
+        getDatabaseName(), getTableName(), basePath,
         PARTITION_FIELDS.key(), DROP_PARTITION_COLUMNS.key(), PARTITION_EXTRACTOR_CLASS.key(),
         SLASH_SEPARATED_DATE_PARTITIONING.key());
   }
@@ -1301,15 +1292,19 @@ public class HoodieTableConfig extends HoodieConfig {
   /**
    * Read the table name.
    *
-   * Workaround: if the database property is unset and the stored table-name property is the
-   * qualified "db.table" form, return only the table portion so callers get the bare name.
+   * Workaround: if the stored table-name property is the qualified "db.table" form,
+   * strip the database prefix when it matches hoodie.database.name (or when that
+   * property is unset), so callers always get the bare table name.
    */
   public String getTableName() {
     String rawName = getString(NAME);
-    String rawDb = getString(DATABASE_NAME);
-    if ((rawDb == null || rawDb.isEmpty()) && rawName != null) {
-      int idx = rawName.indexOf('.');
-      if (idx > 0) {
+    if (rawName == null) {
+      return rawName;
+    }
+    int idx = rawName.indexOf('.');
+    if (idx > 0) {
+      String rawDb = getString(DATABASE_NAME);
+      if (rawDb == null || rawDb.isEmpty() || rawDb.equals(rawName.substring(0, idx))) {
         return rawName.substring(idx + 1);
       }
     }
