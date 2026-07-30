@@ -4,7 +4,7 @@
   <parent>
     <groupId>org.apache.hudi</groupId>
     <artifactId>hudi</artifactId>
-    <version>0.16.23</version>
+    <version>1.2.0.8</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
 

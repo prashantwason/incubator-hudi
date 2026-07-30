@@ -287,7 +287,7 @@
         "user": "",
         "avro_version": "1.8.2-UBER",
         "spark_avro_version": "3.3.2-uber-13",
-        "HUDI_VERSION": "0.16.23",
+        "HUDI_VERSION": "1.2.0.8",
         "scala_version": "2.12",
         "clac_version": "0.10.1-51881-184ea5016e20",
         "driver_memory": "12g",
