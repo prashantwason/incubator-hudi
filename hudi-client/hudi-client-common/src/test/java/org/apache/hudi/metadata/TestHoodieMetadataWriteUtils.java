@@ -59,12 +59,11 @@ public class TestHoodieMetadataWriteUtils {
     HoodieWriteConfig metadataWriteConfig1 = HoodieMetadataWriteUtils.createMetadataWriteConfig(writeConfig1, HoodieFailedWritesCleaningPolicy.EAGER,
         HoodieTableVersion.SIX);
     assertEquals(HoodieFailedWritesCleaningPolicy.EAGER, metadataWriteConfig1.getFailedWritesCleanPolicy());
-    assertEquals(HoodieCleaningPolicy.KEEP_LATEST_COMMITS, metadataWriteConfig1.getCleanerPolicy());
+    assertEquals(HoodieCleaningPolicy.KEEP_LATEST_FILE_VERSIONS, metadataWriteConfig1.getCleanerPolicy());
     assertEquals(1, metadataWriteConfig1.getCleanTriggerMaxCommits());
-    // default value already greater than data cleaner commits retained * 1.2
-    assertEquals(HoodieMetadataConfig.DEFAULT_METADATA_CLEANER_COMMITS_RETAINED, metadataWriteConfig1.getCleanerCommitsRetained());
+    assertEquals(2, metadataWriteConfig1.getCleanerFileVersionsRetained());
 
-    assertNotEquals(HoodieCleaningPolicy.KEEP_LATEST_FILE_VERSIONS, metadataWriteConfig1.getCleanerPolicy());
+    assertNotEquals(HoodieCleaningPolicy.KEEP_LATEST_COMMITS, metadataWriteConfig1.getCleanerPolicy());
     assertNotEquals(HoodieCleaningPolicy.KEEP_LATEST_BY_HOURS, metadataWriteConfig1.getCleanerPolicy());
 
     HoodieWriteConfig writeConfig2 = HoodieWriteConfig.newBuilder()
@@ -78,9 +77,8 @@ public class TestHoodieMetadataWriteUtils {
     HoodieWriteConfig metadataWriteConfig2 = HoodieMetadataWriteUtils.createMetadataWriteConfig(writeConfig2, HoodieFailedWritesCleaningPolicy.EAGER,
         HoodieTableVersion.SIX);
     assertEquals(HoodieFailedWritesCleaningPolicy.EAGER, metadataWriteConfig2.getFailedWritesCleanPolicy());
-    assertEquals(HoodieCleaningPolicy.KEEP_LATEST_COMMITS, metadataWriteConfig2.getCleanerPolicy());
-    // data cleaner commits retained * 1.2 is greater than default
-    assertEquals(24, metadataWriteConfig2.getCleanerCommitsRetained());
+    assertEquals(HoodieCleaningPolicy.KEEP_LATEST_FILE_VERSIONS, metadataWriteConfig2.getCleanerPolicy());
+    assertEquals(2, metadataWriteConfig2.getCleanerFileVersionsRetained());
     assertEquals(10, metadataWriteConfig2.getCleanTriggerMaxCommits());
   }
 

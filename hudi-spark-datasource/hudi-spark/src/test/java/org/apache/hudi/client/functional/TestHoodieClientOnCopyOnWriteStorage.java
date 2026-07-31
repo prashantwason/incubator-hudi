@@ -40,6 +40,7 @@ import org.apache.hudi.client.transaction.lock.InProcessLockProvider;
 import org.apache.hudi.client.validator.SparkPreCommitValidator;
 import org.apache.hudi.client.validator.SqlQueryEqualityPreCommitValidator;
 import org.apache.hudi.client.validator.SqlQuerySingleResultPreCommitValidator;
+import org.apache.hudi.client.utils.DeletePartitionUtils;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
 import org.apache.hudi.common.data.HoodieData;
 import org.apache.hudi.common.engine.HoodieEngineContext;
@@ -68,6 +69,7 @@ import org.apache.hudi.common.testutils.HoodieTestDataGenerator;
 import org.apache.hudi.common.testutils.HoodieTestTable;
 import org.apache.hudi.common.util.ClusteringUtils;
 import org.apache.hudi.common.util.FileFormatUtils;
+import org.apache.hudi.common.util.JsonUtils;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.common.util.StringUtils;
 import org.apache.hudi.common.util.collection.Pair;
@@ -80,6 +82,7 @@ import org.apache.hudi.config.HoodiePreCommitValidatorConfig;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.exception.HoodieClusteringException;
 import org.apache.hudi.exception.HoodieCorruptedDataException;
+import org.apache.hudi.exception.HoodieDeletePartitionException;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.exception.HoodieInsertException;
 import org.apache.hudi.exception.HoodieUpsertException;
@@ -2162,5 +2165,144 @@ public class TestHoodieClientOnCopyOnWriteStorage extends HoodieClientTestBase {
     Properties properties = new Properties();
     properties.setProperty("hoodie.datasource.write.row.writer.enable", String.valueOf(false));
     return properties;
+  }
+
+  private Properties getDeletePartitionClusteringTestProperties(boolean populateMetaFields) {
+    Properties properties = getPropertiesForKeyGen(populateMetaFields);
+    properties.putAll(getDisabledRowWriterProperties());
+    return properties;
+  }
+
+  // ==================== Tests for DELETE_PARTITION <-> Clustering conflict detection ====================
+
+  @Test
+  public void testClusteringBlockedByInflightDeletePartition() throws Exception {
+    String testPartitionPath = DEFAULT_FIRST_PARTITION_PATH;
+    initMetaClient(getPropertiesForKeyGen(false));
+    dataGen = new HoodieTestDataGenerator(new String[] {testPartitionPath});
+
+    HoodieWriteConfig insertConfig = getSmallInsertWriteConfig(2000, TRIP_EXAMPLE_SCHEMA, 10, false,
+        true, getDeletePartitionClusteringTestProperties(false));
+    SparkRDDWriteClient client = getHoodieWriteClient(insertConfig);
+
+    insertPartitionRecordsWithCommit(client, 200, WriteClientTestUtils.createNewInstantTime(), testPartitionPath);
+    insertPartitionRecordsWithCommit(client, 200, WriteClientTestUtils.createNewInstantTime(), testPartitionPath);
+
+    metaClient = HoodieTableMetaClient.reload(metaClient);
+    setupInflightStashDeletePartition(WriteClientTestUtils.createNewInstantTime(),
+        Collections.singletonList(testPartitionPath));
+
+    HoodieWriteConfig clusterConfig = getConfigBuilder()
+        .withClusteringConfig(createClusteringBuilder(true, 1)
+            .fromProperties(getDisabledRowWriterProperties())
+            .build())
+        .build();
+    SparkRDDWriteClient clusterClient = getHoodieWriteClient(clusterConfig);
+    assertThrows(HoodieException.class, () -> clusterClient.scheduleClustering(Option.empty()));
+  }
+
+  @Test
+  public void testClusteringNotBlockedByDeletePartitionOnDifferentPartition() throws Exception {
+    String testPartitionPath = DEFAULT_FIRST_PARTITION_PATH;
+    initMetaClient(getPropertiesForKeyGen(false));
+    dataGen = new HoodieTestDataGenerator(new String[] {testPartitionPath});
+
+    HoodieWriteConfig insertConfig = getSmallInsertWriteConfig(2000, TRIP_EXAMPLE_SCHEMA, 10, false,
+        true, getDeletePartitionClusteringTestProperties(false));
+    SparkRDDWriteClient client = getHoodieWriteClient(insertConfig);
+
+    insertPartitionRecordsWithCommit(client, 200, WriteClientTestUtils.createNewInstantTime(), testPartitionPath);
+    insertPartitionRecordsWithCommit(client, 200, WriteClientTestUtils.createNewInstantTime(), testPartitionPath);
+
+    metaClient = HoodieTableMetaClient.reload(metaClient);
+    setupInflightStashDeletePartition(WriteClientTestUtils.createNewInstantTime(),
+        Collections.singletonList(DEFAULT_SECOND_PARTITION_PATH));
+
+    HoodieWriteConfig clusterConfig = getConfigBuilder()
+        .withClusteringConfig(createClusteringBuilder(true, 1)
+            .fromProperties(getDisabledRowWriterProperties())
+            .build())
+        .build();
+    SparkRDDWriteClient clusterClient = getHoodieWriteClient(clusterConfig);
+    Option<String> clusteringInstant = clusterClient.scheduleClustering(Option.empty());
+    assertTrue(clusteringInstant.isPresent(),
+        "Clustering should be scheduled when DELETE_PARTITION targets a different partition");
+  }
+
+  @Test
+  public void testClusteringAfterCompletedDeletePartitionNoFalsePositive() throws Exception {
+    initMetaClient(getPropertiesForKeyGen(false));
+    dataGen = new HoodieTestDataGenerator(new String[] {DEFAULT_FIRST_PARTITION_PATH});
+
+    HoodieWriteConfig insertConfig = getSmallInsertWriteConfig(2000, TRIP_EXAMPLE_SCHEMA, 10, false,
+        true, getDeletePartitionClusteringTestProperties(false));
+    SparkRDDWriteClient client = getHoodieWriteClient(insertConfig);
+
+    insertPartitionRecordsWithCommit(client, 200, WriteClientTestUtils.createNewInstantTime(),
+        DEFAULT_FIRST_PARTITION_PATH);
+    deletePartitionWithCommit(client, WriteClientTestUtils.createNewInstantTime(),
+        Collections.singletonList(DEFAULT_FIRST_PARTITION_PATH));
+
+    dataGen = new HoodieTestDataGenerator(new String[] {DEFAULT_FIRST_PARTITION_PATH});
+    insertPartitionRecordsWithCommit(client, 200, WriteClientTestUtils.createNewInstantTime(),
+        DEFAULT_FIRST_PARTITION_PATH);
+    insertPartitionRecordsWithCommit(client, 200, WriteClientTestUtils.createNewInstantTime(),
+        DEFAULT_FIRST_PARTITION_PATH);
+
+    HoodieWriteConfig clusterConfig = getConfigBuilder()
+        .withClusteringConfig(createClusteringBuilder(true, 1)
+            .fromProperties(getDisabledRowWriterProperties())
+            .build())
+        .build();
+    SparkRDDWriteClient clusterClient = getHoodieWriteClient(clusterConfig);
+    Option<String> clusteringInstant = clusterClient.scheduleClustering(Option.empty());
+    assertTrue(clusteringInstant.isPresent(),
+        "Clustering should succeed after completed DELETE_PARTITION (no false positive)");
+  }
+
+  @Test
+  public void testDeletePartitionBlockedByPendingClustering() throws Exception {
+    String testPartitionPath = DEFAULT_FIRST_PARTITION_PATH;
+    initMetaClient(getPropertiesForKeyGen(true));
+    dataGen = new HoodieTestDataGenerator(new String[] {testPartitionPath});
+    HoodieWriteConfig config = getSmallInsertWriteConfig(100,
+        TRIP_EXAMPLE_SCHEMA, dataGen.getEstimatedFileSizeInBytes(150), true,
+        getDeletePartitionClusteringTestProperties(true));
+    SparkRDDWriteClient client = getHoodieWriteClient(config);
+
+    insertPartitionRecordsWithCommit(client, 600, "001", testPartitionPath);
+
+    metaClient = HoodieTableMetaClient.reload(metaClient);
+    HoodieWriteConfig clusterConfig = getConfigBuilder()
+        .withClusteringConfig(createClusteringBuilder(true, 1)
+            .fromProperties(getDisabledRowWriterProperties())
+            .build())
+        .build();
+    SparkRDDWriteClient clusterClient = getHoodieWriteClient(clusterConfig);
+    Option<String> clusteringInstant = clusterClient.scheduleClustering(Option.empty());
+    assertTrue(clusteringInstant.isPresent());
+
+    SparkRDDWriteClient freshClient = getHoodieWriteClient(config);
+    assertThrows(HoodieDeletePartitionException.class, () ->
+        deletePartitionWithCommit(freshClient, WriteClientTestUtils.createNewInstantTime(),
+            Collections.singletonList(testPartitionPath)));
+  }
+
+  /**
+   * Simulates DLM stash deletePartitions after startCommit: empty .replacecommit.requested followed by
+   * transition to inflight with DELETE_PARTITION metadata.
+   */
+  private void setupInflightStashDeletePartition(String deleteInstantTime, List<String> partitions)
+      throws Exception {
+    HoodieInstant requestedInstant = INSTANT_GENERATOR.createNewInstant(
+        REQUESTED, REPLACE_COMMIT_ACTION, deleteInstantTime);
+    HoodieTestTable.of(metaClient).addRequestedReplace(deleteInstantTime, Option.empty());
+
+    HoodieCommitMetadata inflightMeta = new HoodieCommitMetadata();
+    inflightMeta.setOperationType(WriteOperationType.DELETE_PARTITION);
+    inflightMeta.addMetadata(DeletePartitionUtils.STASH_DELETE_PARTITION_TARGETED_FOR_DELETION_KEY,
+        JsonUtils.getObjectMapper().writeValueAsString(partitions));
+    metaClient.reloadActiveTimeline().transitionReplaceRequestedToInflight(
+        requestedInstant, Option.of(inflightMeta));
   }
 }

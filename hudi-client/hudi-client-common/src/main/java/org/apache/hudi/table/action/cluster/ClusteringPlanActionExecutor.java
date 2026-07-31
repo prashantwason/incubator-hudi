@@ -20,6 +20,7 @@ package org.apache.hudi.table.action.cluster;
 
 import org.apache.hudi.avro.model.HoodieClusteringPlan;
 import org.apache.hudi.avro.model.HoodieRequestedReplaceMetadata;
+import org.apache.hudi.client.utils.DeletePartitionUtils;
 import org.apache.hudi.common.engine.HoodieEngineContext;
 import org.apache.hudi.common.model.TableServiceType;
 import org.apache.hudi.common.model.WriteOperationType;
@@ -99,6 +100,11 @@ public class ClusteringPlanActionExecutor<T, I, K, O> extends BaseTableServicePl
           .setExtraMetadata(extraMetadata.orElse(Collections.emptyMap()))
           .setClusteringPlan(planOption.get())
           .build();
+      // [UBER INTERNAL BEGIN] Temporary Uber internal change to guard clustering against concurrent
+      // DLM-style deletePartitions stash instants. Remove once DLM deletePartitions is ported to HUDI 1.2.
+      DeletePartitionUtils.checkForDeletePartitionConflictsWithClustering(
+          table, requestedReplaceMetadata, clusteringInstant.requestedTime());
+      // [UBER INTERNAL END]
       table.getActiveTimeline().saveToPendingClusterCommit(clusteringInstant, requestedReplaceMetadata);
     }
 
