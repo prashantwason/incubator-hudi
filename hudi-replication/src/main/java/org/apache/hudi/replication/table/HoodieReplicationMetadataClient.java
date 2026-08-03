@@ -45,6 +45,7 @@ import org.apache.hudi.common.table.timeline.HoodieArchivedTimeline;
 import org.apache.hudi.common.table.timeline.HoodieInstant;
 import org.apache.hudi.common.table.timeline.HoodieTimeline;
 import org.apache.hudi.common.table.timeline.TimelineMetadataUtils;
+import org.apache.hudi.common.table.timeline.versioning.v1.ArchivedTimelineV1;
 import org.apache.hudi.common.util.CleanerUtils;
 import org.apache.hudi.common.util.HoodieTimer;
 import org.apache.hudi.common.util.Option;
@@ -93,6 +94,8 @@ public class HoodieReplicationMetadataClient extends HoodieSnapshotMetadataClien
   private static final Integer MIN_ARCHIVED_INSTANTS_TO_LOAD = 32;
   private static final Boolean REPLICATE_HOODIE_PROPERTIES = true;
   private static final Integer MAX_ARCHIVED_COMMITS_TO_REPLICATE_PER_RUN = 128;
+  // Cap on archived instants loaded per archival replication pass (0.x fork value).
+  private static final Integer MAX_ARCHIVED_INSTANTS_TO_LOAD = 1024;
 
   // Default number of archived instants to load for archival replication.
   private volatile int maxArchivedInstantsToLoad = 1024;
@@ -186,6 +189,8 @@ public class HoodieReplicationMetadataClient extends HoodieSnapshotMetadataClien
 
   private HoodieReplicationConfig replicationConfig;
   private ReplicationCheckpointStore checkpointManager;
+  // Memoized result of the on-storage MDT existence check; see isMetadataTableConfigured().
+  private volatile Boolean metadataTablePresent;
 
   /**
    * Constructor with source/destination paths and config override.
@@ -363,7 +368,7 @@ public class HoodieReplicationMetadataClient extends HoodieSnapshotMetadataClien
       // bootstrap the primary region dataset table, with properties from source region dataset.
       HoodieTableMetaClient dstMetaClient = initTableIdempotent(dstStorageConf, dstBasePath,
           srcMetaClient.getTableConfig().getProps());
-      if (srcMetaClient.getTableConfig().isMetadataTableAvailable()) {
+      if (isMetadataTableConfigured(srcMetaClient)) {
         // bootstrap the secondary region metadata table, with properties from source region metadata table.
         HoodieReplicationMetadataClient internalReplicationClient = srcReplicationClient.getInternalClient();
         HoodieTableMetaClient srcMetadataMetaClient = internalReplicationClient.getMetaClient();
@@ -471,8 +476,11 @@ public class HoodieReplicationMetadataClient extends HoodieSnapshotMetadataClien
     Option<HoodieInstant> firstCommit = getFirstCommitOnTimeline();
     if (firstCommit.isPresent()) {
       HoodieTimer timer = new HoodieTimer().startTimer();
-      HoodieArchivedTimeline archivedTimeline = getMetaClient()
-          .getArchivedTimeline(lastReplicatedArchivedCommit, false);
+      // Archive-position-based load (0.x fork semantics): returns the instants appended to the
+      // archive after the checkpoint instant's record, so instants archived late with older
+      // requested times (e.g. rollbacks) are included and the checkpoint itself is excluded.
+      HoodieArchivedTimeline archivedTimeline = ArchivedTimelineV1.loadInstantsArchivedAfter(
+          getMetaClient(), lastReplicatedArchivedCommit, MAX_ARCHIVED_INSTANTS_TO_LOAD);
       Stream<String> timeStamps = archivedTimeline.filterCompletedInstants().getInstantsAsStream().map(HoodieInstant::requestedTime);
 
       long archivalInstantLoadDuration = timer.endTimer();
@@ -506,7 +514,7 @@ public class HoodieReplicationMetadataClient extends HoodieSnapshotMetadataClien
     List<HoodieInstant> instants = getInflightAndRequestedInstants();
 
     // pickup timestamps for any pending commits on the metadata timeline.
-    if (getMetaClient().getTableConfig().isMetadataTableAvailable()) {
+    if (isMetadataTableConfigured()) {
       instants.addAll(getInternalClient().getInflightAndRequestedInstants());
     }
 
@@ -841,6 +849,7 @@ public class HoodieReplicationMetadataClient extends HoodieSnapshotMetadataClien
   private boolean hasMoreCompletedCommitsAfter(String modTime) {
     return getMetaClient().getActiveTimeline()
         .getAllCommitsTimeline()
+        .filterCompletedInstants()
         .getInstantsAsStream()
         .anyMatch(instant -> instant.getCompletionTime().compareTo(modTime) > 0);
   }
@@ -882,7 +891,6 @@ public class HoodieReplicationMetadataClient extends HoodieSnapshotMetadataClien
       LOG.warn("Archival replication V2 is enabled. Skipping archival replication V1.");
       return orderedReplicationList;
     }
-    // pick the smaller timestamp.
     orderedReplicationList.put(ReplicationStep.DATA_DEL_FILES,
         makeReplicationInfo(ReplicationAction.DELETE_FILES, getArchivedCommitFiles(getLastArchivedCommit())));
     orderedReplicationList.put(ReplicationStep.DATA_ADD_FILES,
@@ -959,7 +967,7 @@ public class HoodieReplicationMetadataClient extends HoodieSnapshotMetadataClien
     List<String> inflightDatasetTs = getInflightAndRequestedInstants().stream()
         .map(HoodieInstant::requestedTime).collect(Collectors.toList());
     List<String> inflightMetadataTs = new ArrayList<>();
-    if (getMetaClient().getTableConfig().isMetadataTableAvailable()) {
+    if (isMetadataTableConfigured()) {
       inflightMetadataTs = getInternalClient().getInflightAndRequestedInstants().stream()
           .map(HoodieInstant::requestedTime).collect(Collectors.toList());
     }
@@ -1035,7 +1043,7 @@ public class HoodieReplicationMetadataClient extends HoodieSnapshotMetadataClien
       }
 
       // Update the MDT checkpoints
-      if (metaClient.getTableConfig().isMetadataTableAvailable()) {
+      if (isMetadataTableConfigured()) {
         HoodieReplicationMetadataClient internalClient = getInternalClient();
         internalClient.setLastReplicatedCommit(instantTime);
       }
@@ -1079,7 +1087,7 @@ public class HoodieReplicationMetadataClient extends HoodieSnapshotMetadataClien
       }
 
       // Update the MDT checkpoints
-      if (getMetaClient().getTableConfig().isMetadataTableAvailable()) {
+      if (isMetadataTableConfigured()) {
         HoodieReplicationMetadataClient internalClient = getInternalClient();
         internalClient.setLastArchivedCommit(instantTime);
       }
@@ -1224,7 +1232,7 @@ public class HoodieReplicationMetadataClient extends HoodieSnapshotMetadataClien
     try {
       // replicate archived commits from main dataset timeline.
       replicateArchivedCommits(getMetaClient(), getDestinationMetaClient(), orderedReplicationList, false);
-      if (getMetaClient().getTableConfig().isMetadataTableAvailable()) {
+      if (isMetadataTableConfigured()) {
         HoodieReplicationMetadataClient internalClient = getInternalClient();
         ValidationUtils.checkArgument(internalClient != null, "Internal client is not initialized");
         // replicate archived commits from metadata timeline.
@@ -1279,7 +1287,12 @@ public class HoodieReplicationMetadataClient extends HoodieSnapshotMetadataClien
             ? archivalCommits.get(MAX_ARCHIVED_COMMITS_TO_REPLICATE_PER_RUN) : firstCommonCommit.get();
     LOG.warn(String.format("%s: Loading archival commits from %s to %s to archived timeline.",
             metaClient.getTableConfig().getTableName(), startTs, endTs));
-    return metaClient.getArchivedTimeline(startTs);
+    // Bounded all-states load over [startTs, endTs] (v6/layout-V1 archive format): the delete
+    // list must cover the requested/inflight/completed file of each archived instant, so the
+    // completed-only getArchivedTimeline(startTs) cannot be used, and an unbounded full-archive
+    // load is too much I/O on long-lived tables. Inclusive start: startTs is the first commit to
+    // replicate. Callers restrict the instants they act on to archivalCommits.
+    return ArchivedTimelineV1.loadAllStatesInClosedRange(metaClient, startTs, endTs);
   }
 
   private Stream<StoragePath> getUnReplicatedLogFiles(HoodieTableMetaClient metaClient, HoodieTableMetaClient remoteMetaClient) {
@@ -1403,7 +1416,7 @@ public class HoodieReplicationMetadataClient extends HoodieSnapshotMetadataClien
   private void addMetadataInstantsForReplication(String datasetInstantTs, Map<ReplicationStep, List<ReplicationInfo>> orderedReplicationList) {
     try {
       // file listing metadata table is enabled
-      if (getMetaClient().getTableConfig().isMetadataTableAvailable()) {
+      if (isMetadataTableConfigured()) {
         String lastReplicatedDatasetCommit = getLastReplicatedCommit();
         HoodieReplicationMetadataClient internalClient = getInternalClient();
         /*
@@ -1480,7 +1493,7 @@ public class HoodieReplicationMetadataClient extends HoodieSnapshotMetadataClien
                                            Map<ReplicationStep, List<ReplicationInfo>> orderedReplicationList) {
     try {
       // file listing metadata table is enabled
-      if (getMetaClient().getTableConfig().isMetadataTableAvailable()) {
+      if (isMetadataTableConfigured()) {
         HoodieTimer timer = new HoodieTimer().startTimer();
         HoodieReplicationMetadataClient internalClient = getInternalClient();
         updateReplicationMap(orderedReplicationList, ReplicationStep.META_DEL_FILES, ReplicationAction.DELETE_FILES,
@@ -1498,7 +1511,7 @@ public class HoodieReplicationMetadataClient extends HoodieSnapshotMetadataClien
   private void addMetadataInstantsForRollback(String datasetInstantTs, Map<ReplicationStep, List<ReplicationInfo>> orderedReplicationList) {
     try {
       // file listing metadata table is enabled
-      if (getMetaClient().getTableConfig().isMetadataTableAvailable()) {
+      if (isMetadataTableConfigured()) {
         HoodieReplicationMetadataClient internalClient = getInternalClient();
 
         // If an associated clean commit is present, revert it.
@@ -1902,8 +1915,13 @@ public class HoodieReplicationMetadataClient extends HoodieSnapshotMetadataClien
 
   @Deprecated
   private Stream<StoragePath> getArchivedCommitFiles(String lastArchivedTs) {
-    HoodieArchivedTimeline archivedTimeline = getMetaClient()
-        .getArchivedTimeline(lastArchivedTs);
+    // Archive-position-based all-states load (0.x fork semantics): the archive carries
+    // requested/inflight/completed records per instant and archival deletes all three files
+    // from the timeline, so the delete list must cover all three states of every instant
+    // appended to the archive after the checkpoint — including late-archived instants with
+    // older requested times (rollbacks) — while excluding the checkpoint instant itself.
+    HoodieArchivedTimeline archivedTimeline = ArchivedTimelineV1.loadInstantsArchivedAfter(
+        getMetaClient(), lastArchivedTs, MAX_ARCHIVED_INSTANTS_TO_LOAD);
     try {
       metrics.ifPresent(m -> m.updateMetrics(HoodieReplicationMetrics.NUMBER_OF_ARCHIVED_REPLICATED));
       StoragePath instantFilePath = getMetaClient().getTimelinePath();
@@ -1920,14 +1938,10 @@ public class HoodieReplicationMetadataClient extends HoodieSnapshotMetadataClien
   @Deprecated
   private Stream<StoragePath> getArchivalFiles() {
     try {
-      StoragePath archivePath = getMetaClient().getArchivePath();
-      List<StoragePathInfo> archiveFiles = getMetaClient().getStorage().globEntries(
-          new StoragePath(archivePath, ".commits_.archive*"));
-      if (!archiveFiles.isEmpty()) {
-        return archiveFiles.stream().map(StoragePathInfo::getPath);
-      }
-      return getMetaClient().getStorage().listDirectEntries(archivePath)
-          .stream().map(StoragePathInfo::getPath);
+      // Replicate only the archive log files that carry content past the archived checkpoint
+      // (the files the position-based load actually read), not the entire archive folder.
+      return ArchivedTimelineV1.loadInstantsArchivedAfter(
+          getMetaClient(), getLastArchivedCommit(), MAX_ARCHIVED_INSTANTS_TO_LOAD).getFilesLoaded().stream();
     } catch (Exception e) {
       metrics.ifPresent(m -> m.updateMetrics(HoodieReplicationMetrics.ARCHIVED_REPLICATED_FAILED));
       throw new HoodieException(
@@ -1958,14 +1972,22 @@ public class HoodieReplicationMetadataClient extends HoodieSnapshotMetadataClien
     // example:
     //   <basepath>/.hoodie/.temp/20220223010045/2022/02/22/eeb6b6a1-6329-446d-9d68-a7af4686ef02-0_78-7-9542_20220223010045.parquet.marker.CREATE
     //   a) strip prefix <basepath>/.hoodie/.temp/20220223010045/
-    //   b) strip suffix .marker.CREATE
+    //   b) strip suffix .marker.CREATE (or .marker.MERGE)
+    // CREATE and MERGE markers both denote a brand-new file path written by this instant (small-file
+    // bin-packing produces a MERGE marker for a new file, not an in-place append), so both must be
+    // deleted on rollback of a pending commit -- matching MarkerBasedRollbackStrategy's treatment of
+    // CREATE and MERGE identically. APPEND markers (MOR log blocks) are intentionally excluded.
     String markerCreateSuffix = HoodieTableMetaClient.MARKER_EXTN + ".CREATE";
+    String markerMergeSuffix = HoodieTableMetaClient.MARKER_EXTN + ".MERGE";
     return allMarkerFilePaths(instantTs)
-        .filter(path -> path.getName().contains(markerCreateSuffix))
+        .filter(path -> path.getName().endsWith(markerCreateSuffix) || path.getName().endsWith(markerMergeSuffix))
         .map(fullPath -> new StoragePath(FSUtils.getRelativePartitionPath(markerFolderPath, fullPath)))
         .map(suffix -> suffix.toString())
-        .map(suffixStr -> new StoragePath(getMetaClient().getBasePath(),
-            suffixStr.substring(0, suffixStr.indexOf(markerCreateSuffix))));
+        .map(suffixStr -> {
+          String markerSuffix = suffixStr.endsWith(markerCreateSuffix) ? markerCreateSuffix : markerMergeSuffix;
+          return new StoragePath(getMetaClient().getBasePath(),
+              suffixStr.substring(0, suffixStr.length() - markerSuffix.length()));
+        });
   }
 
   private List<StoragePath> readDirectMarkers(String markerFolderStr) {
@@ -2046,5 +2068,36 @@ public class HoodieReplicationMetadataClient extends HoodieSnapshotMetadataClien
 
   private Option<HoodieInstant> getFirstCommitOnTimeline() {
     return getMetaClient().reloadActiveTimeline().getAllCommitsTimeline().filterCompletedInstants().firstInstant();
+  }
+
+  /**
+   * Memoized variant of {@link #isMetadataTableConfigured(HoodieTableMetaClient)} for this client's
+   * data table. MDT existence is effectively monotonic (created once at bootstrap, deleted only
+   * out-of-band), so a positive result is cached to avoid a live storage check on every per-commit
+   * replication path; a negative result is re-checked so a late MDT bootstrap is picked up. The
+   * cache is cleared on {@link #reload()}.
+   */
+  private boolean isMetadataTableConfigured() throws IOException {
+    if (metadataTablePresent == null || !metadataTablePresent) {
+      metadataTablePresent = isMetadataTableConfigured(getMetaClient());
+    }
+    return metadataTablePresent;
+  }
+
+  @Override
+  public void reload() {
+    super.reload();
+    this.metadataTablePresent = null;
+  }
+
+  /**
+   * Returns {@code true} if the metadata table exists on storage for the given data table meta client.
+   * This is a live filesystem check, unlike {@link HoodieTableConfig#isMetadataTableAvailable()} which reads
+   * a cached in-memory flag that only reflects reality as of the meta client's last reload.
+   */
+  private static boolean isMetadataTableConfigured(HoodieTableMetaClient dataMetaClient) throws IOException {
+    StoragePath metadataTableBasePath = new StoragePath(
+        HoodieTableMetadata.getMetadataTableBasePath(dataMetaClient.getBasePath().toString()));
+    return dataMetaClient.getStorage().exists(metadataTableBasePath);
   }
 }

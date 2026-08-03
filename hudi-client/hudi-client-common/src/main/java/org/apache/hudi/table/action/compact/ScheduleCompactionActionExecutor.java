@@ -260,6 +260,8 @@ public class ScheduleCompactionActionExecutor<T, I, K, O> extends BaseTableServi
     // Handle the special case of the MDT SOLO_COMMIT_TIMESTAMP (and its partition-init/table-service suffixed
     // variants, e.g. "00000000000000010"), used when the metadata table is bootstrapped against a data table
     // with no completed commits yet. These are not real instant times and cannot be parsed as such.
+    // Returning 0 (epoch) makes the time-based trigger strategies treat the bootstrap instant as arbitrarily
+    // old, biasing toward compacting early rather than failing the schedule.
     if (time.startsWith(HoodieTableMetadata.SOLO_COMMIT_TIMESTAMP)) {
       return 0L;
     }

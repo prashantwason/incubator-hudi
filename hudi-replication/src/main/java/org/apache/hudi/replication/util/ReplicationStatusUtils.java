@@ -24,6 +24,7 @@ import org.apache.hudi.common.util.ConfigUtils;
 import org.apache.hudi.common.util.Option;
 import org.apache.hudi.exception.HoodieIOException;
 import org.apache.hudi.replication.config.HoodieReplicationConfig;
+import org.apache.hudi.replication.table.ReplicationCheckpointStore;
 import org.apache.hudi.replication.table.ReplicationDestination;
 import org.apache.hudi.storage.StoragePath;
 
@@ -59,7 +60,9 @@ public class ReplicationStatusUtils {
   }
 
   public static String getCheckpointKeyForLastReplicatedTimestamp(ReplicationDestination destination) {
-    return String.format("hoodie.crossregion.replication.%s.timestamp", destination.label.toLowerCase());
+    // Delegate to the checkpoint store so the read key always matches the written key
+    // (SECONDARY_REGION uses the legacy region-less key).
+    return ReplicationCheckpointStore.getCheckpointKeyForLastReplicatedTimestamp(destination);
   }
 
   public static boolean getCrossRegionOperationStatus(HoodieTableMetaClient metaClient, ReplicationDestination regionId) {
