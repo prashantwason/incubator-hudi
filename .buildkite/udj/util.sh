@@ -433,6 +433,7 @@ set_commands() {
   # Initialize flags for test execution mode
   use_surefire_goal_only=""
   skip_surefire=""
+  build_modules_to_execute=""
   case $PLAN_ID in
     0)
       build_command_to_run="mvn compile test-compile install -Pwarn-log $ACTIVE_PROFILES -DskipTests -DskipITs -Drat.skip=true -Dcheckstyle.skip=true -Dscalastyle.skip -B | tee build.log"
@@ -455,6 +456,11 @@ set_commands() {
       ;;
     5)
       modules_to_execute="hudi-client/hudi-spark-client"
+      # Some spark-client tests load the Spark adapter (e.g. Spark3_3Adapter) via surefire
+      # additionalClasspathElements pointing at hudi-spark-datasource target/classes. Those
+      # modules depend on spark-client, so "-pl spark-client -am" never builds them; build
+      # them explicitly here while still running tests only in spark-client.
+      build_modules_to_execute="hudi-client/hudi-spark-client,hudi-spark-datasource/hudi-spark3.3.x"
       ;;
     6)
       modules_to_execute="hudi-spark-datasource/hudi-spark3-common"
@@ -542,7 +548,7 @@ set_commands() {
     else
       log_file="functional_test_log.txt"
     fi
-    build_command_to_run="mvn compile test-compile install -Pwarn-log $ACTIVE_PROFILES -DskipTests -DskipITs -Drat.skip=true -Dcheckstyle.skip=true -Dscalastyle.skip -pl $modules_to_execute -am -B > build.log 2>&1 &"
+    build_command_to_run="mvn compile test-compile install -Pwarn-log $ACTIVE_PROFILES -DskipTests -DskipITs -Drat.skip=true -Dcheckstyle.skip=true -Dscalastyle.skip -pl ${build_modules_to_execute:-$modules_to_execute} -am -B > build.log 2>&1 &"
 
     # Construct test command based on flags
     if [ "$use_surefire_goal_only" == "true" ]; then
