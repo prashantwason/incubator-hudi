@@ -183,13 +183,7 @@ public class HoodieMetadataWriteUtils {
 
     final long maxLogFileSizeBytes = writeConfig.getMetadataConfig().getMaxLogFileSize();
     // Borrow the cleaner policy from the main table and adjust the cleaner policy based on the main table's cleaner policy
-    // At table version < 8, always use the 0.x MDT clean policy (KEEP_LATEST_FILE_VERSIONS, 2 versions):
-    // deriving KEEP_LATEST_COMMITS from the data table makes the MDT cleaner a no-op until the MDT
-    // timeline exceeds the retained-commits count (EarliestCommitToRetain is null before that), which
-    // both diverges from 0.14 output (no <ts>002 clean instants) and lets stale file versions pile up
-    // on small/new tables.
-    boolean shouldDeriveFromDataTableCleanPolicy = datatableVersion.greaterThanOrEquals(HoodieTableVersion.EIGHT)
-        && writeConfig.getMetadataConfig().shouldDeriveFromDataTableCleanPolicy();
+    boolean shouldDeriveFromDataTableCleanPolicy = writeConfig.getMetadataConfig().shouldDeriveFromDataTableCleanPolicy();
     HoodieCleanConfig.Builder cleanConfigBuilder = HoodieCleanConfig.newBuilder()
         .withAsyncClean(DEFAULT_METADATA_ASYNC_CLEAN)
         .withAutoClean(false)

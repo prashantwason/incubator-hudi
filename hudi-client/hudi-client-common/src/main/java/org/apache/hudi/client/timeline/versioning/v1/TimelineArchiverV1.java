@@ -367,7 +367,6 @@ public class TimelineArchiverV1<T extends HoodieAvroPayload, I, K, O> implements
       }
     }
 
-
     if (table.isMetadataTable()) {
       HoodieTableMetaClient dataMetaClient = HoodieTableMetaClient.builder()
           .setBasePath(HoodieTableMetadata.getDatasetBasePath(config.getBasePath()))

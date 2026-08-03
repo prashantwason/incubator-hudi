@@ -136,9 +136,6 @@ public class HoodieReplicationUtilities {
             metrics.put(String.format("replication.%s.disabled", regionId.name()), 1L);
           }
         }
-      } else if (replicationEnabled) {
-        LOG.debug("Skipping replication SLA evaluation for region {}: last replicated timestamp is {}",
-            regionId, lastReplicatedTimestamp);
       }
     }
     return metrics;

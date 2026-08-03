@@ -25,13 +25,11 @@ import org.apache.hudi.avro.model.HoodieCleanMetadata;
 import org.apache.hudi.avro.model.HoodieRestoreMetadata;
 import org.apache.hudi.avro.model.HoodieRollbackMetadata;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
-import org.apache.hudi.replication.commitmetadata.DeletePartitionCommitMetadata;
 import org.apache.hudi.replication.config.HoodieReplicationConfig;
 import org.apache.hudi.common.config.HoodieStorageConfig;
 import org.apache.hudi.common.metrics.Registry;
 import org.apache.hudi.common.model.HoodieCleaningPolicy;
 import org.apache.hudi.common.model.HoodieCommitMetadata;
-import org.apache.hudi.common.model.HoodieReplaceCommitMetadata;
 import org.apache.hudi.common.model.HoodiePartitionMetadata;
 import org.apache.hudi.common.model.HoodieRecord;
 import org.apache.hudi.common.model.HoodieTableType;
@@ -40,13 +38,13 @@ import org.apache.hudi.replication.table.HoodieReplicationMetadataClient;
 import org.apache.hudi.replication.table.HoodieReplicationMetrics;
 import org.apache.hudi.common.table.HoodieTableConfig;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
-import org.apache.hudi.common.table.HoodieTableVersion;
 import org.apache.hudi.replication.table.ReplicationDestination;
 import org.apache.hudi.replication.HoodieReplicationContext;
 import org.apache.hudi.common.table.marker.MarkerType;
 import org.apache.hudi.replication.client.HoodieReplicationMetadata;
 import org.apache.hudi.common.table.timeline.HoodieActiveTimeline;
 import org.apache.hudi.common.table.timeline.HoodieInstant;
+import org.apache.hudi.common.table.timeline.versioning.v1.InstantComparatorV1;
 import org.apache.hudi.common.table.view.FileSystemViewStorageConfig;
 import org.apache.hudi.common.testutils.HoodieTestUtils;
 import org.apache.hudi.common.util.Option;
@@ -63,14 +61,12 @@ import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.index.HoodieIndex;
 import org.apache.hudi.testutils.HoodieSparkClientTestHarness;
 import org.apache.hudi.metadata.HoodieTableMetadata;
-import org.apache.hudi.metadata.MetadataPartitionType;
 
 import org.apache.hudi.table.action.HoodieWriteMetadata;
 
 import org.apache.spark.api.java.JavaRDD;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -83,7 +79,10 @@ import org.mockito.ArgumentMatchers;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.temporal.ChronoField;
@@ -119,13 +118,10 @@ import static org.apache.hudi.replication.ReplicationConfigKeys.LAST_CROSS_REGIO
 import static org.apache.hudi.replication.ReplicationConfigKeys.LAST_CROSS_REGION_REPLICATED_TERTIARY_CLUSTERING_COMMIT;
 import static org.apache.hudi.replication.ReplicationConfigKeys.LAST_CROSS_REGION_REPLICATED_TERTIARY_COMMIT;
 import static org.apache.hudi.common.table.timeline.HoodieInstantTimeGenerator.SECS_INSTANT_TIMESTAMP_FORMAT;
-import static org.apache.hudi.common.table.timeline.HoodieTimeline.CLEAN_ACTION;
 import static org.apache.hudi.common.table.timeline.HoodieTimeline.COMMIT_ACTION;
-import static org.apache.hudi.common.table.timeline.HoodieTimeline.COMPACTION_ACTION;
 import static org.apache.hudi.common.table.timeline.HoodieTimeline.DELTA_COMMIT_ACTION;
 import static org.apache.hudi.common.table.timeline.HoodieTimeline.INIT_INSTANT_TS;
 import static org.apache.hudi.common.table.timeline.HoodieTimeline.REPLACE_COMMIT_ACTION;
-import static org.apache.hudi.common.testutils.HoodieTestDataGenerator.DEFAULT_PARTITION_PATHS;
 import static org.apache.hudi.common.testutils.HoodieTestDataGenerator.TRIP_EXAMPLE_SCHEMA;
 import static org.apache.hudi.replication.util.ReplicationPropertiesManager.REPLICATION_PROPERTIES_FILE;
 import static org.apache.hudi.replication.util.ReplicationPropertiesManager.REPLICATION_PROPERTIES_FILE_BACKUP;
@@ -196,17 +192,11 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
       storage.createDirectory(new StoragePath(basePath));
       storage.createDirectory(new StoragePath(secondaryPath));
     }
-    if (tableProperties == null) {
-      tableProperties = new Properties();
+    if (tableProperties != null && !tableProperties.isEmpty()) {
+      initMetaClient(tableType, tableProperties);
+    } else {
+      initMetaClient(tableType);
     }
-    // Default these tests to table version 6 (V1/legacy timeline layout), matching the version-6
-    // rollout under validation. Table version 9 (V2 timeline, e.g. ActiveTimelineV2 / completion-time
-    // suffixed instant filenames) should now largely be a config swap here and in getWriteConfigBuilder(),
-    // EXCEPT HoodieReplicationMetadataClient.getRollbackFiles() (hudi-replication) still cannot reconstruct
-    // a rolled-back commit's completed filename under V2, since HoodieRollbackMetadata never carries the
-    // original commit's completion time. That is a separate, unfixed product-code gap (see testRollbackCommit).
-    tableProperties.putIfAbsent(HoodieWriteConfig.WRITE_TABLE_VERSION.key(), String.valueOf(HoodieTableVersion.SIX.versionCode()));
-    initMetaClient(tableType, tableProperties);
     initTestDataGenerator();
     replicationClient = new HoodieReplicationMetadataClient(HoodieTestUtils.getDefaultStorageConf(), basePath, secondaryPath, SECONDARY_REGION);
     metaClient = replicationClient.getMetaClient();
@@ -242,8 +232,6 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
     try {
       storage.createDirectory(new StoragePath(regionPath));
       storage.createDirectory(new StoragePath(regionPath, HoodieTableMetaClient.METAFOLDER_NAME));
-      storage.createDirectory(new StoragePath(regionPath + StoragePath.SEPARATOR + HoodieTableMetaClient.METAFOLDER_NAME,
-          HoodieTableMetaClient.TIMELINEFOLDER_NAME));
       FileIOUtils.copy(storage, new StoragePath(metaClient.getMetaPath(), HOODIE_PROPERTIES_FILE),
           storage, new StoragePath(regionPath + StoragePath.SEPARATOR + HoodieTableMetaClient.METAFOLDER_NAME, HOODIE_PROPERTIES_FILE),
           false, true);
@@ -259,12 +247,12 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
   private void simulateCommitReplication(HoodieTableMetaClient metaClientSrc, HoodieTableMetaClient metaClientTgt, String commitTime) {
     try {
       List<StoragePathInfo> fsStatuses = metaClientSrc.getStorage().globEntries(
-          new StoragePath(metaClientSrc.getTimelinePath() + "/" + commitTime + "*"));
+          new StoragePath(metaClientSrc.getMetaPath() + "/" + commitTime + "*"));
       if (fsStatuses != null) {
         for (StoragePathInfo fsStatus : fsStatuses) {
           if (fsStatus.isFile()) {
             FileIOUtils.copy(storage, fsStatus.getPath(), storage,
-                new StoragePath(metaClientTgt.getTimelinePath(), fsStatus.getPath().getName()), false, true);
+                new StoragePath(metaClientTgt.getMetaPath(), fsStatus.getPath().getName()), false, true);
           }
         }
       }
@@ -287,7 +275,6 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
                                                         boolean enableMetrics, boolean autoClean,
                                                         boolean incrementalClean) {
     return HoodieWriteConfig.newBuilder().withPath(basePath).withSchema(TRIP_EXAMPLE_SCHEMA)
-        .withWriteTableVersion(HoodieTableVersion.SIX.versionCode())
         .withParallelism(2, 2).withDeleteParallelism(2)
         .withRollbackParallelism(2).withFinalizeWriteParallelism(2)
         .withProps(java.util.Collections.singletonMap("hoodie.auto.commit", String.valueOf(autoCommit)))
@@ -312,9 +299,6 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
             .enable(useFileListingMetadata)
             .enableMetrics(enableMetrics)
             .withMaxNumDeltaCommitsBeforeCompaction(numDeltaCommitsBeforeCompaction)
-            // Spark engine defaults column stats (and, since HUDI-8814, partition stats) index to enabled.
-            // These tests assert on the FILES-only MDT partition, so keep both indexes off explicitly.
-            .withMetadataIndexColumnStats(false)
             .build())
         .withMetricsConfig(HoodieMetricsConfig.newBuilder().on(false)
           .withExecutorMetrics(true)
@@ -331,16 +315,12 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
     List<WriteStatus> writeStatuses = new ArrayList<>();
 
     try (SparkRDDWriteClient client = new SparkRDDWriteClient(context, customConfig)) {
-      WriteClientTestUtils.startCommitWithTime(client, newCommitTime);
-      List<HoodieRecord> records = dataGen.generateInserts(newCommitTime, numRecords);
-      writeStatuses = client.insert(jsc.parallelize(records, 1), newCommitTime).collect();
-      if (customConfig.getBooleanOrDefault("hoodie.auto.commit", true)) {
-        client.commit(newCommitTime, jsc.parallelize(writeStatuses, 1));
-      }
+      String instantTime = client.startCommit();
+      List<HoodieRecord> records = dataGen.generateInserts(instantTime, numRecords);
+      writeStatuses = client.insert(jsc.parallelize(records, 1), instantTime).collect();
     } catch (Exception e) {
-      // Fail fast: a swallowed write failure here surfaces later as unrelated assertion noise
-      // (e.g. missing replication payload steps) that hides the real root cause.
-      throw new RuntimeException("Failed to write commit " + newCommitTime, e);
+      e.printStackTrace();
+      LOG.info("Failed to successfully add records to " + newCommitTime);
     }
     return writeStatuses;
   }
@@ -356,17 +336,14 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
     List<WriteStatus> writeStatuses = new ArrayList<>();
 
     try (SparkRDDWriteClient client = new SparkRDDWriteClient(context, customConfig)) {
-      WriteClientTestUtils.startCommitWithTime(client, newCommitTime);
+      String instantTime = client.startCommit();
       if (upsertRecords) {
-        writeStatuses = client.upsert(jsc.parallelize(records, 1), newCommitTime).collect();
+        writeStatuses = client.upsert(jsc.parallelize(records, 1), instantTime).collect();
       } else {
-        writeStatuses = client.insert(jsc.parallelize(records, 1), newCommitTime).collect();
-      }
-      if (customConfig.getBooleanOrDefault("hoodie.auto.commit", true)) {
-        client.commit(newCommitTime, jsc.parallelize(writeStatuses, 1));
+        writeStatuses = client.insert(jsc.parallelize(records, 1), instantTime).collect();
       }
     } catch (Exception e) {
-      throw new RuntimeException("Failed to write commit " + newCommitTime, e);
+      LOG.info("Failed to successfully add records to " + newCommitTime);
     }
     return writeStatuses;
   }
@@ -374,16 +351,12 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
   private void generateDeletePartition(HoodieWriteConfig customConfig, String commitTime,
                                                     List<String> partitions, Option<String> stashedLocation) {
     try (SparkRDDWriteClient client = new SparkRDDWriteClient(context, customConfig)) {
-      WriteClientTestUtils.startCommitWithTime(client, commitTime, REPLACE_COMMIT_ACTION);
-      HoodieWriteResult result = client.deletePartitions(partitions, commitTime);
+      String instantTime = client.startCommit(REPLACE_COMMIT_ACTION);
+      // TODO: revisit check when stash partition is ported
+      HoodieWriteResult result = client.deletePartitions(partitions, instantTime);
       assertFalse(result.getPartitionToReplaceFileIds().isEmpty());
-      // The stash-partition writer tooling is not ported to this branch; simulate its on-disk output
-      // (STASHED_LOCATION_KEY in the replace-commit extraMetadata) so the reader path is exercised.
-      Option<Map<String, String>> extraMetadata = stashedLocation.map(loc ->
-          java.util.Collections.singletonMap(DeletePartitionCommitMetadata.STASHED_LOCATION_KEY, loc));
-      client.commit(commitTime, result.getWriteStatuses(), extraMetadata, REPLACE_COMMIT_ACTION, result.getPartitionToReplaceFileIds());
     } catch (Exception e) {
-      throw new RuntimeException("Failed to delete/stash partitions " + partitions + " at " + commitTime, e);
+      LOG.info("Failed to stash partitions" + partitions);
     }
   }
 
@@ -579,10 +552,6 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
       // upsert records
       generateCommit(customConfig, updateCommit, updates, true);
       commitTimestamps.add(updateCommit);
-      // Refresh table config (not just the active timeline) so isMetadataTableAvailable() reflects
-      // whether MDT bootstrap has completed by this point, before setLastReplicatedCommit's internal
-      // MDT-checkpoint gate checks it.
-      replicationClient.reload();
       replicationClient.setLastReplicatedCommit(updateCommit);
     }
 
@@ -820,9 +789,9 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
     assertEquals(DELETE_FILES, delInfo.get(0).action);
     assertEquals(delInfo.get(0).relativePath, ".hoodie");
     assertEquals(true, lastArchivedTS.equals(commitTimestamps.get(commitIndex + 2)));
-    assertEquals(true, tobeDeletedFiles.contains(getCompletedFileName(commitTimestamps.get(commitIndex + 0), COMMIT_ACTION)));
-    assertEquals(true, tobeDeletedFiles.contains(getCompletedFileName(commitTimestamps.get(commitIndex + 1), COMMIT_ACTION)));
-    assertEquals(true, tobeDeletedFiles.contains(getCompletedFileName(commitTimestamps.get(commitIndex + 2), COMMIT_ACTION)));
+    assertEquals(true, tobeDeletedFiles.contains(commitTimestamps.get(commitIndex + 0) + ".commit"));
+    assertEquals(true, tobeDeletedFiles.contains(commitTimestamps.get(commitIndex + 1) + ".commit"));
+    assertEquals(true, tobeDeletedFiles.contains(commitTimestamps.get(commitIndex + 2) + ".commit"));
     List<HoodieReplicationMetadataClient.ReplicationInfo> addInfo = replicationList
             .get(HoodieReplicationMetadataClient.ReplicationStep.DATA_ADD_FILES)
             .stream().filter(ri -> ri.relativePath.equals(".hoodie/archived")).collect(Collectors.toList());
@@ -985,13 +954,19 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
     HoodieCommitMetadata commitMetadata = new HoodieCommitMetadata();
     commitMetadata.setOperationType(WriteOperationType.UPSERT);
     for (String ts : completionOrder) {
-      HoodieInstant requested = metaClient.createNewInstant(HoodieInstant.State.REQUESTED, "commit", ts);
-      metaClient.getStorage().create(new StoragePath(metaClient.getTimelinePath(), getInstantFileName(requested))).close();
-      metaClient.getActiveTimeline().transitionRequestedToInflight(requested, Option.empty());
-      HoodieInstant completed = metaClient.createNewInstant(HoodieInstant.State.COMPLETED, "commit", ts, ts);
-      FileIOUtils.createFileInPath(metaClient.getStorage(), new StoragePath(metaClient.getTimelinePath(), getInstantFileName(completed)),
-          metaClient.getTimelineLayout().getCommitMetadataSerDe().getInstantWriter(commitMetadata));
+      HoodieInstant requested = new HoodieInstant(HoodieInstant.State.REQUESTED, "commit", ts, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
+      metaClient.getStorage().create(new StoragePath(metaClient.getMetaPath(), getInstantFileName(requested))).close();
+      HoodieInstant inflight = new HoodieInstant(HoodieInstant.State.INFLIGHT, "commit", ts, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
+      metaClient.getStorage().create(new StoragePath(metaClient.getMetaPath(), getInstantFileName(inflight))).close();
+      HoodieInstant completed = new HoodieInstant(HoodieInstant.State.COMPLETED, "commit", ts, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
+      metaClient.getStorage().create(new StoragePath(metaClient.getMetaPath(), getInstantFileName(completed))).close();
 
+      // write empty metadata to completed file
+      File file = new File(metaClient.getMetaPath().toString(), getInstantFileName(completed));
+      FileOutputStream fileOutputStream = new FileOutputStream(file);
+      fileOutputStream.write(commitMetadata.toJsonString().getBytes(StandardCharsets.UTF_8));
+      fileOutputStream.flush();
+      fileOutputStream.close();
 
       // wait for 1 sec for consistent test results
       Thread.sleep(1000);
@@ -1000,7 +975,7 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
     verifyGetInstantsModifiedAfterTs(commitTimes);
   }
 
-  private void checkForCompactionCleanMetadataCommit(String commitTs, List<String> requestedFileNames, List<Pair<String, String>> completedInstants,
+  private void checkForCompactionCleanMetadataCommit(String commitTs, List<String> requestedFileNames, List<String> commitFileNames,
                                                      int expStartMarkers, int expDataFileMarkers, int expDataFilesAdded,
                                                      int expDataFilesDeleted, int expinishMarkers) throws Exception {
     List<WriteStatus> writeStatuses;
@@ -1009,15 +984,6 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
     HoodieWriteConfig writeConfig = getWriteConfigBuilder(true, true, false, true).build();
     writeConfig.setValue(HoodieCleanConfig.CLEANER_COMMITS_RETAINED, "24");
     createCommits(writeConfig, 1, false);
-
-    // completed instant filenames are timeline-layout-version-dependent (V2 appends a completion-time suffix),
-    // so resolve them off the metadata table's actual timeline rather than assuming a fixed shape.
-    HoodieTableMetaClient metadataMetaClient = HoodieTableMetaClient.builder().setConf(metaClient.getStorageConf())
-        .setBasePath(HoodieTableMetadata.getMetadataTableBasePath(metaClient.getBasePath()).toString())
-        .setLoadActiveTimelineOnLoad(true).build();
-    List<String> commitFileNames = completedInstants.stream()
-        .map(p -> getCompletedFileName(metadataMetaClient, p.getLeft(), p.getRight()))
-        .collect(Collectors.toList());
 
     // make sure compaction/clean instant is present in replication list
     replicationClient.reload();
@@ -1054,7 +1020,7 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
     String commitTs = commitTimestamps.get(commitTimestamps.size() - 1);
     String compactionTs = HoodieReplicationMetadataClient.createCompactionTimestamp(commitTs);
     checkForCompactionCleanMetadataCommit(commitTs, Arrays.asList(compactionTs + ".compaction.requested"),
-        Arrays.asList(Pair.of(compactionTs, COMMIT_ACTION)), 4, 2, 4,0,2);
+        Arrays.asList(compactionTs + ".commit"), 4, 2, 4,0,2);
 
     commitTimestamps.addAll(createCommits(2, false));
 
@@ -1067,7 +1033,7 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
     compactionTs = HoodieReplicationMetadataClient.createCompactionTimestamp(commitTs);
     String cleanTs = HoodieReplicationMetadataClient.createCleanTimestamp(commitTs);
     checkForCompactionCleanMetadataCommit(commitTs, Arrays.asList(compactionTs + ".compaction.requested", cleanTs + ".clean.requested"),
-        Arrays.asList(Pair.of(compactionTs, COMMIT_ACTION), Pair.of(cleanTs, CLEAN_ACTION)), 4, 2, 4,0,2);
+        Arrays.asList(compactionTs + ".commit", cleanTs + ".clean"), 4, 2, 4,0,2);
 
     // 9 commits are expected
     replicationClient.reload();
@@ -1130,7 +1096,7 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
     HoodieTableMetaClient metadataMetaClient = HoodieTableMetaClient.builder().setConf(metaClient.getStorageConf())
         .setBasePath(metadataBasepath).setLoadActiveTimelineOnLoad(true).build();
     Option<HoodieInstant> lastInstant = metadataMetaClient.getActiveTimeline().getDeltaCommitTimeline().lastInstant();
-    metadataMetaClient.getStorage().deleteFile(new StoragePath(metadataMetaClient.getTimelinePath(), getInstantFileName(metadataMetaClient, lastInstant.get())));
+    metadataMetaClient.getStorage().deleteFile(new StoragePath(metadataMetaClient.getMetaPath(), getInstantFileName(metadataMetaClient, lastInstant.get())));
 
     // validate getPendingInstants() is returning the pending deltacommit
     int numPending = metadataMetaClient.reloadActiveTimeline().filterInflights().countInstants();
@@ -1164,9 +1130,6 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
         .forEach(info -> assertEquals(true, partitions.contains(info.relativePath)));
   }
 
-  @Disabled("expected 12 archived instants but got 9; archival min/max-keep math is internally consistent "
-      + "with what's on the timeline (verified via instrumented run), so the gap is upstream in how many "
-      + "real clean instants get created vs the 0.14 fork with an identical test body. Under offline review.")
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   public void testRollbackCleanArchivalToSecondary(boolean incrementalClean) throws Exception {
@@ -1787,8 +1750,6 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
         .format(d1.toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime());
   }
 
-  @Disabled("expected 4 archived-completed-instants but got 6; likely same underlying archival-count "
-      + "gap family as testRollbackCleanArchivalToSecondary, not yet root-caused. Under offline review.")
   @ParameterizedTest
   @ValueSource(booleans = {true, false})
   public void testReplicationsBreachingSLAAreDisabled(boolean isReplicationEnabled) throws Exception {
@@ -1890,9 +1851,9 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
    * Test to validate the replication of archived commits, along with replication of regular commits.
    */
   private String createCommitActionOnTimeline(HoodieTableMetaClient tableMetaClient, String commitTime, String commitAction) throws IOException {
-    HoodieInstant requested = tableMetaClient.createNewInstant(HoodieInstant.State.REQUESTED, commitAction, commitTime);
-    tableMetaClient.getStorage().create(new StoragePath(tableMetaClient.getTimelinePath(), getInstantFileName(tableMetaClient, requested))).close();
-    HoodieInstant inflight = tableMetaClient.createNewInstant(HoodieInstant.State.INFLIGHT, commitAction, commitTime);
+    HoodieInstant requested = new HoodieInstant(HoodieInstant.State.REQUESTED, commitAction, commitTime, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
+    tableMetaClient.getStorage().create(new StoragePath(tableMetaClient.getMetaPath(), getInstantFileName(tableMetaClient, requested))).close();
+    HoodieInstant inflight = new HoodieInstant(HoodieInstant.State.INFLIGHT, commitAction, commitTime, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
     tableMetaClient.getActiveTimeline().transitionRequestedToInflight(requested, Option.empty());
     tableMetaClient.getActiveTimeline().saveAsComplete(inflight, Option.empty());
     return commitTime;
@@ -1930,16 +1891,6 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
     setCommitsToKeepForArchival(3, 5);
     setNumDeltaCommitsBeforeCompaction(3);
     HoodieTableMetaClient remoteMetaClient = replicationClient.getDestinationMetaClient();
-    // In production the secondary's hoodie.properties is replicated from the primary and carries
-    // hoodie.table.metadata.partitions, so the secondary reports the MDT as available. The test
-    // fabricates the secondary timeline directly, so set the flag here; without it,
-    // createCommitActions skips mirroring deltacommits onto the secondary MDT timeline and the
-    // archival comparator finds no MDT instants to delete on the secondary.
-    Properties remoteProps = new Properties();
-    remoteProps.setProperty(HoodieTableConfig.TABLE_METADATA_PARTITIONS.key(),
-        MetadataPartitionType.FILES.getPartitionPath());
-    HoodieTableConfig.update(remoteMetaClient.getStorage(), remoteMetaClient.getMetaPath(), remoteProps);
-    remoteMetaClient = HoodieTableMetaClient.reload(remoteMetaClient);
     List<String> allCommits = new ArrayList<>();
     List<String> archivedCommits = new ArrayList<>();
     List<String> commonCommits = new ArrayList<>();
@@ -1967,9 +1918,6 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
     replicationClient.setLastArchivedCommit(lastArchivedTS);
     replicationClient.reload();
     remoteMetaClient.reloadActiveTimeline();
-    // remoteMetaClient was reassigned by the reload above; the comparator inside the client uses
-    // the client's own destination meta client instance, so refresh that one too.
-    replicationClient.getDestinationMetaClient().reloadActiveTimeline();
     validateCommitArchival(lastArchivedTS, archivedCommits, 0,
             replicationClient.getOrderedFilesForArchivalV2());
   }
@@ -2395,9 +2343,8 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
 
     // For each archived commit, all 3 state files must be present
     for (String archivedCommit : archivedCommits) {
-      String completedFileName = getCompletedFileName(archivedCommit, COMMIT_ACTION);
-      assertTrue(tobeDeletedFiles.contains(completedFileName),
-              "Missing completed file: " + completedFileName);
+      assertTrue(tobeDeletedFiles.contains(archivedCommit + ".commit"),
+              "Missing completed file: " + archivedCommit + ".commit");
       assertTrue(tobeDeletedFiles.contains(archivedCommit + ".commit.requested"),
               "Missing requested file: " + archivedCommit + ".commit.requested");
       assertTrue(tobeDeletedFiles.contains(archivedCommit + ".inflight"),
@@ -2946,8 +2893,8 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
         .flatMap(info -> info.files.stream())
         .collect(Collectors.toList());
 
-    HoodieInstant requested = metaClient.createNewInstant(HoodieInstant.State.REQUESTED, COMMIT_ACTION, ts2);
-    HoodieInstant inflight = metaClient.createNewInstant(HoodieInstant.State.INFLIGHT, COMMIT_ACTION, ts2);
+    HoodieInstant requested = new HoodieInstant(HoodieInstant.State.REQUESTED, COMMIT_ACTION, ts2, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
+    HoodieInstant inflight = new HoodieInstant(HoodieInstant.State.INFLIGHT, COMMIT_ACTION, ts2, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
 
     int requestedIdx = startMarkerFiles.indexOf(getInstantFileName(requested));
     int inflightIdx = startMarkerFiles.indexOf(getInstantFileName(inflight));
@@ -2979,7 +2926,7 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
         .flatMap(info -> info.files.stream())
         .collect(Collectors.toList());
 
-    HoodieInstant startRequested = metaClient.createNewInstant(HoodieInstant.State.REQUESTED, COMMIT_ACTION, ts1);
+    HoodieInstant startRequested = new HoodieInstant(HoodieInstant.State.REQUESTED, COMMIT_ACTION, ts1, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
     assertFalse(startMarkerFiles.contains(getInstantFileName(startRequested)),
         "START_MARKERS should not include markers from startTime");
   }
@@ -3066,12 +3013,12 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
         .collect(Collectors.toList());
 
     // Should include ts2 pending markers
-    HoodieInstant ts2Requested = metaClient.createNewInstant(HoodieInstant.State.REQUESTED, COMMIT_ACTION, ts2);
+    HoodieInstant ts2Requested = new HoodieInstant(HoodieInstant.State.REQUESTED, COMMIT_ACTION, ts2, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
     assertTrue(startMarkerFiles.contains(getInstantFileName(ts2Requested)),
         "Should include ts2.requested in START_MARKERS");
 
     // Should NOT include ts1 markers (startTime is excluded)
-    HoodieInstant ts1Requested = metaClient.createNewInstant(HoodieInstant.State.REQUESTED, COMMIT_ACTION, ts1);
+    HoodieInstant ts1Requested = new HoodieInstant(HoodieInstant.State.REQUESTED, COMMIT_ACTION, ts1, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
     assertFalse(startMarkerFiles.contains(getInstantFileName(ts1Requested)),
         "Should NOT include ts1 markers (startTime excluded)");
   }
@@ -3130,7 +3077,7 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
     List<String> startMarkerFiles2 = startMarkers2.stream()
         .flatMap(info -> info.files.stream())
         .collect(Collectors.toList());
-    HoodieInstant ts2Requested = metaClient.createNewInstant(HoodieInstant.State.REQUESTED, COMMIT_ACTION, ts2);
+    HoodieInstant ts2Requested = new HoodieInstant(HoodieInstant.State.REQUESTED, COMMIT_ACTION, ts2, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
     assertFalse(startMarkerFiles2.contains(getInstantFileName(ts2Requested)),
         "Second window should NOT include ts2 markers (ts2 is startTime)");
   }
@@ -3162,8 +3109,8 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
         .flatMap(info -> info.files.stream())
         .collect(Collectors.toList());
 
-    HoodieInstant requested = metaClient.createNewInstant(HoodieInstant.State.REQUESTED, COMMIT_ACTION, ts2);
-    HoodieInstant inflight = metaClient.createNewInstant(HoodieInstant.State.INFLIGHT, COMMIT_ACTION, ts2);
+    HoodieInstant requested = new HoodieInstant(HoodieInstant.State.REQUESTED, COMMIT_ACTION, ts2, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
+    HoodieInstant inflight = new HoodieInstant(HoodieInstant.State.INFLIGHT, COMMIT_ACTION, ts2, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
 
     int requestedIdx = startMarkerFiles.indexOf(getInstantFileName(requested));
     int inflightIdx = startMarkerFiles.indexOf(getInstantFileName(inflight));
@@ -3203,7 +3150,7 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
         .flatMap(info -> info.files.stream())
         .collect(Collectors.toList());
 
-    HoodieInstant completed = metaClient.createNewInstant(HoodieInstant.State.COMPLETED, COMMIT_ACTION, ts2, ts2);
+    HoodieInstant completed = new HoodieInstant(HoodieInstant.State.COMPLETED, COMMIT_ACTION, ts2, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
     assertTrue(finishMarkerFiles.contains(getInstantFileName(completed)),
         "FINISH_MARKERS should include the completed commit file");
   }
@@ -3765,9 +3712,11 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
     // c2.commit (mTime: 220) - Next immediate completed commit
     HoodieCommitMetadata commitMetadata2 = new HoodieCommitMetadata();
     commitMetadata2.setOperationType(WriteOperationType.UPSERT);
-    HoodieInstant c2Completed = metaClient.createNewInstant(HoodieInstant.State.COMPLETED, COMMIT_ACTION, ts2, ts2);
-    FileIOUtils.createFileInPath(metaClient.getStorage(), new StoragePath(metaClient.getTimelinePath(), getInstantFileName(c2Completed)),
-        metaClient.getTimelineLayout().getCommitMetadataSerDe().getInstantWriter(commitMetadata2));
+    HoodieInstant c2Completed = new HoodieInstant(HoodieInstant.State.COMPLETED, COMMIT_ACTION, ts2, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
+    File c2File = new File(metaClient.getMetaPath().toString(), getInstantFileName(c2Completed));
+    try (FileOutputStream fos = new FileOutputStream(c2File)) {
+      fos.write(commitMetadata2.toJsonString().getBytes(StandardCharsets.UTF_8));
+    }
     Thread.sleep(100);
 
     // c3.inflight (mTime: 310)
@@ -3778,11 +3727,12 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
     // Note: c4 doesn't have visible requested/inflight in this timeline snapshot
     HoodieCommitMetadata commitMetadata4 = new HoodieCommitMetadata();
     commitMetadata4.setOperationType(WriteOperationType.UPSERT);
-    HoodieInstant c4Completed = metaClient.createNewInstant(HoodieInstant.State.COMPLETED, COMMIT_ACTION, ts4, ts4);
-    FileIOUtils.createFileInPath(metaClient.getStorage(), new StoragePath(metaClient.getTimelinePath(), getInstantFileName(c4Completed)),
-        metaClient.getTimelineLayout().getCommitMetadataSerDe().getInstantWriter(commitMetadata4));
+    HoodieInstant c4Completed = new HoodieInstant(HoodieInstant.State.COMPLETED, COMMIT_ACTION, ts4, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
+    File c4File = new File(metaClient.getMetaPath().toString(), getInstantFileName(c4Completed));
+    try (FileOutputStream fos = new FileOutputStream(c4File)) {
+      fos.write(commitMetadata4.toJsonString().getBytes(StandardCharsets.UTF_8));
+    }
     Thread.sleep(50);
-
 
     // c5.requested (mTime: 450)
     createPendingInstant(metaClient, ts5, COMMIT_ACTION, HoodieInstant.State.REQUESTED);
@@ -3980,7 +3930,7 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
       // Find the .commit file to get the timestamp
       String commitFile = finishFiles.stream().filter(f -> f.endsWith(".commit")).findFirst().orElse(null);
       if (commitFile != null) {
-        currentLrt = metaClient.getInstantFileNameParser().extractTimestamp(commitFile);
+        currentLrt = commitFile.replace(".commit", "");
       }
 
       String hasMore = result.get(HoodieReplicationMetadataClient.ReplicationStep.HAS_MORE_COMMITS)
@@ -4104,21 +4054,23 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
    * Creates an instant with all three states (requested, inflight, completed) on the timeline.
    */
   private void createInstantWithAllStates(HoodieTableMetaClient tableMetaClient, String timestamp, String action) throws IOException {
-    HoodieCommitMetadata commitMetadata = action.equals(REPLACE_COMMIT_ACTION) ? new HoodieReplaceCommitMetadata() : new HoodieCommitMetadata();
+    HoodieCommitMetadata commitMetadata = new HoodieCommitMetadata();
     commitMetadata.setOperationType(WriteOperationType.UPSERT);
 
     // Create requested instant
-    HoodieInstant requested = tableMetaClient.createNewInstant(HoodieInstant.State.REQUESTED, action, timestamp);
-    tableMetaClient.getStorage().create(new StoragePath(tableMetaClient.getTimelinePath(), getInstantFileName(tableMetaClient, requested))).close();
+    HoodieInstant requested = new HoodieInstant(HoodieInstant.State.REQUESTED, action, timestamp, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
+    tableMetaClient.getStorage().create(new StoragePath(tableMetaClient.getMetaPath(), getInstantFileName(tableMetaClient, requested))).close();
 
     // Create inflight instant
-    HoodieInstant inflight = tableMetaClient.createNewInstant(HoodieInstant.State.INFLIGHT, action, timestamp);
-    tableMetaClient.getStorage().create(new StoragePath(tableMetaClient.getTimelinePath(), getInstantFileName(tableMetaClient, inflight))).close();
+    HoodieInstant inflight = new HoodieInstant(HoodieInstant.State.INFLIGHT, action, timestamp, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
+    tableMetaClient.getStorage().create(new StoragePath(tableMetaClient.getMetaPath(), getInstantFileName(tableMetaClient, inflight))).close();
 
     // Create completed instant with metadata
-    HoodieInstant completed = tableMetaClient.createNewInstant(HoodieInstant.State.COMPLETED, action, timestamp, timestamp);
-    FileIOUtils.createFileInPath(tableMetaClient.getStorage(), new StoragePath(tableMetaClient.getTimelinePath(), getInstantFileName(tableMetaClient, completed)),
-        tableMetaClient.getTimelineLayout().getCommitMetadataSerDe().getInstantWriter(commitMetadata));
+    HoodieInstant completed = new HoodieInstant(HoodieInstant.State.COMPLETED, action, timestamp, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
+    File file = new File(tableMetaClient.getMetaPath().toString(), getInstantFileName(tableMetaClient, completed));
+    try (FileOutputStream fos = new FileOutputStream(file)) {
+      fos.write(commitMetadata.toJsonString().getBytes(StandardCharsets.UTF_8));
+    }
   }
 
   /**
@@ -4126,23 +4078,25 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
    * different modification times. This is needed for tests that rely on modification time ordering.
    */
   private void createInstantWithAllStatesDelayed(HoodieTableMetaClient tableMetaClient, String timestamp, String action) throws Exception {
-    HoodieCommitMetadata commitMetadata = action.equals(REPLACE_COMMIT_ACTION) ? new HoodieReplaceCommitMetadata() : new HoodieCommitMetadata();
+    HoodieCommitMetadata commitMetadata = new HoodieCommitMetadata();
     commitMetadata.setOperationType(WriteOperationType.UPSERT);
 
     // Create requested instant
-    HoodieInstant requested = tableMetaClient.createNewInstant(HoodieInstant.State.REQUESTED, action, timestamp);
-    tableMetaClient.getStorage().create(new StoragePath(tableMetaClient.getTimelinePath(), getInstantFileName(tableMetaClient, requested))).close();
+    HoodieInstant requested = new HoodieInstant(HoodieInstant.State.REQUESTED, action, timestamp, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
+    tableMetaClient.getStorage().create(new StoragePath(tableMetaClient.getMetaPath(), getInstantFileName(tableMetaClient, requested))).close();
     Thread.sleep(100); // Delay to ensure different modification time
 
     // Create inflight instant
-    HoodieInstant inflight = tableMetaClient.createNewInstant(HoodieInstant.State.INFLIGHT, action, timestamp);
-    tableMetaClient.getStorage().create(new StoragePath(tableMetaClient.getTimelinePath(), getInstantFileName(tableMetaClient, inflight))).close();
+    HoodieInstant inflight = new HoodieInstant(HoodieInstant.State.INFLIGHT, action, timestamp, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
+    tableMetaClient.getStorage().create(new StoragePath(tableMetaClient.getMetaPath(), getInstantFileName(tableMetaClient, inflight))).close();
     Thread.sleep(100); // Delay to ensure different modification time
 
     // Create completed instant with metadata
-    HoodieInstant completed = tableMetaClient.createNewInstant(HoodieInstant.State.COMPLETED, action, timestamp, timestamp);
-    FileIOUtils.createFileInPath(tableMetaClient.getStorage(), new StoragePath(tableMetaClient.getTimelinePath(), getInstantFileName(tableMetaClient, completed)),
-        tableMetaClient.getTimelineLayout().getCommitMetadataSerDe().getInstantWriter(commitMetadata));
+    HoodieInstant completed = new HoodieInstant(HoodieInstant.State.COMPLETED, action, timestamp, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
+    File file = new File(tableMetaClient.getMetaPath().toString(), getInstantFileName(tableMetaClient, completed));
+    try (FileOutputStream fos = new FileOutputStream(file)) {
+      fos.write(commitMetadata.toJsonString().getBytes(StandardCharsets.UTF_8));
+    }
   }
 
   /**
@@ -4150,8 +4104,8 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
    */
   private void createPendingInstant(HoodieTableMetaClient tableMetaClient, String timestamp,
                                     String action, HoodieInstant.State state) throws IOException {
-    HoodieInstant instant = tableMetaClient.createNewInstant(state, action, timestamp);
-    tableMetaClient.getStorage().create(new StoragePath(tableMetaClient.getTimelinePath(),
+    HoodieInstant instant = new HoodieInstant(state, action, timestamp, InstantComparatorV1.REQUESTED_TIME_BASED_COMPARATOR);
+    tableMetaClient.getStorage().create(new StoragePath(tableMetaClient.getMetaPath(),
         tableMetaClient.getTimelineLayout().getInstantFileNameGenerator().getFileName(instant))).close();
   }
 
@@ -4161,32 +4115,6 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
 
   private String getInstantFileName(HoodieTableMetaClient mc, HoodieInstant instant) {
     return mc.getTimelineLayout().getInstantFileNameGenerator().getFileName(instant);
-  }
-
-  /**
-   * Looks up the actual completed instant for (requestedTime, action) on {@code metaClient}'s timeline
-   * (active or archived) and returns its on-disk filename. Unlike requested/inflight filenames, completed
-   * filenames are timeline-layout-version-dependent (V2 appends a completion-time suffix that cannot be
-   * assumed equal to the requested time), so this must resolve the real instant rather than reconstruct one.
-   */
-  private String getCompletedFileName(String requestedTime, String action) {
-    return getCompletedFileName(metaClient, requestedTime, action);
-  }
-
-  private String getCompletedFileName(HoodieTableMetaClient mc, String requestedTime, String action) {
-    // useCache=false: mc.getArchivedTimeline() caches a single entry keyed by startTs and does not
-    // refresh it as more commits get archived, so a cached call here could miss instants archived
-    // since the cache was last populated (e.g. across repeated calls within the same test).
-    List<HoodieInstant> matches = Stream.concat(
-            mc.reloadActiveTimeline().filterCompletedInstants().getInstantsAsStream(),
-            mc.getArchivedTimeline(StringUtils.EMPTY_STRING, false).filterCompletedInstants().getInstantsAsStream())
-        .filter(i -> i.requestedTime().equals(requestedTime) && i.getAction().equals(action))
-        .collect(Collectors.toList());
-    if (matches.size() != 1) {
-      throw new IllegalStateException("Expected exactly one completed " + action + " instant for " + requestedTime
-          + " but found " + matches.size());
-    }
-    return mc.getInstantFileNameGenerator().getFileName(matches.get(0));
   }
 
   /**
@@ -4364,16 +4292,10 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
         result.get(HoodieReplicationMetadataClient.ReplicationStep.DATA_ADD_FILES);
     assertNotNull(dataAddFiles, "DATA_ADD_FILES should be present");
 
-    // DATA_ADD_FILES also carries .hoodie_partition_metadata files (replicated but never markered:
-    // getBaseFileMarkers derives from the add list without partition metadata), so markers must be
-    // compared against only the data files in the add list.
-    int addFileCount = (int) dataAddFiles.stream()
-        .flatMap(r -> r.files.stream())
-        .filter(f -> !f.contains(HoodiePartitionMetadata.HOODIE_PARTITION_METAFILE_PREFIX))
-        .count();
+    int addFileCount = dataAddFiles.stream().mapToInt(r -> r.files.size()).sum();
     int markerCount = dataMarkers.stream().mapToInt(r -> r.files.size()).sum();
     assertEquals(addFileCount, markerCount,
-        "Number of DATA_MARKERS should match number of data files in DATA_ADD_FILES");
+        "Number of DATA_MARKERS should match number of files in DATA_ADD_FILES");
   }
 
   @Test
@@ -4386,19 +4308,14 @@ public class TestHoodieReplicationMetadataClient extends HoodieSparkClientTestHa
     setNumDeltaCommitsBeforeCompaction(DEFAULT_METADATA_COMPACT_NUM_DELTA_COMMITS);
 
     HoodieWriteConfig config = getWriteConfig();
-    String partitionPath = DEFAULT_PARTITION_PATHS[0];
     String firstCommitTime = metaClient.createNewInstantTime(false);
-    // Pin all records to a single partition so commit 1 produces one small base file to bin-pack into.
-    List<HoodieRecord> records = dataGen.generateInsertsForPartition(firstCommitTime, 100, partitionPath);
+    List<HoodieRecord> records = dataGen.generateInserts(firstCommitTime, 100);
     generateCommit(config, firstCommitTime, records);
     replicationClient.setLastReplicatedCommit(firstCommitTime);
 
-    // New inserts (not updates) into the same partition get bin-packed into commit 1's small base file,
-    // which routes the write through HoodieMergeHandleWithChangeLog (CDC-aware) instead of
-    // HoodieAppendHandle (which never populates CDC stats) -- this is what actually produces a .cdc file.
     String deltaCommitTime = metaClient.createNewInstantTime(false);
-    List<HoodieRecord> moreInserts = dataGen.generateInsertsForPartition(deltaCommitTime, 20, partitionPath);
-    generateCommit(config, deltaCommitTime, moreInserts, true);
+    List<HoodieRecord> updates = dataGen.generateUpdates(deltaCommitTime, records);
+    generateCommit(config, deltaCommitTime, updates, true);
 
     replicationClient.reload();
 
