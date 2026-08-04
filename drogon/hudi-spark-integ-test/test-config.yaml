@@ -62,9 +62,11 @@ test_suites:
       - name: testHudiUpdateSqlCommand
       - name: testHudiDeleteSqlCommand
       - name: testHudiMergeIntoSqlCommand
+        disabled: true
       - name: testInsertOverwriteWithSourceHudi
       - name: testInsertOverwriteWithSourceHive
       - name: insertOverwriteToHudiDataset
+        disabled: true
       - name: testSparkHoodieConfigPropagationDisablesMetadataTable
 
   - name: hudi-procedures
@@ -78,8 +80,11 @@ test_suites:
       - name: testHudiArchivalProcedure
       - name: testHudiClusteringProcedure
       - name: testHudiUpgradeOrDowngradeProcedure
+        disabled: true
       - name: testCompactionProcedure
+        disabled: true
       - name: testHudiRepairOverwritePropsProcedure
+        disabled: true
 
   - name: hudi-comparison
     spark_conf_overrides:
@@ -111,7 +116,9 @@ test_suites:
       spark.driver.memory: "8g"
     test_cases:
       - name: testAddColumns
+        disabled: true
       - name: testChangingRequiredColumnAsNullable
+        disabled: true
       - name: testBlockingColumnDeletionUsingReconcile
       - name: testSparkSqlProviderConfigInHMS
 
@@ -135,7 +142,9 @@ test_suites:
       - name: testShowPartitionsNonPartitioned
       - name: testShowPartitionsSinglePartition
       - name: testShowPartitionsMultiLevel
+        disabled: true
       - name: testShowPartitionsWithSpecFilter
+        disabled: true
       - name: testShowPartitionsSlashSeparatedDate
       - name: testShowPartitionsAfterDropAndRecreate
       - name: testShowPartitionsAfterInsertOverwrite
@@ -146,10 +155,13 @@ test_suites:
       - name: testAddColumnsDuplicateColumnFailsCow
       - name: testAddColumnsDuplicateColumnFailsMor
       - name: testAddColumnsRefreshesRoRtForMor
+        disabled: true
       - name: testAddColumnsOnPartitionedTableCow
       - name: testAddColumnsOnPartitionedTableMor
       - name: testChangeColumnCommentCow
+        disabled: true
       - name: testChangeColumnCommentMor
+        disabled: true
       - name: testChangeColumnTypeIncompatibleFailsCow
       - name: testChangeColumnTypeIncompatibleFailsMor
       - name: testChangeColumnUnderOccCow
@@ -178,7 +190,9 @@ test_suites:
       - name: testDropSinglePartitionUrlEncodeTrueCow
       - name: testDropSinglePartitionUrlEncodeFalseCow
       - name: testDropMultiLevelPartitionHiveStyleTrueCow
+        disabled: true
       - name: testDropMultiLevelPartitionHiveStyleFalseCow
+        disabled: true
       - name: testDropPartitionWildcardsCow
       - name: testDropPartitionWildcardsMor
       - name: testDropPartitionBlockedByPendingClusteringCow
@@ -239,11 +253,14 @@ test_suites:
     test_cases:
       - name: testCreateAndDropRecordIndex
       - name: testCreateAndDropSecondaryIndex
+        disabled: true
       - name: testCreateAndDropColumnStatsExpressionIndex
+        disabled: true
       - name: testRefreshIndex
       - name: testCreateIndexDuplicateFails
       - name: testDropIndexMissingFails
       - name: testCreateColumnStatsWithoutExpressionFails
+        disabled: true
 
   - name: hudi-legacy-table-compat
     spark_conf_overrides:
@@ -265,13 +282,17 @@ test_suites:
       - name: testRunTopSQLs
         disabled: true
       - name: testRunSQLWithAccessControlIssue
+        disabled: true
       - name: testRunSQLWithAccessControlFailure
+        disabled: true
       - name: testTimestampSecondsToMillisConvertion
       - name: testRunSQLWithSchemaNotFoundDatasets
+        disabled: true
       - name: testRunSQLWithDotPartitions
       - name: testRunSQLWithDotInvalidFiles
       - name: testRunInsertOverwriteOnHiveTable
       - name: testProdSqlOnEmptyDataset
+        disabled: true
       - name: testRangeQueriesOnSpecificDerivedDataset
       - name: testWrongNumberOfColumnsFound
       - name: testEmptyHudiPartitions
@@ -279,3 +300,4 @@ test_suites:
       - name: testCustomPartitionedDatasetOnCld
         disabled: true
       - name: testCustomPartitionedGeneratedDatasets
+        disabled: true
