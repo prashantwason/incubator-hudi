@@ -177,7 +177,9 @@ public class HoodieTableFactory implements DynamicTableSourceFactory, DynamicTab
     checkBaseFileFormatForWrite(conf, schema);
     checkIndexType(conf);
 
-    if (!OptionsResolver.isAppendMode(conf)) {
+    if (!OptionsResolver.isAppendMode(conf)
+        && !OptionsResolver.isBulkInsertOperation(conf)
+        && !OptionsResolver.isInsertOverwrite(conf)) {
       checkRecordKey(conf, schema);
     }
     StreamerUtil.checkOrderingFields(conf, schema.getColumnNames());

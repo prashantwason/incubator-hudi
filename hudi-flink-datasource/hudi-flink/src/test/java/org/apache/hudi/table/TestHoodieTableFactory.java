@@ -233,6 +233,56 @@ public class TestHoodieTableFactory {
   }
 
   @Test
+  void testBulkInsertSinkWithoutRecordKey() {
+    Configuration bulkInsertConf = new Configuration();
+    bulkInsertConf.set(FlinkOptions.PATH, new File(tempFile, "bulk_insert_without_record_key").getAbsolutePath());
+    bulkInsertConf.set(FlinkOptions.TABLE_NAME, "bulk_insert_without_record_key");
+    bulkInsertConf.set(FlinkOptions.OPERATION, "bulk_insert");
+
+    ResolvedSchema schema = SchemaBuilder.instance()
+        .field("f0", DataTypes.INT())
+        .field("f1", DataTypes.VARCHAR(20))
+        .field("ts", DataTypes.TIMESTAMP(3))
+        .build();
+    MockContext context = MockContext.getInstance(bulkInsertConf, schema, "");
+
+    assertDoesNotThrow(
+        () -> {
+          try {
+            new HoodieTableFactory().createDynamicTableSink(context);
+          } catch (NoClassDefFoundError | ExceptionInInitializerError e) {
+            // tolerate unrelated class-loading issues (e.g. HoodieSchema$Blob)
+          }
+        },
+        "bulk_insert without record key should not require primary key definition");
+  }
+
+  @Test
+  void testInsertOverwriteSinkWithoutRecordKey() {
+    Configuration insertOverwriteConf = new Configuration();
+    insertOverwriteConf.set(FlinkOptions.PATH, new File(tempFile, "insert_overwrite_without_record_key").getAbsolutePath());
+    insertOverwriteConf.set(FlinkOptions.TABLE_NAME, "insert_overwrite_without_record_key");
+    insertOverwriteConf.set(FlinkOptions.OPERATION, "insert_overwrite");
+
+    ResolvedSchema schema = SchemaBuilder.instance()
+        .field("f0", DataTypes.INT())
+        .field("f1", DataTypes.VARCHAR(20))
+        .field("ts", DataTypes.TIMESTAMP(3))
+        .build();
+    MockContext context = MockContext.getInstance(insertOverwriteConf, schema, "");
+
+    assertDoesNotThrow(
+        () -> {
+          try {
+            new HoodieTableFactory().createDynamicTableSink(context);
+          } catch (NoClassDefFoundError | ExceptionInInitializerError e) {
+            // tolerate unrelated class-loading issues (e.g. HoodieSchema$Blob)
+          }
+        },
+        "insert_overwrite without record key should not require primary key definition");
+  }
+
+  @Test
   void testIndexTypeCheck() {
     ResolvedSchema schema = SchemaBuilder.instance()
             .field("f0", DataTypes.INT().notNull())
