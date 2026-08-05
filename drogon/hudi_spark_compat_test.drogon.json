@@ -69,7 +69,7 @@
     "proxy_user": "hoover",
     "avro_version": "1.11.4",
     "spark_avro_version": "3.3.2-uber-13",
-    "HUDI_VERSION": "1.2.0.8",
+    "HUDI_VERSION": "1.2.0.9",
     "HUDI_SPARK_BUNDLE_VERSION": "0.16.19",
     "HIVE_SYNC_MODE": "HMS",
     "SPARK_BINARY_TYPE": "PARQUET_13",
