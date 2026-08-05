@@ -45,6 +45,7 @@ import org.apache.flink.table.catalog.ObjectIdentifier;
 import org.apache.flink.table.catalog.ResolvedCatalogTable;
 import org.apache.flink.table.catalog.ResolvedSchema;
 import org.apache.flink.table.factories.DynamicTableFactory;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -246,40 +247,12 @@ public class TestHoodieTableFactory {
         .build();
     MockContext context = MockContext.getInstance(bulkInsertConf, schema, "");
 
-    assertDoesNotThrow(
-        () -> {
-          try {
-            new HoodieTableFactory().createDynamicTableSink(context);
-          } catch (NoClassDefFoundError | ExceptionInInitializerError e) {
-            // tolerate unrelated class-loading issues (e.g. HoodieSchema$Blob)
-          }
-        },
-        "bulk_insert without record key should not require primary key definition");
-  }
-
-  @Test
-  void testInsertOverwriteSinkWithoutRecordKey() {
-    Configuration insertOverwriteConf = new Configuration();
-    insertOverwriteConf.set(FlinkOptions.PATH, new File(tempFile, "insert_overwrite_without_record_key").getAbsolutePath());
-    insertOverwriteConf.set(FlinkOptions.TABLE_NAME, "insert_overwrite_without_record_key");
-    insertOverwriteConf.set(FlinkOptions.OPERATION, "insert_overwrite");
-
-    ResolvedSchema schema = SchemaBuilder.instance()
-        .field("f0", DataTypes.INT())
-        .field("f1", DataTypes.VARCHAR(20))
-        .field("ts", DataTypes.TIMESTAMP(3))
-        .build();
-    MockContext context = MockContext.getInstance(insertOverwriteConf, schema, "");
-
-    assertDoesNotThrow(
-        () -> {
-          try {
-            new HoodieTableFactory().createDynamicTableSink(context);
-          } catch (NoClassDefFoundError | ExceptionInInitializerError e) {
-            // tolerate unrelated class-loading issues (e.g. HoodieSchema$Blob)
-          }
-        },
-        "insert_overwrite without record key should not require primary key definition");
+    try {
+      HoodieTableSink tableSink = (HoodieTableSink) new HoodieTableFactory().createDynamicTableSink(context);
+      assertNull(tableSink.getConf().get(FlinkOptions.RECORD_KEY_FIELD));
+    } catch (NoClassDefFoundError | ExceptionInInitializerError e) {
+      Assumptions.abort("Skipping due to unrelated class-loading issue: " + e.getMessage());
+    }
   }
 
   @Test
